@@ -8,7 +8,6 @@ import LetterDrafts from './letter drafts/LetterDrafts';
 import Summary from './summary/Summary';
 import DailyReports from './reports/DailyReports';
 import VoiceOrText from './voice or text capture/VoiceOrText';
-import Analysis from './analysis/Analysis';
 import Termin from './termin/Termin';
 import MainLayout from './layout/MainLayout';
 import {ProjectProvider} from './context/ProjectContext';
@@ -30,8 +29,8 @@ export const App: React.FC = () => {
             <Route path="/reports" element={<DailyReports />} />
             <Route path="/termin" element={<Termin />} />
             <Route path="/capture" element={<VoiceOrText />} />
-            <Route path="/analysis" element={<Analysis />} />
-            <Route path="/alerts" element={<Analysis />} />
+            <Route path="/analysis" element={<Navigate to="/dashboard" replace />} />
+            <Route path="/alerts" element={<Navigate to="/dashboard" replace />} />
             <Route path="/profile" element={<Profile />} />
             <Route path="/projects" element={<Projects />} />
             <Route path="/drafts" element={<LetterDrafts />} />

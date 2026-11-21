@@ -28,7 +28,7 @@ export interface DocumentSummary {
 
 export interface ProjectDocumentItem {
   id: string;
-  projectId: string;
+  projectId: string | number;
   type: DocumentSourceType;
   title: string;
   date: string;
@@ -783,12 +783,25 @@ export function getAllProjectDocuments(): ProjectDocumentItem[] {
   return INITIAL_PROJECT_DOCUMENTS;
 }
 
-export function getDocumentsForProject(projectId: string): ProjectDocumentItem[] {
+export function getDocumentsForProject(projectId: string | number): ProjectDocumentItem[] {
   const docs = getAllProjectDocuments();
-  return docs.filter((d) => d.projectId === projectId);
+  const pidStr = String(projectId);
+  return docs.filter((d) => {
+    const docPidStr = String(d.projectId);
+    return (
+      docPidStr === pidStr ||
+      docPidStr === `proj-${pidStr}` ||
+      (pidStr === '1' && docPidStr === 'proj-1') ||
+      (pidStr === '2' && docPidStr === 'proj-2') ||
+      (pidStr === '3' && docPidStr === 'proj-3') ||
+      (pidStr === 'proj-1' && docPidStr === '1') ||
+      (pidStr === 'proj-2' && docPidStr === '2') ||
+      (pidStr === 'proj-3' && docPidStr === '3')
+    );
+  });
 }
 
-export function getDiaryEntriesForProject(projectId: string): ProjectDocumentItem[] {
+export function getDiaryEntriesForProject(projectId: string | number): ProjectDocumentItem[] {
   const docs = getDocumentsForProject(projectId);
   return docs.filter((d) => d.type === 'diary');
 }

@@ -23,6 +23,26 @@ const DEFAULT_PROJECTS: Project[] = [
         phase: 'Rohbau & TGA Vorbereitung',
         status: 'Aktiv',
         description: 'Neubau 4-zügige Realschule mit Zweifeldsporthalle und Außenanlagen.'
+    },
+    {
+        id: 2,
+        name: 'Wohnquartier Spreebogen (Baulos 3)',
+        number: 'PRJ-2026-052',
+        client: 'Spreebogen Wohnbau GmbH & Co. KG',
+        location: 'Köpenicker Str. 112, 10179 Berlin',
+        phase: 'Spezialtiefbau & Aushub',
+        status: 'Aktiv',
+        description: 'Wohnanlage mit 140 Mietwohnungen und Tiefgarage direkt am Spreeufer.'
+    },
+    {
+        id: 3,
+        name: 'Sanierung Bürokomplex Am Tiergarten',
+        number: 'PRJ-2025-119',
+        client: 'Tiergarten Real Estate AG',
+        location: 'Stauffenbergstr. 18, 10785 Berlin',
+        phase: 'Schadstoffsanierung & Rohbau',
+        status: 'Aktiv',
+        description: 'Energetische und denkmalgerechte Generalsanierung eines 7-geschossigen Bürogebäudes.'
     }
 ];
 

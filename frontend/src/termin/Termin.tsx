@@ -24,7 +24,7 @@ export type EventCategory = 'deadline' | 'milestone' | 'inspection' | 'meeting' 
 
 export interface SiteAppointment {
   id: string;
-  projectId: string;
+  projectId: string | number;
   title: string;
   date: string; // YYYY-MM-DD
   time?: string;
@@ -220,6 +220,12 @@ export const Termin: React.FC = () => {
   const [selectedDateStr, setSelectedDateStr] = useState<string>('2026-11-21');
   const [activeCategoryFilter, setActiveCategoryFilter] = useState<string>('all');
 
+  // Helper to get fallback appointments
+  const getInitialForProject = (pid: string | number): SiteAppointment[] => {
+    const s = String(pid);
+    return INITIAL_PROJECT_EVENTS[s] || INITIAL_PROJECT_EVENTS[`proj-${s}`] || (s === '1' ? INITIAL_PROJECT_EVENTS['proj-1'] : undefined) || (s === '2' ? INITIAL_PROJECT_EVENTS['proj-2'] : undefined) || (s === '3' ? INITIAL_PROJECT_EVENTS['proj-3'] : undefined) || INITIAL_PROJECT_EVENTS['proj-1'] || [];
+  };
+
   // Appointments State
   const [appointments, setAppointments] = useState<SiteAppointment[]>(() => {
     try {
@@ -228,7 +234,7 @@ export const Termin: React.FC = () => {
     } catch {
       // fallback
     }
-    return INITIAL_PROJECT_EVENTS[activeProject.id] || INITIAL_PROJECT_EVENTS['proj-1'] || [];
+    return getInitialForProject(activeProject.id);
   });
 
   // Modal State for adding new appointment
@@ -249,11 +255,10 @@ export const Termin: React.FC = () => {
       if (stored) {
         setAppointments(JSON.parse(stored));
       } else {
-        const initial = INITIAL_PROJECT_EVENTS[activeProject.id] || INITIAL_PROJECT_EVENTS['proj-1'] || [];
-        setAppointments(initial);
+        setAppointments(getInitialForProject(activeProject.id));
       }
     } catch {
-      setAppointments(INITIAL_PROJECT_EVENTS[activeProject.id] || []);
+      setAppointments(getInitialForProject(activeProject.id));
     }
   }, [activeProject.id]);
 
