@@ -1,12 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import {
   FileText,
   Calendar,
   CloudSun,
   Users,
-  AlertTriangle,
-  Sparkles,
   Mic,
   Copy,
   Plus,
@@ -14,15 +12,16 @@ import {
   Printer,
   History,
   X,
-  BookOpen,
   Mail,
-  ListTodo,
   FileDown,
   Trash2,
   TrendingUp,
   ThumbsUp,
   ThumbsDown,
-  Camera
+  Camera,
+  ChevronDown,
+  Eye,
+  PenLine
 } from 'lucide-react';
 import { ComingSoonNote, isNotImplemented } from '../components/ComingSoon';
 import { addDays, deToIso, isoToDe, toIsoDate as dateToIso, todayIso } from '../utils/dates';
@@ -31,7 +30,6 @@ import { useProjects } from '../context/ProjectContext';
 import {
   getDiaryEntriesForProject,
   saveProjectDocument,
-  getDocumentSummary,
   ProjectDocumentItem
 } from '../context/ProjectDocuments';
 import { useLanguage } from '../context/LanguageContext';
@@ -46,6 +44,20 @@ interface ReportPhoto {
   result?: PhotoDescribeResponse;
   error?: string;
 }
+
+interface CommittedReportSnapshot {
+  hasSavedReport: boolean;
+  reportDate: string;
+  reportNumber: string;
+  weather: string;
+  temperatureC: string;
+  workforceCount: number;
+  siteManager: string;
+  trades: string[];
+  workCompleted: string;
+  attendance: AttendanceItem[];
+  isFinalized: boolean;
+}
 import '@frontend/src/index.css';
 import './DailyReports.css';
 
@@ -56,13 +68,16 @@ export const DailyReports: React.FC = () => {
   const { t } = useLanguage();
   const { activeProject } = useProjects();
   const userName = localStorage.getItem('userName') || t('role_site_manager');
+  const todayDe = isoToDe(todayIso());
 
   // History of diary entries for the current project
   const [diaryHistory, setDiaryHistory] = useState<ProjectDocumentItem[]>([]);
-  const [searchTerm, setSearchTerm] = useState('');
-  const [selectedPastDoc, setSelectedPastDoc] = useState<ProjectDocumentItem | null>(null);
-  const [modalTab, setModalTab] = useState<'summary' | 'raw'>('summary');
   const [referencedDoc, setReferencedDoc] = useState<ProjectDocumentItem | null>(null);
+
+  // 2-Tab View (left: read-only report for selected day, right: edit form) & Header Dropdown
+  const [activeReportTab, setActiveReportTab] = useState<'view' | 'edit'>('view');
+  const [isHistoryDropdownOpen, setIsHistoryDropdownOpen] = useState(false);
+  const historyDropdownRef = useRef<HTMLDivElement | null>(null);
 
   // New diary entry form state
   const [reportNumber, setReportNumber] = useState('143');
@@ -71,26 +86,14 @@ export const DailyReports: React.FC = () => {
       const [y, m, d] = navDate.split('-');
       return `${d}.${m}.${y}`;
     }
-    return '21.11.2026';
+    return isoToDe(todayIso());
   });
-  const [weather, setWeather] = useState('9°C, bedeckt, windstill');
-  const [workforceCount, setWorkforceCount] = useState<number>(34);
-  const [trades, setTrades] = useState<string[]>([
-    'Rohbau (Fa. BetonTech)',
-    'Tiefbau (Fa. Erd & Grund)',
-    'TGA (Fa. Elektro-Klima)',
-    'Zimmerer'
-  ]);
+  const isTodaySelected = reportDate === todayDe;
+  const [weather, setWeather] = useState('');
+  const [workforceCount, setWorkforceCount] = useState<number>(0);
+  const [trades, setTrades] = useState<string[]>([]);
   const [newTradeInput, setNewTradeInput] = useState('');
-  const [progressText, setProgressText] = useState(
-    'Bewehrung der Decke über 1. OG Bauteil B fertiggestellt. Abnahme durch Prüfstatiker Dr. Lang für 15:30 Uhr vorbereitet. Betonage für kommenden Werktag gesichert.'
-  );
-  const [hindranceText, setHindranceText] = useState(
-    'Fortführung: Hydraulikdefekt an Kettenbagger 24t behoben, Schacht 3 weiterhin durch fehlende TGA-Pläne blockiert.'
-  );
-  const [deliveriesText, setDeliveriesText] = useState(
-    '2x Sattelzug Betonstahl B500B (24t) angeliefert und auf Baulos B zwischengelagert.'
-  );
+  const [progressText, setProgressText] = useState('');
 
   // Dictation state (echte Aufnahme → /api/transcribe → /api/reports/{date}/fill)
   const [isProcessingDictation, setIsProcessingDictation] = useState(false);
@@ -110,12 +113,47 @@ export const DailyReports: React.FC = () => {
   const [attendance, setAttendance] = useState<AttendanceItem[]>([]);
   const [contracts, setContracts] = useState<Contract[]>([]);
 
+  // Gespeicherte / aktualisierte Ansicht für den linken Tab ("Heutigen Bautagesbericht" / ausgewählter Tag)
+  const [committedReport, setCommittedReport] = useState<CommittedReportSnapshot>({
+    hasSavedReport: false,
+    reportDate,
+    reportNumber: '143',
+    weather: '',
+    temperatureC: '',
+    workforceCount: 0,
+    siteManager: '',
+    trades: [],
+    workCompleted: '',
+    attendance: [],
+    isFinalized: false
+  });
+  const hasSavedReportNumberRef = useRef(false);
+
   // Idee #2: Wetter automatisch
   const [isLoadingWeather, setIsLoadingWeather] = useState(false);
   const [weatherHint, setWeatherHint] = useState<string | null>(null);
 
   // Idee #1: Fotos → Tagebucheintrag
   const [photos, setPhotos] = useState<ReportPhoto[]>([]);
+
+  // Dropdown schließen bei Klick außerhalb oder Escape
+  useEffect(() => {
+    if (!isHistoryDropdownOpen) return;
+    const handleOutside = (e: MouseEvent) => {
+      if (historyDropdownRef.current && !historyDropdownRef.current.contains(e.target as Node)) {
+        setIsHistoryDropdownOpen(false);
+      }
+    };
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setIsHistoryDropdownOpen(false);
+    };
+    document.addEventListener('mousedown', handleOutside);
+    document.addEventListener('keydown', handleKey);
+    return () => {
+      document.removeEventListener('mousedown', handleOutside);
+      document.removeEventListener('keydown', handleKey);
+    };
+  }, [isHistoryDropdownOpen]);
 
   // Verträge des Projekts (Sollstärke je Firma)
   useEffect(() => {
@@ -234,6 +272,8 @@ export const DailyReports: React.FC = () => {
   // Load backend daily report for current date and project
   useEffect(() => {
     let cancelled = false;
+    hasSavedReportNumberRef.current = false;
+
     const fetchBackendReport = async () => {
       try {
         const iso = toIsoDate(reportDate);
@@ -260,25 +300,103 @@ export const DailyReports: React.FC = () => {
           );
         }
         if (!cancelled && report) {
-          if (report.weather) setWeather(report.weather);
-          if (report.workforce_count !== null && report.workforce_count !== undefined && report.workforce_count > 0) {
-            setWorkforceCount(report.workforce_count);
+          const hasSaved = Boolean(
+            report.id != null ||
+              report.work_completed ||
+              (report.trades && report.trades.length > 0) ||
+              (report.attendance && report.attendance.length > 0)
+          );
+          const nextWeather = report.weather ?? '';
+          const nextWorkforce = report.workforce_count ?? 0;
+          const nextTrades = report.trades ?? [];
+          const nextWorkCompleted = report.work_completed ?? '';
+          const nextTemp = report.temperature_c != null ? String(report.temperature_c) : '';
+          const nextManager = report.site_manager ?? '';
+          const nextAttendance = report.attendance ?? [];
+          const nextFinalized = report.status === 'finalized';
+          const nextNumber = report.report_number ? String(report.report_number) : reportNumber;
+
+          if (report.report_number) {
+            hasSavedReportNumberRef.current = true;
+            setReportNumber(String(report.report_number));
           }
-          if (report.trades && report.trades.length > 0) {
-            setTrades(report.trades);
-          }
-          if (report.work_completed) setProgressText(report.work_completed);
-          if (report.deviations_incidents) setHindranceText(report.deviations_incidents);
-          if (report.deliveries) setDeliveriesText(report.deliveries);
-          if (report.report_number) setReportNumber(String(report.report_number));
-          setTemperatureC(report.temperature_c != null ? String(report.temperature_c) : '');
-          setSiteManager(report.site_manager ?? '');
-          setAttendance(report.attendance ?? []);
-          setIsFinalized(report.status === 'finalized');
+          setWeather(nextWeather);
+          setWorkforceCount(nextWorkforce);
+          setTrades(nextTrades);
+          setProgressText(nextWorkCompleted);
+          setTemperatureC(nextTemp);
+          setSiteManager(nextManager);
+          setAttendance(nextAttendance);
+          setIsFinalized(nextFinalized);
           setDayAnalysis(null);
+
+          setCommittedReport({
+            hasSavedReport: hasSaved,
+            reportDate,
+            reportNumber: nextNumber,
+            weather: nextWeather,
+            temperatureC: nextTemp,
+            workforceCount: nextWorkforce,
+            siteManager: nextManager,
+            trades: nextTrades,
+            workCompleted: nextWorkCompleted,
+            attendance: nextAttendance,
+            isFinalized: nextFinalized
+          });
         }
       } catch (err) {
         console.warn('Backend getReport Fallback:', err);
+        if (cancelled) return;
+        const localMatch = getDiaryEntriesForProject(activeProject.id).find((d) => d.date === reportDate);
+        if (localMatch) {
+          const nextWeather = localMatch.weather ?? '';
+          const nextWorkforce = localMatch.workforceCount ?? 0;
+          const nextTrades = localMatch.trades ?? [];
+          const nextWorkCompleted = localMatch.content ?? '';
+          setWeather(nextWeather);
+          setWorkforceCount(nextWorkforce);
+          setTrades(nextTrades);
+          setProgressText(nextWorkCompleted);
+          setTemperatureC('');
+          setSiteManager(localMatch.authorOrSender ?? '');
+          setAttendance([]);
+          setIsFinalized(false);
+          setCommittedReport({
+            hasSavedReport: true,
+            reportDate,
+            reportNumber,
+            weather: nextWeather,
+            temperatureC: '',
+            workforceCount: nextWorkforce,
+            siteManager: localMatch.authorOrSender ?? '',
+            trades: nextTrades,
+            workCompleted: nextWorkCompleted,
+            attendance: [],
+            isFinalized: false
+          });
+        } else {
+          setWeather('');
+          setWorkforceCount(0);
+          setTrades([]);
+          setProgressText('');
+          setTemperatureC('');
+          setSiteManager('');
+          setAttendance([]);
+          setIsFinalized(false);
+          setCommittedReport({
+            hasSavedReport: false,
+            reportDate,
+            reportNumber,
+            weather: '',
+            temperatureC: '',
+            workforceCount: 0,
+            siteManager: '',
+            trades: [],
+            workCompleted: '',
+            attendance: [],
+            isFinalized: false
+          });
+        }
       }
     };
 
@@ -311,10 +429,12 @@ export const DailyReports: React.FC = () => {
 
     setDiaryHistory(combined);
 
-    // Nächste Berichtsnummer aus dem neuesten Bericht ableiten
-    const latest = combined.find((c) => /Nr\.\s*\d+/i.test(c.title));
-    const match = latest?.title.match(/Nr\.\s*(\d+)/i);
-    if (match) setReportNumber(String(parseInt(match[1], 10) + 1));
+    // Nächste Berichtsnummer aus dem neuesten Bericht ableiten (nur falls Tag noch keine Nummer hat)
+    if (!hasSavedReportNumberRef.current) {
+      const latest = combined.find((c) => /Nr\.\s*\d+/i.test(c.title));
+      const match = latest?.title.match(/Nr\.\s*(\d+)/i);
+      if (match) setReportNumber(String(parseInt(match[1], 10) + 1));
+    }
   };
 
   useEffect(() => {
@@ -327,17 +447,23 @@ export const DailyReports: React.FC = () => {
     return () => window.removeEventListener('project-documents-updated', handleUpdate);
   }, [activeProject.id]);
 
-  // Filter history by search term
-  const filteredHistory = diaryHistory.filter((item) => {
-    if (!searchTerm.trim()) return true;
-    const query = searchTerm.toLowerCase();
-    return (
-      item.title.toLowerCase().includes(query) ||
-      item.content.toLowerCase().includes(query) ||
-      item.date.includes(query) ||
-      item.authorOrSender.toLowerCase().includes(query)
-    );
+  // Nur Bautagesberichte von heute und der Vergangenheit für das Dropdown "Letzte Einträge" (keine Schreiberfassung/Spracherfassung)
+  const todayIsoStr = todayIso();
+  const dropdownReports = diaryHistory.filter((item) => {
+    const isReport = item.id.startsWith('report-') || /\bbautagesbericht\b/i.test(item.title);
+    const isCaptureNote = /schreiberfassung|spracherfassung/i.test(item.title);
+    const itemIso = toIsoDate(item.date);
+    const isTodayOrPast = /^\d{4}-\d{2}-\d{2}$/.test(itemIso) ? itemIso <= todayIsoStr : true;
+    return isReport && !isCaptureNote && isTodayOrPast && item.date !== todayDe;
   });
+
+  // Auswahl eines Eintrags/Tags aus dem Dropdown "Letzte Einträge"
+  const handleSelectDateFromDropdown = (targetDate: string) => {
+    setReportDate(targetDate);
+    setReferencedDoc(null);
+    setActiveReportTab('view');
+    setIsHistoryDropdownOpen(false);
+  };
 
   // Action: Adopt workforce & trades from previous entry ("Werte von gestern übernehmen")
   const handleAdoptFromPastEntry = async (pastDoc: ProjectDocumentItem) => {
@@ -358,13 +484,7 @@ export const DailyReports: React.FC = () => {
       if (pastDoc.trades && pastDoc.trades.length > 0) setTrades([...pastDoc.trades]);
     }
     setReferencedDoc(pastDoc);
-  };
-
-  // Action: Adopt and continue yesterday's hindrance
-  const handleContinueHindrance = (pastDoc: ProjectDocumentItem) => {
-    const pastHindrance = pastDoc.hindrance || 'Behinderung aus ' + pastDoc.title;
-    setHindranceText(`Fortführung aus ${pastDoc.title} (${pastDoc.date}):\n${pastHindrance}\nStatus heute: `);
-    setReferencedDoc(pastDoc);
+    setActiveReportTab('edit');
   };
 
   // Action: Add new trade
@@ -389,13 +509,26 @@ export const DailyReports: React.FC = () => {
         project_id: Number(activeProject.id)
       });
       if (res) {
+        const nextProgress = res.work_completed ?? progressText;
+        const nextTrades = res.trades && res.trades.length > 0 ? res.trades : trades;
+        const nextWeather = res.weather ?? weather;
+        const nextWorkforce = res.workforce_count ?? workforceCount;
+
         if (res.work_completed) setProgressText(res.work_completed);
-        if (res.deviations_incidents) setHindranceText(res.deviations_incidents);
-        if (res.deliveries) setDeliveriesText(res.deliveries);
         if (res.trades && res.trades.length > 0) setTrades(res.trades);
         if (res.weather) setWeather(res.weather);
         if (res.workforce_count) setWorkforceCount(res.workforce_count);
         setDayAnalysis(null);
+
+        setCommittedReport((prev) => ({
+          ...prev,
+          hasSavedReport: true,
+          reportDate,
+          workCompleted: nextProgress,
+          trades: nextTrades,
+          weather: nextWeather,
+          workforceCount: nextWorkforce
+        }));
       }
     } catch (err) {
       console.warn('Backend fillReport Fallback:', err);
@@ -467,18 +600,6 @@ export const DailyReports: React.FC = () => {
     }
   };
 
-  // Tagebucheintrag aus dem Backend löschen (DELETE /site-notes/{id})
-  const handleDeleteBackendNote = async (itemId: string) => {
-    const noteId = Number(itemId.replace('note-', ''));
-    if (!noteId || !window.confirm('Diesen Tagebucheintrag wirklich löschen?')) return;
-    try {
-      await api.deleteSiteNote(noteId);
-      setDiaryHistory((prev) => prev.filter((d) => d.id !== itemId));
-    } catch (err: any) {
-      alert(err?.message || 'Löschen fehlgeschlagen');
-    }
-  };
-
   // PUT /api/reports/{date} – gemeinsam genutzt von Speichern, Export und Analyse
   const saveReportToBackend = async () => {
     const iso = toIsoDate(reportDate);
@@ -490,8 +611,6 @@ export const DailyReports: React.FC = () => {
         workforce_count: workforceCount,
         trades,
         work_completed: progressText,
-        deviations_incidents: hindranceText,
-        deliveries: deliveriesText,
         summary: `Bautagesbericht Nr. ${reportNumber} vom ${reportDate}`,
         status: isFinalized ? 'finalized' : 'draft',
         temperature_c: temperatureC.trim() === '' ? null : Number(temperatureC),
@@ -505,8 +624,7 @@ export const DailyReports: React.FC = () => {
     );
   };
 
-  // Speichern: PUT /api/reports/{date}. Nur wenn das Backend nicht erreichbar ist, lokal sichern.
-  // (Früher zusätzlich als lokale Kopie UND als Tagebuchnotiz gespeichert → doppelt in Timeline/Verlauf.)
+  // Speichern / Aktualisieren: PUT /api/reports/{date}. Nur wenn das Backend nicht erreichbar ist, lokal sichern.
   const handleSaveReport = async () => {
     try {
       await saveReportToBackend();
@@ -522,18 +640,33 @@ export const DailyReports: React.FC = () => {
         weather,
         workforceCount,
         trades,
-        hindrance: hindranceText,
         content: [
           `Bautagesbericht Nr. ${reportNumber} — Datum: ${reportDate}`,
           `Wetter: ${weather}`,
           `Personal: ${workforceCount} (${trades.join(', ')})`,
           `Tagesleistung: ${progressText}`,
-          hindranceText ? `Vorkommnisse: ${hindranceText}` : '',
-          deliveriesText ? `Lieferungen/Abnahmen: ${deliveriesText}` : '',
           referencedDoc ? `[Bezug auf: ${referencedDoc.title} (${referencedDoc.date})]` : ''
         ].filter(Boolean).join('\n')
       });
     }
+
+    hasSavedReportNumberRef.current = true;
+    setCommittedReport({
+      hasSavedReport: true,
+      reportDate,
+      reportNumber,
+      weather,
+      temperatureC,
+      workforceCount,
+      siteManager: siteManager.trim() || userName,
+      trades: [...trades],
+      workCompleted: progressText,
+      attendance: attendance
+        .filter((a) => (a.company && a.company.trim()) || (a.trade && a.trade.trim()) || a.workers > 0)
+        .map((a) => ({ ...a })),
+      isFinalized
+    });
+    setActiveReportTab('view');
 
     loadHistory();
     setSavedSuccessMsg(true);
@@ -546,7 +679,7 @@ export const DailyReports: React.FC = () => {
       <section className="reports-header-card">
         <div className="reports-title-area">
           <div className="reports-icon-badge">
-            <FileText size={26} />
+            <FileText size={22} />
           </div>
           <div>
             <h1 className="reports-title">{t('rep_title')}</h1>
@@ -556,25 +689,71 @@ export const DailyReports: React.FC = () => {
           </div>
         </div>
 
-        <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
-          <button
-            type="button"
-            className="btn btn-secondary"
-            onClick={() => navigate('/summary')}
-            title={t('sum_title')}
-          >
-            <BookOpen size={16} />
-            <span>{t('nav_summary')}</span>
-          </button>
+        <div className="reports-header-actions">
+          <div className="reports-history-dropdown" ref={historyDropdownRef}>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={() => setIsHistoryDropdownOpen((prev) => !prev)}
+              aria-expanded={isHistoryDropdownOpen}
+              title={t('rep_history_title')}
+            >
+              <History size={16} />
+              <span>{t('rep_history_title')}</span>
+              <ChevronDown size={15} />
+            </button>
 
-          <button
-            type="button"
-            className="btn btn-primary"
-            onClick={handleSaveReport}
-          >
-            <CheckCircle2 size={16} />
-            <span>{t('rep_btn_save_report')}</span>
-          </button>
+            {isHistoryDropdownOpen && (
+              <div className="reports-history-dropdown-menu" role="menu">
+                <div className="reports-history-dropdown-header">
+                  <span>Bautagesbericht auswählen</span>
+                  <span className="history-badge">{1 + dropdownReports.length}</span>
+                </div>
+
+                <div className="reports-history-dropdown-list">
+                  <button
+                    type="button"
+                    className={`reports-history-dropdown-item ${isTodaySelected ? 'active' : ''}`}
+                    onClick={() => handleSelectDateFromDropdown(todayDe)}
+                  >
+                    <div className="reports-history-dropdown-item-top">
+                      <span>Heutiger Bautagesbericht</span>
+                      <span className="reports-history-dropdown-item-date">Heute, {todayDe}</span>
+                    </div>
+                    <div className="reports-history-dropdown-item-sub">
+                      Aktuellen Tagesbericht anzeigen &amp; verfassen
+                    </div>
+                  </button>
+
+                  {dropdownReports.length === 0 ? (
+                    <div style={{ padding: '12px', fontSize: '12px', color: 'var(--text-muted)', textAlign: 'center' }}>
+                      Keine weiteren vergangenen Bautagesberichte vorhanden.
+                    </div>
+                  ) : (
+                    dropdownReports.map((item) => (
+                      <button
+                        key={item.id}
+                        type="button"
+                        className={`reports-history-dropdown-item ${item.date === reportDate ? 'active' : ''}`}
+                        onClick={() => handleSelectDateFromDropdown(item.date)}
+                      >
+                        <div className="reports-history-dropdown-item-top">
+                          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {item.title}
+                          </span>
+                          <span className="reports-history-dropdown-item-date">{item.date}</span>
+                        </div>
+                        <div className="reports-history-dropdown-item-sub">
+                          {item.authorOrSender}
+                          {item.content ? ` • ${item.content}` : ''}
+                        </div>
+                      </button>
+                    ))
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       </section>
 
@@ -595,7 +774,7 @@ export const DailyReports: React.FC = () => {
           }}
         >
           <span>
-            ✓ {activeProject.name}: {t('rep_btn_save_report')}
+            ✓ {activeProject.name}: Änderungen gespeichert
           </span>
           <button
             className="btn btn-secondary"
@@ -607,635 +786,638 @@ export const DailyReports: React.FC = () => {
         </div>
       )}
 
-      {/* Main Grid: Left Side History / Previous Entries, Right Side Editor */}
+      {/* Main Grid: 2-Tab Report View & Editor */}
       <div className="reports-grid">
-        {/* Left Column: ALL PREVIOUS ENTRIES FOR THIS PROJECT */}
-        <div className="history-panel">
-          <div className="history-header">
-            <span className="history-title">
-              <History size={18} color="var(--color-primary)" />
-              <span>{t('rep_history_title')}</span>
-            </span>
-            <span className="history-badge">
-              {diaryHistory.length}
-            </span>
+        <div className="reports-folder-shell">
+          <div className="reports-folder-tabs" role="tablist" aria-label="Bautagesbericht-Ansicht">
+            <button
+              type="button"
+              role="tab"
+              aria-selected={activeReportTab === 'view'}
+              className={`reports-folder-tab ${activeReportTab === 'view' ? 'active' : ''}`}
+              onClick={() => setActiveReportTab('view')}
+            >
+              <Eye size={15} />
+              <span>{isTodaySelected ? 'Heutiger Bautagesbericht' : `Bautagesbericht (${reportDate})`}</span>
+            </button>
+
+            <button
+              type="button"
+              role="tab"
+              aria-selected={activeReportTab === 'edit'}
+              className={`reports-folder-tab ${activeReportTab === 'edit' ? 'active' : ''}`}
+              onClick={() => setActiveReportTab('edit')}
+            >
+              <PenLine size={15} />
+              <span>{isTodaySelected ? t('rep_editor_title') : `Bearbeitung (${reportDate})`}</span>
+            </button>
           </div>
 
-          <p style={{ fontSize: '12px', color: 'var(--text-muted)', margin: 0 }}>
-            {t('rep_history_sub')} <strong>{activeProject.name}</strong>:
-          </p>
+          {/* 2-TAB REPORT VIEW & EDITOR */}
+          <div className="editor-panel reports-folder-panel">
+            <div className="editor-header">
+              <div className="editor-title">
+                {activeReportTab === 'view' ? <Eye size={18} /> : <PenLine size={18} />}
+                <span>
+                  {activeReportTab === 'view'
+                    ? isTodaySelected
+                      ? 'Aktuelle Tagesübersicht'
+                      : `Tagesübersicht vom ${reportDate}`
+                    : isTodaySelected
+                    ? 'Tagesbericht bearbeiten'
+                    : `Bearbeitung (${reportDate})`}
+                </span>
+              </div>
 
-          <div style={{ position: 'relative' }}>
-            <input
-              type="text"
-              className="history-search-input"
-              placeholder={t('search_placeholder')}
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-            />
-            {searchTerm && (
+              <div className="editor-toolbar">
+                <button
+                  type="button"
+                  className={`history-btn-small ${isRecording ? 'recording-active' : ''}`}
+                  onClick={handleToggleMic}
+                  disabled={isProcessingDictation}
+                >
+                  <Mic size={13} />
+                  <span>
+                    {isProcessingDictation ? 'KI übernimmt Diktat…' : isRecording ? t('dash_mic_running') : t('dash_mic_start')}
+                  </span>
+                </button>
+
+                <button
+                  type="button"
+                  className="history-btn-small"
+                  onClick={() => handleExport('docx')}
+                  disabled={exporting !== null}
+                  title="Als Word-Datei exportieren (speichert vorher)"
+                >
+                  <FileDown size={13} />
+                  <span>{exporting === 'docx' ? 'Export…' : 'Word'}</span>
+                </button>
+
+                <button
+                  type="button"
+                  className="history-btn-small"
+                  onClick={() => handleExport('pdf')}
+                  disabled={exporting !== null}
+                  title="Als PDF exportieren (speichert vorher)"
+                >
+                  <FileDown size={13} />
+                  <span>{exporting === 'pdf' ? 'Export…' : 'PDF'}</span>
+                </button>
+
+                <button
+                  type="button"
+                  className="history-btn-small"
+                  onClick={() => window.print()}
+                  title={t('btn_print')}
+                >
+                  <Printer size={13} />
+                  <span>{t('btn_print')}</span>
+                </button>
+              </div>
+            </div>
+
+          {!isTodaySelected && (
+            <div className="reports-day-indicator">
+              <Calendar size={14} color="var(--color-primary)" />
+              <span>
+                Ausgewählter Tag: <strong>{reportDate}</strong>
+              </span>
               <button
                 type="button"
-                onClick={() => setSearchTerm('')}
-                style={{
-                  position: 'absolute',
-                  right: '8px',
-                  top: '50%',
-                  transform: 'translateY(-50%)',
-                  background: 'none',
-                  border: 'none',
-                  cursor: 'pointer',
-                  color: 'var(--text-muted)'
-                }}
+                className="reports-day-reset-btn"
+                onClick={() => handleSelectDateFromDropdown(todayDe)}
               >
-                <X size={14} />
+                Zurück zu heute ({todayDe})
               </button>
-            )}
-          </div>
-
-          {filteredHistory.length === 0 ? (
-            <div
-              style={{
-                padding: '20px',
-                textAlign: 'center',
-                fontSize: '13px',
-                color: 'var(--text-muted)',
-                backgroundColor: 'var(--color-slate-50)',
-                borderRadius: 'var(--radius-md)',
-                border: '1px dashed var(--border-light)'
-              }}
-            >
-              {t('rep_history_empty')}
             </div>
-          ) : (
-            <div className="history-list">
-              {filteredHistory.map((item) => {
-                const isReferenced = referencedDoc?.id === item.id;
-                return (
-                  <div
-                    key={item.id}
-                    className={`history-item ${isReferenced ? 'active' : ''}`}
-                    onClick={() => {
-                      setSelectedPastDoc(item);
-                      setModalTab('summary');
-                    }}
-                    title={t('rep_btn_show_summary')}
+          )}
+
+          {/* TAB 1 (LEFT): AKTUELLER / AUSGEWÄHLTER BAUTAGESBERICHT */}
+          {activeReportTab === 'view' && (
+            <div className="report-view-body">
+              {!committedReport.hasSavedReport ? (
+                <div className="report-view-empty">
+                  <FileText size={28} color="var(--color-primary)" />
+                  <div>
+                    Für den <strong>{reportDate}</strong> liegt noch kein gespeicherter Bautagesbericht vor.
+                  </div>
+                  <button
+                    type="button"
+                    className="btn btn-primary"
+                    onClick={() => setActiveReportTab('edit')}
                   >
-                    <div className="history-item-top">
-                      <span className="history-item-title">{item.title}</span>
-                      <span className="history-item-date">
-                        <Calendar size={11} />
-                        {item.date}
+                    <PenLine size={15} />
+                    <span>{isTodaySelected ? t('rep_editor_title') : `Bericht für ${reportDate} verfassen`}</span>
+                  </button>
+                </div>
+              ) : (
+                <>
+                  <div className="report-view-top">
+                    <div>
+                      <div style={{ fontSize: '15px', fontWeight: 700, color: 'var(--text-main)' }}>
+                        Bautagesbericht Nr. {committedReport.reportNumber || '—'} • {committedReport.reportDate}
+                      </div>
+                      <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '2px' }}>
+                        Projekt: {activeProject.name} ({activeProject.number})
+                      </div>
+                    </div>
+
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                      <span className={`badge ${committedReport.isFinalized ? 'badge-success' : 'badge-info'}`}>
+                        {committedReport.isFinalized ? 'Abgeschlossen' : 'Entwurf'}
+                      </span>
+                      <button
+                        type="button"
+                        className="btn btn-secondary"
+                        style={{ padding: '6px 12px', fontSize: '12px' }}
+                        onClick={() => setActiveReportTab('edit')}
+                      >
+                        <PenLine size={14} />
+                        <span>Bearbeiten</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="report-view-meta-grid">
+                    <div className="report-view-meta-card">
+                      <span className="report-view-meta-label">{t('rep_form_date')}</span>
+                      <span className="report-view-meta-value">{committedReport.reportDate}</span>
+                    </div>
+
+                    <div className="report-view-meta-card">
+                      <span className="report-view-meta-label">{t('rep_form_weather')}</span>
+                      <span className="report-view-meta-value">
+                        {[
+                          committedReport.weather || null,
+                          committedReport.temperatureC ? `${committedReport.temperatureC} °C` : null
+                        ]
+                          .filter(Boolean)
+                          .join(' • ') || '—'}
                       </span>
                     </div>
 
-                    <div className="history-item-meta">
-                      {item.workforceCount && (
-                        <span>
-                          <Users size={11} style={{ display: 'inline', marginRight: '3px' }} />
-                          {item.workforceCount}
-                        </span>
-                      )}
-                      {item.weather && (
-                        <span>
-                          <CloudSun size={11} style={{ display: 'inline', marginRight: '3px' }} />
-                          {item.weather.split(',')[0]}
-                        </span>
-                      )}
+                    <div className="report-view-meta-card">
+                      <span className="report-view-meta-label">{t('rep_form_workforce')}</span>
+                      <span className="report-view-meta-value">
+                        {committedReport.workforceCount} Personen
+                      </span>
                     </div>
 
-                    <div className="history-item-snippet">{item.content}</div>
-
-                    {item.hindrance && (
-                      <div className="history-item-hindrance">
-                        ⚠️ <strong>{t('cap_cat_hindrance')}:</strong> {item.hindrance}
-                      </div>
-                    )}
-
-                    {/* Quick Access Action Buttons */}
-                    <div className="history-item-actions" onClick={(e) => e.stopPropagation()}>
-                      <button
-                        type="button"
-                        className="history-btn-small"
-                        style={{ color: 'var(--color-primary)', fontWeight: 600, backgroundColor: '#eff6ff', borderColor: '#bfdbfe' }}
-                        onClick={() => {
-                          setSelectedPastDoc(item);
-                          setModalTab('summary');
-                        }}
-                        title={t('rep_btn_show_summary')}
-                      >
-                        <Sparkles size={11} />
-                        <span>{t('rep_btn_show_summary')}</span>
-                      </button>
-
-                      <button
-                        type="button"
-                        className="history-btn-small"
-                        onClick={() => handleAdoptFromPastEntry(item)}
-                        title={t('rep_btn_adopt_trades')}
-                      >
-                        <Copy size={11} />
-                        <span>{t('rep_btn_adopt_trades')}</span>
-                      </button>
-
-                      {item.hindrance && (
-                        <button
-                          type="button"
-                          className="history-btn-small"
-                          style={{ color: '#b45309' }}
-                          onClick={() => handleContinueHindrance(item)}
-                          title={t('rep_btn_continue_hindrance')}
-                        >
-                          <AlertTriangle size={11} />
-                          <span>{t('rep_btn_continue_hindrance')}</span>
-                        </button>
-                      )}
-
-                      {item.id.startsWith('note-') && (
-                        <button
-                          type="button"
-                          className="history-btn-small"
-                          style={{ color: '#dc2626' }}
-                          onClick={() => handleDeleteBackendNote(item.id)}
-                          title="Eintrag löschen"
-                        >
-                          <Trash2 size={11} />
-                        </button>
-                      )}
+                    <div className="report-view-meta-card">
+                      <span className="report-view-meta-label">Bauleitung</span>
+                      <span className="report-view-meta-value">
+                        {committedReport.siteManager || userName}
+                      </span>
                     </div>
                   </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
 
-        {/* Right Column: NEW DIARY ENTRY FORM */}
-        <div className="editor-panel">
-          <div className="editor-header">
-            <div className="editor-title">
-              <FileText size={20} color="var(--color-primary)" />
-              <span>{t('rep_editor_title')}</span>
-            </div>
-
-            <div style={{ display: 'flex', gap: '8px' }}>
-              <button
-                type="button"
-                className={`history-btn-small ${isRecording ? 'active' : ''}`}
-                style={{
-                  backgroundColor: isRecording ? '#fee2e2' : 'white',
-                  color: isRecording ? '#dc2626' : 'var(--color-slate-700)',
-                  borderColor: isRecording ? '#f87171' : 'var(--border-light)'
-                }}
-                onClick={handleToggleMic}
-                disabled={isProcessingDictation}
-              >
-                <Mic size={13} />
-                <span>
-                  {isProcessingDictation ? 'KI übernimmt Diktat…' : isRecording ? t('dash_mic_running') : t('dash_mic_start')}
-                </span>
-              </button>
-
-              <button
-                type="button"
-                className="history-btn-small"
-                onClick={() => handleExport('docx')}
-                disabled={exporting !== null}
-                title="Als Word-Datei exportieren (speichert vorher)"
-              >
-                <FileDown size={13} />
-                <span>{exporting === 'docx' ? 'Export…' : 'Word'}</span>
-              </button>
-
-              <button
-                type="button"
-                className="history-btn-small"
-                onClick={() => handleExport('pdf')}
-                disabled={exporting !== null}
-                title="Als PDF exportieren (speichert vorher)"
-              >
-                <FileDown size={13} />
-                <span>{exporting === 'pdf' ? 'Export…' : 'PDF'}</span>
-              </button>
-
-              <button
-                type="button"
-                className="history-btn-small"
-                onClick={() => window.print()}
-                title={t('btn_print')}
-              >
-                <Printer size={13} />
-                <span>{t('btn_print')}</span>
-              </button>
-            </div>
-          </div>
-
-          {/* Reference Banner if a past entry was adopted */}
-          {referencedDoc && (
-            <div className="reference-banner">
-              <div className="reference-text">
-                ✓ <strong>{referencedDoc.title}</strong> ({referencedDoc.date})
-              </div>
-              <button
-                type="button"
-                onClick={() => setReferencedDoc(null)}
-                style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#1e40af' }}
-              >
-                <X size={14} />
-              </button>
-            </div>
-          )}
-
-          {/* Key Report Metadata */}
-          <div className="editor-row">
-            <div className="form-group">
-              <label className="form-label">{t('rep_form_report_nr')}</label>
-              <input
-                type="text"
-                className="form-input"
-                value={reportNumber}
-                onChange={(e) => setReportNumber(e.target.value)}
-              />
-            </div>
-
-            <div className="form-group">
-              <label className="form-label">{t('rep_form_date')}</label>
-              <input
-                type="text"
-                className="form-input"
-                value={reportDate}
-                onChange={(e) => setReportDate(e.target.value)}
-              />
-            </div>
-
-            <div className="form-group">
-              <label className="form-label" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '6px' }}>
-                <span>{t('rep_form_weather')}</span>
-                {/* Idee #2: Wetter automatisch (Backend folgt: GET /api/weather) */}
-                <button
-                  type="button"
-                  className="history-btn-small"
-                  style={{ padding: '1px 6px', fontSize: '10px' }}
-                  onClick={handleAutoWeather}
-                  disabled={isLoadingWeather}
-                  title="Wetter für Datum und Baustelle automatisch übernehmen"
-                >
-                  <CloudSun size={11} />
-                  <span>{isLoadingWeather ? '…' : 'Automatisch'}</span>
-                </button>
-              </label>
-              <input
-                type="text"
-                className="form-input"
-                value={weather}
-                onChange={(e) => setWeather(e.target.value)}
-              />
-            </div>
-
-            <div className="form-group">
-              <label className="form-label">Temperatur (°C)</label>
-              <input
-                type="number"
-                className="form-input"
-                step="0.5"
-                value={temperatureC}
-                placeholder="z. B. 7"
-                onChange={(e) => setTemperatureC(e.target.value)}
-              />
-            </div>
-
-            <div className="form-group">
-              <label className="form-label">{t('rep_form_workforce')}</label>
-              <input
-                type="number"
-                className="form-input"
-                value={workforceCount}
-                onChange={(e) => setWorkforceCount(Number(e.target.value))}
-                title={attendance.length > 0 ? 'Summe aus der Anwesenheit je Firma' : undefined}
-              />
-            </div>
-
-            <div className="form-group">
-              <label className="form-label">Bauleitung</label>
-              <input
-                type="text"
-                className="form-input"
-                value={siteManager}
-                placeholder={userName}
-                onChange={(e) => setSiteManager(e.target.value)}
-              />
-            </div>
-          </div>
-
-          {weatherHint && <ComingSoonNote endpoint="GET /api/weather?project_id=&date=">{weatherHint}</ComingSoonNote>}
-
-          {/* Anwesenheit je Firma (Backend: attendance) – Basis für den Sollstärken-Check gegen die Verträge */}
-          <div className="form-group">
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px', gap: '8px', flexWrap: 'wrap' }}>
-              <label className="form-label" style={{ margin: 0 }}>
-                Anwesenheit je Firma ({attendance.reduce((s, a) => s + (a.workers || 0), 0)} Personen)
-              </label>
-              <div style={{ display: 'flex', gap: '6px' }}>
-                {contracts.length > 0 && (
-                  <button
-                    type="button"
-                    className="history-btn-small"
-                    onClick={handleAttendanceFromContracts}
-                    title="Firmen aus den hinterlegten Verträgen übernehmen"
-                  >
-                    <Copy size={11} />
-                    <span>Firmen aus Verträgen</span>
-                  </button>
-                )}
-                <button
-                  type="button"
-                  className="history-btn-small"
-                  onClick={() => setAttendance([...attendance, { company: '', trade: '', workers: 0, hours: null }])}
-                >
-                  <Plus size={11} />
-                  <span>Firma</span>
-                </button>
-              </div>
-            </div>
-            {attendance.length === 0 ? (
-              <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
-                Noch keine Anwesenheit erfasst. Pro Firma eintragen, damit die Sollstärke laut Vertrag geprüft werden kann.
-              </div>
-            ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                {attendance.map((a, idx) => {
-                  const planned = plannedFor(a.company);
-                  const below = planned != null && a.workers < planned;
-                  return (
-                    <div key={idx} style={{ display: 'grid', gridTemplateColumns: '2fr 1.3fr 0.8fr 0.8fr auto', gap: '6px', alignItems: 'center' }}>
-                      <input
-                        className="form-input"
-                        placeholder="Firma"
-                        value={a.company ?? ''}
-                        onChange={(e) => updateAttendance(idx, { company: e.target.value })}
-                      />
-                      <input
-                        className="form-input"
-                        placeholder="Gewerk"
-                        value={a.trade ?? ''}
-                        onChange={(e) => updateAttendance(idx, { trade: e.target.value })}
-                      />
-                      <input
-                        className="form-input"
-                        type="number"
-                        min={0}
-                        title={planned != null ? `Sollstärke laut Vertrag: ${planned}` : 'Arbeitskräfte'}
-                        style={below ? { borderColor: '#f87171', backgroundColor: '#fef2f2' } : undefined}
-                        value={a.workers}
-                        onChange={(e) => updateAttendance(idx, { workers: Math.max(0, Number(e.target.value) || 0) })}
-                      />
-                      <input
-                        className="form-input"
-                        type="number"
-                        min={0}
-                        step="0.5"
-                        placeholder="Std."
-                        value={a.hours ?? ''}
-                        onChange={(e) => updateAttendance(idx, { hours: e.target.value === '' ? null : Number(e.target.value) })}
-                      />
-                      <button
-                        type="button"
-                        className="history-btn-small"
-                        style={{ color: '#dc2626' }}
-                        onClick={() => setAttendance(attendance.filter((_, i) => i !== idx))}
-                        title="Zeile entfernen"
-                      >
-                        <Trash2 size={11} />
-                      </button>
-                      {below && (
-                        <div style={{ gridColumn: '1 / -1', fontSize: '11px', color: '#b91c1c' }}>
-                          ⚠️ Unter Sollstärke laut Vertrag ({a.workers} von {planned})
-                        </div>
-                      )}
+                  {committedReport.attendance.length > 0 && (
+                    <div className="report-view-section">
+                      <div className="report-view-section-title">
+                        Anwesenheit je Firma ({committedReport.attendance.reduce((s, a) => s + (a.workers || 0), 0)} Personen)
+                      </div>
+                      <table className="report-view-table">
+                        <thead>
+                          <tr>
+                            <th>Firma</th>
+                            <th>Gewerk</th>
+                            <th>Arbeitskräfte</th>
+                            <th>Std.</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {committedReport.attendance.map((a, idx) => (
+                            <tr key={idx}>
+                              <td>{a.company || '—'}</td>
+                              <td>{a.trade || '—'}</td>
+                              <td>{a.workers}</td>
+                              <td>{a.hours != null ? `${a.hours} h` : '—'}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
                     </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
+                  )}
 
-          {/* Trades & Subcontractors Present */}
-          <div className="form-group">
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
-              <label className="form-label" style={{ margin: 0 }}>
-                {t('rep_form_trades')} ({trades.length})
-              </label>
-              {diaryHistory.length > 0 && (
-                <button
-                  type="button"
-                  className="history-btn-small"
-                  onClick={() => handleAdoptFromPastEntry(diaryHistory[0])}
-                  title={t('rep_btn_copy_from_last')}
-                >
-                  <Copy size={11} />
-                  <span>{t('rep_btn_copy_from_last')}</span>
-                </button>
+                  {committedReport.trades.length > 0 && (
+                    <div className="report-view-section">
+                      <div className="report-view-section-title">
+                        {t('rep_form_trades')} ({committedReport.trades.length})
+                      </div>
+                      <div className="trades-chips" style={{ marginTop: 0 }}>
+                        {committedReport.trades.map((trade) => (
+                          <span key={trade} className="trade-chip">
+                            {trade}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="report-view-section">
+                    <div className="report-view-section-title">{t('rep_form_progress')}</div>
+                    <div className="report-view-text">
+                      {committedReport.workCompleted.trim() || 'Keine Angaben zur Tagesleistung erfasst.'}
+                    </div>
+                  </div>
+
+                  {photos.length > 0 && (
+                    <div className="report-view-section">
+                      <div className="report-view-section-title">Baustellenfotos ({photos.length})</div>
+                      <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                        {photos.map((p) => (
+                          <img
+                            key={p.photoId ?? p.url}
+                            src={p.url}
+                            alt={p.fileName}
+                            style={{ width: '130px', height: '85px', objectFit: 'cover', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-light)' }}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="editor-footer">
+                    <button
+                      type="button"
+                      className="btn btn-secondary"
+                      onClick={handleAnalyzeDay}
+                      disabled={isAnalyzing}
+                    >
+                      <TrendingUp size={16} />
+                      <span>{isAnalyzing ? 'Analysiere…' : 'Tag analysieren'}</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      className="btn btn-primary"
+                      onClick={handleSaveReport}
+                    >
+                      <CheckCircle2 size={16} />
+                      <span>Änderungen speichern</span>
+                    </button>
+                  </div>
+                </>
               )}
             </div>
+          )}
 
-            <div className="trades-chips">
-              {trades.map((trade) => (
-                <span key={trade} className="trade-chip">
-                  <span>{trade}</span>
-                  <X size={12} className="trade-chip-remove" onClick={() => handleRemoveTrade(trade)} />
-                </span>
-              ))}
-            </div>
-
-            <div style={{ display: 'flex', gap: '8px', marginTop: '10px' }}>
-              <input
-                type="text"
-                className="form-input"
-                style={{ flex: 1 }}
-                placeholder="Gewerk..."
-                value={newTradeInput}
-                onChange={(e) => setNewTradeInput(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    e.preventDefault();
-                    handleAddTrade();
-                  }
-                }}
-              />
-              <button type="button" className="btn btn-secondary" onClick={handleAddTrade}>
-                <Plus size={14} />
-                <span>+</span>
-              </button>
-            </div>
-          </div>
-
-          {/* Idee #1: Foto → Tagebucheintrag (POST /api/photos) */}
-          <div className="form-group">
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-              <label className="form-label" style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '6px' }}>
-                Baustellenfotos ({photos.length})
-              </label>
-              <label className="history-btn-small" style={{ cursor: 'pointer' }}>
-                <Camera size={11} />
-                <span>Foto aufnehmen / hochladen</span>
-                <input
-                  type="file"
-                  accept="image/*"
-                  capture="environment"
-                  multiple
-                  style={{ display: 'none' }}
-                  onChange={(e) => {
-                    handlePhotosSelected(e.target.files);
-                    e.target.value = '';
-                  }}
-                />
-              </label>
-            </div>
-            {photos.length > 0 && (
-              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '8px' }}>
-                {photos.map((p, idx) => (
-                  <div
-                    key={p.photoId ?? p.url}
-                    style={{ width: '150px', border: '1px solid var(--border-light)', borderRadius: 'var(--radius-md)', overflow: 'hidden', fontSize: '11px', backgroundColor: 'white' }}
+          {/* TAB 2 (RIGHT): BEARBEITUNG */}
+          {activeReportTab === 'edit' && (
+            <>
+              {/* Reference Banner if a past entry was adopted */}
+              {referencedDoc && (
+                <div className="reference-banner">
+                  <div className="reference-text">
+                    ✓ <strong>{referencedDoc.title}</strong> ({referencedDoc.date})
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setReferencedDoc(null)}
+                    style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#1e40af' }}
                   >
-                    <img src={p.url} alt={p.fileName} style={{ width: '100%', height: '90px', objectFit: 'cover', display: 'block' }} />
-                    <div style={{ padding: '6px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                      {p.status === 'analyzing' && <span>KI analysiert…</span>}
-                      {p.status === 'done' && p.result && (
-                        <>
-                          <span><strong>{p.result.caption}</strong></span>
-                          {p.result.issues.length > 0 && <span style={{ color: '#b91c1c' }}>⚠️ {p.result.issues.join(', ')}</span>}
-                        </>
-                      )}
-                      {p.status === 'unavailable' && <span style={{ color: '#92400e' }}>Fotoanalyse folgt (Backend)</span>}
-                      {p.status === 'error' && <span style={{ color: '#b91c1c' }}>{p.error}</span>}
+                    <X size={14} />
+                  </button>
+                </div>
+              )}
+
+              {/* Key Report Metadata */}
+              <div className="editor-row">
+                <div className="form-group">
+                  <label className="form-label">{t('rep_form_report_nr')}</label>
+                  <input
+                    type="text"
+                    className="form-input"
+                    value={reportNumber}
+                    onChange={(e) => setReportNumber(e.target.value)}
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">{t('rep_form_date')}</label>
+                  <input
+                    type="text"
+                    className="form-input"
+                    value={reportDate}
+                    onChange={(e) => setReportDate(e.target.value)}
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                    <span>{t('rep_form_weather')}</span>
+                    {/* Idee #2: Wetter automatisch (Backend folgt: GET /api/weather) */}
+                    <button
+                      type="button"
+                      className="history-btn-small"
+                      style={{ padding: '2px 7px', fontSize: '10px' }}
+                      onClick={handleAutoWeather}
+                      disabled={isLoadingWeather}
+                      title="Wetter für Datum und Baustelle automatisch übernehmen"
+                    >
+                      <CloudSun size={11} />
+                      <span>{isLoadingWeather ? '…' : 'Automatisch'}</span>
+                    </button>
+                  </label>
+                  <input
+                    type="text"
+                    className="form-input"
+                    value={weather}
+                    onChange={(e) => setWeather(e.target.value)}
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">Temperatur (°C)</label>
+                  <input
+                    type="number"
+                    className="form-input"
+                    step="0.5"
+                    value={temperatureC}
+                    placeholder="z. B. 7"
+                    onChange={(e) => setTemperatureC(e.target.value)}
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">{t('rep_form_workforce')}</label>
+                  <input
+                    type="number"
+                    className="form-input"
+                    value={workforceCount}
+                    onChange={(e) => setWorkforceCount(Number(e.target.value))}
+                    title={attendance.length > 0 ? 'Summe aus der Anwesenheit je Firma' : undefined}
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">Bauleitung</label>
+                  <input
+                    type="text"
+                    className="form-input"
+                    value={siteManager}
+                    placeholder={userName}
+                    onChange={(e) => setSiteManager(e.target.value)}
+                  />
+                </div>
+              </div>
+
+              {weatherHint && <ComingSoonNote endpoint="GET /api/weather?project_id=&date=">{weatherHint}</ComingSoonNote>}
+
+              {/* Anwesenheit je Firma (Backend: attendance) – Basis für den Sollstärken-Check gegen die Verträge */}
+              <div className="form-group">
+                <div className="section-header-row">
+                  <label className="form-label" style={{ margin: 0 }}>
+                    Anwesenheit je Firma ({attendance.reduce((s, a) => s + (a.workers || 0), 0)} Personen)
+                  </label>
+                  <div className="section-header-actions">
+                    {contracts.length > 0 && (
                       <button
                         type="button"
                         className="history-btn-small"
-                        style={{ alignSelf: 'flex-start', color: '#dc2626' }}
-                        onClick={() => removePhoto(idx)}
+                        onClick={handleAttendanceFromContracts}
+                        title="Firmen aus den hinterlegten Verträgen übernehmen"
                       >
-                        <Trash2 size={10} />
+                        <Copy size={11} />
+                        <span>Firmen aus Verträgen</span>
                       </button>
-                    </div>
+                    )}
+                    <button
+                      type="button"
+                      className="history-btn-small"
+                      onClick={() => setAttendance([...attendance, { company: '', trade: '', workers: 0, hours: null }])}
+                    >
+                      <Plus size={11} />
+                      <span>Firma</span>
+                    </button>
                   </div>
-                ))}
+                </div>
+                {attendance.length === 0 ? (
+                  <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+                    Noch keine Anwesenheit erfasst. Pro Firma eintragen, damit die Sollstärke laut Vertrag geprüft werden kann.
+                  </div>
+                ) : (
+                  <div className="attendance-list">
+                    {attendance.map((a, idx) => {
+                      const planned = plannedFor(a.company);
+                      const below = planned != null && a.workers < planned;
+                      return (
+                        <div key={idx} className="attendance-row">
+                          <input
+                            className="form-input"
+                            placeholder="Firma"
+                            value={a.company ?? ''}
+                            onChange={(e) => updateAttendance(idx, { company: e.target.value })}
+                          />
+                          <input
+                            className="form-input"
+                            placeholder="Gewerk"
+                            value={a.trade ?? ''}
+                            onChange={(e) => updateAttendance(idx, { trade: e.target.value })}
+                          />
+                          <input
+                            className="form-input"
+                            type="number"
+                            min={0}
+                            title={planned != null ? `Sollstärke laut Vertrag: ${planned}` : 'Arbeitskräfte'}
+                            style={below ? { borderColor: '#f87171', backgroundColor: '#fef2f2' } : undefined}
+                            value={a.workers}
+                            onChange={(e) => updateAttendance(idx, { workers: Math.max(0, Number(e.target.value) || 0) })}
+                          />
+                          <input
+                            className="form-input"
+                            type="number"
+                            min={0}
+                            step="0.5"
+                            placeholder="Std."
+                            value={a.hours ?? ''}
+                            onChange={(e) => updateAttendance(idx, { hours: e.target.value === '' ? null : Number(e.target.value) })}
+                          />
+                          <button
+                            type="button"
+                            className="history-btn-small danger-tint"
+                            onClick={() => setAttendance(attendance.filter((_, i) => i !== idx))}
+                            title="Zeile entfernen"
+                          >
+                            <Trash2 size={12} />
+                          </button>
+                          {below && (
+                            <div style={{ gridColumn: '1 / -1', fontSize: '11px', color: '#b91c1c' }}>
+                              Hinweis: Unter Sollstärke laut Vertrag ({a.workers} von {planned})
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
-            )}
-          </div>
 
-          {/* Progress / Work Done */}
-          <div className="form-group">
-            <label className="form-label">{t('rep_form_progress')}</label>
-            <textarea
-              className="form-textarea"
-              rows={4}
-              value={progressText}
-              onChange={(e) => setProgressText(e.target.value)}
-              placeholder="Arbeiten..."
-            />
-          </div>
+              {/* Trades & Subcontractors Present */}
+              <div className="form-group">
+                <div className="section-header-row">
+                  <label className="form-label" style={{ margin: 0 }}>
+                    {t('rep_form_trades')} ({trades.length})
+                  </label>
+                  {diaryHistory.length > 0 && (
+                    <button
+                      type="button"
+                      className="history-btn-small"
+                      onClick={() => handleAdoptFromPastEntry(diaryHistory[0])}
+                      title={t('rep_btn_copy_from_last')}
+                    >
+                      <Copy size={11} />
+                      <span>{t('rep_btn_copy_from_last')}</span>
+                    </button>
+                  )}
+                </div>
 
-          {/* Hindrances, Delays & VOB Alerts */}
-          <div className="hindrance-card">
-            <div className="hindrance-card-header">
-              <AlertTriangle size={18} />
-              <span>{t('rep_form_hindrance')}</span>
-            </div>
-            <textarea
-              className="form-textarea"
-              style={{ backgroundColor: 'white', borderColor: '#fde68a' }}
-              rows={3}
-              value={hindranceText}
-              onChange={(e) => setHindranceText(e.target.value)}
-              placeholder="Behinderungen..."
-            />
-            {hindranceText.trim() && (
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
+                <div className="trades-chips">
+                  {trades.map((trade) => (
+                    <span key={trade} className="trade-chip">
+                      <span>{trade}</span>
+                      <X size={12} className="trade-chip-remove" onClick={() => handleRemoveTrade(trade)} />
+                    </span>
+                  ))}
+                </div>
+
+                <div className="trade-add-row">
+                  <input
+                    type="text"
+                    className="form-input"
+                    placeholder="Gewerk..."
+                    value={newTradeInput}
+                    onChange={(e) => setNewTradeInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        handleAddTrade();
+                      }
+                    }}
+                  />
+                  <button type="button" className="btn btn-secondary" onClick={handleAddTrade} title="Gewerk hinzufügen">
+                    <Plus size={15} />
+                    <span>Hinzufügen</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Idee #1: Foto → Tagebucheintrag (POST /api/photos) */}
+              <div className="form-group">
+                <div className="section-header-row">
+                  <label className="form-label" style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                    Baustellenfotos ({photos.length})
+                  </label>
+                  <label className="history-btn-small" style={{ cursor: 'pointer' }}>
+                    <Camera size={12} />
+                    <span>Foto aufnehmen / hochladen</span>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      capture="environment"
+                      multiple
+                      style={{ display: 'none' }}
+                      onChange={(e) => {
+                        handlePhotosSelected(e.target.files);
+                        e.target.value = '';
+                      }}
+                    />
+                  </label>
+                </div>
+                {photos.length > 0 && (
+                  <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '8px' }}>
+                    {photos.map((p, idx) => (
+                      <div
+                        key={p.photoId ?? p.url}
+                        style={{ width: '150px', border: '1px solid var(--border-light)', borderRadius: 'var(--radius-md)', overflow: 'hidden', fontSize: '11px', backgroundColor: 'var(--bg-surface)' }}
+                      >
+                        <img src={p.url} alt={p.fileName} style={{ width: '100%', height: '90px', objectFit: 'cover', display: 'block' }} />
+                        <div style={{ padding: '6px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                          {p.status === 'analyzing' && <span>KI analysiert…</span>}
+                          {p.status === 'done' && p.result && (
+                            <>
+                              <span><strong>{p.result.caption}</strong></span>
+                              {p.result.issues.length > 0 && <span style={{ color: '#b91c1c' }}>Mängel: {p.result.issues.join(', ')}</span>}
+                            </>
+                          )}
+                          {p.status === 'unavailable' && <span style={{ color: '#92400e' }}>Fotoanalyse folgt (Backend)</span>}
+                          {p.status === 'error' && <span style={{ color: '#b91c1c' }}>{p.error}</span>}
+                          <button
+                            type="button"
+                            className="history-btn-small danger-tint"
+                            style={{ alignSelf: 'flex-start' }}
+                            onClick={() => removePhoto(idx)}
+                          >
+                            <Trash2 size={10} />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Progress / Work Done */}
+              <div className="form-group">
+                <label className="form-label">{t('rep_form_progress')}</label>
+                <textarea
+                  className="form-textarea"
+                  rows={4}
+                  value={progressText}
+                  onChange={(e) => setProgressText(e.target.value)}
+                  placeholder="Arbeiten..."
+                />
+              </div>
+
+              {/* Save & Action Footer */}
+              <div className="editor-footer">
                 <button
                   type="button"
-                  className="btn btn-primary"
-                  style={{ fontSize: '12px', padding: '6px 12px', backgroundColor: '#b45309' }}
-                  onClick={() => navigate('/drafts', { state: { type: 'delay', keywords: hindranceText.trim() } })}
+                  className="btn btn-secondary"
+                  onClick={() => {
+                    setProgressText('');
+                    setReferencedDoc(null);
+                  }}
                 >
-                  <Mail size={14} />
-                  <span>{t('rep_btn_create_vob_from_hindrance')}</span>
+                  {t('btn_clear')}
                 </button>
+
+                <div className="editor-footer-actions">
+                  <label
+                    className={`finalize-checkbox-chip ${isFinalized ? 'active' : ''}`}
+                    title="Abgeschlossene Berichte werden ohne ENTWURF-Wasserzeichen exportiert"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={isFinalized}
+                      onChange={(e) => setIsFinalized(e.target.checked)}
+                    />
+                    <span>Bericht abschließen</span>
+                  </label>
+
+                  <button
+                    type="button"
+                    className="btn btn-secondary"
+                    onClick={handleAnalyzeDay}
+                    disabled={isAnalyzing}
+                    title="Was lief heute gut, was lief schlecht? (speichert vorher)"
+                  >
+                    <TrendingUp size={16} />
+                    <span>{isAnalyzing ? 'Analysiere…' : 'Tag analysieren'}</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    className="btn btn-primary"
+                    onClick={handleSaveReport}
+                  >
+                    <CheckCircle2 size={16} />
+                    <span>Änderungen speichern</span>
+                  </button>
+                </div>
               </div>
-            )}
-          </div>
-
-          {/* Deliveries & Inspections */}
-          <div className="form-group">
-            <label className="form-label">{t('rep_form_deliveries')}</label>
-            <textarea
-              className="form-textarea"
-              rows={2}
-              value={deliveriesText}
-              onChange={(e) => setDeliveriesText(e.target.value)}
-              placeholder="Lieferungen..."
-            />
-          </div>
-
-          {/* Save & Action Footer */}
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: '10px', borderTop: '1px solid var(--border-light)' }}>
-            <button
-              type="button"
-              className="btn btn-secondary"
-              onClick={() => {
-                setProgressText('');
-                setHindranceText('');
-                setDeliveriesText('');
-                setReferencedDoc(null);
-              }}
-            >
-              {t('btn_clear')}
-            </button>
-
-            <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
-              <label
-                style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: 'var(--color-slate-700)', cursor: 'pointer' }}
-                title="Abgeschlossene Berichte werden ohne ENTWURF-Wasserzeichen exportiert"
-              >
-                <input
-                  type="checkbox"
-                  checked={isFinalized}
-                  onChange={(e) => setIsFinalized(e.target.checked)}
-                  style={{ accentColor: 'var(--color-primary)' }}
-                />
-                <span>Bericht abschließen</span>
-              </label>
-
-              <button
-                type="button"
-                className="btn btn-secondary"
-                onClick={handleAnalyzeDay}
-                disabled={isAnalyzing}
-                title="Was lief heute gut, was lief schlecht? (speichert vorher)"
-              >
-                <TrendingUp size={16} />
-                <span>{isAnalyzing ? 'Analysiere…' : 'Tag analysieren'}</span>
-              </button>
-
-              <button
-                type="button"
-                className="btn btn-secondary"
-                onClick={() => navigate('/summary')}
-              >
-                <Sparkles size={16} />
-                <span>{t('nav_summary')}</span>
-              </button>
-
-              <button
-                type="button"
-                className="btn btn-primary"
-                onClick={handleSaveReport}
-              >
-                <CheckCircle2 size={16} />
-                <span>{t('rep_btn_save_report')}</span>
-              </button>
-            </div>
-          </div>
+            </>
+          )}
 
           {/* Tagesanalyse (GET /api/reports/{date}/analysis) */}
           {dayAnalysis && (
@@ -1268,13 +1450,19 @@ export const DailyReports: React.FC = () => {
 
               <div style={{ fontSize: '12px', color: 'var(--color-slate-600)', display: 'flex', gap: '14px', flexWrap: 'wrap' }}>
                 {dayAnalysis.stats.workers != null && (
-                  <span>
-                    👷 {dayAnalysis.stats.workers} Personen
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                    <Users size={12} />
+                    {dayAnalysis.stats.workers} Personen
                     {dayAnalysis.stats.plannedWorkers != null ? ` (Soll ${dayAnalysis.stats.plannedWorkers})` : ''}
                   </span>
                 )}
-                {dayAnalysis.stats.hours != null && <span>⏱ {dayAnalysis.stats.hours} Std.</span>}
-                {dayAnalysis.stats.weather && <span>🌤 {dayAnalysis.stats.weather}</span>}
+                {dayAnalysis.stats.hours != null && <span>{dayAnalysis.stats.hours} Std.</span>}
+                {dayAnalysis.stats.weather && (
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                    <CloudSun size={12} />
+                    {dayAnalysis.stats.weather}
+                  </span>
+                )}
               </div>
 
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '10px' }}>
@@ -1313,7 +1501,7 @@ export const DailyReports: React.FC = () => {
                   style={{ fontSize: '12px', backgroundColor: '#fef2f2', border: '1px solid #fecaca', borderRadius: 'var(--radius-md)', padding: '8px 10px' }}
                 >
                   <strong>
-                    👷 {gap.company || gap.trade || gap.contractTitle}: {gap.actual} statt {gap.planned} Personen (−{gap.shortfallPercent} %)
+                    {gap.company || gap.trade || gap.contractTitle}: {gap.actual} statt {gap.planned} Personen (−{gap.shortfallPercent} %)
                   </strong>
                   {gap.consecutiveDays > 1 && <span> • seit {gap.consecutiveDays} Tagen</span>}
                   <div style={{ color: 'var(--color-slate-500)', marginTop: '2px' }}>
@@ -1350,12 +1538,12 @@ export const DailyReports: React.FC = () => {
                   style={{ fontSize: '12px', backgroundColor: '#fffbeb', border: '1px solid #fde68a', borderRadius: 'var(--radius-md)', padding: '8px 10px' }}
                 >
                   <strong>{dev.title}</strong> — {dev.cause} <em>({dev.vobReference})</em>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '4px', gap: '8px' }}>
-                    <span style={{ color: '#92400e' }}>💡 {dev.suggestedAction}</span>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', marginTop: '6px', gap: '8px' }}>
+                    <span style={{ color: '#92400e', flex: '1 1 220px' }}>Empfehlung: {dev.suggestedAction}</span>
                     <button
                       type="button"
                       className="btn btn-primary"
-                      style={{ fontSize: '11px', padding: '4px 10px', backgroundColor: '#b45309', whiteSpace: 'nowrap' }}
+                      style={{ fontSize: '11px', padding: '5px 10px', backgroundColor: '#b45309', whiteSpace: 'nowrap' }}
                       onClick={() =>
                         navigate('/drafts', {
                           state: { type: dev.draftType, keywords: `${dev.title}. Ursache: ${dev.cause}. Auswirkung: ${dev.impact} (Quelle: ${dev.sourceReport})` }
@@ -1371,286 +1559,8 @@ export const DailyReports: React.FC = () => {
             </div>
           )}
         </div>
+        </div>
       </div>
-
-      {/* Modal: Full View & Associated Summary of a Previous Diary Entry */}
-      {selectedPastDoc && (() => {
-        const docSummary = getDocumentSummary(selectedPastDoc);
-        return (
-          <div className="modal-overlay" onClick={() => setSelectedPastDoc(null)}>
-            <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '780px' }}>
-              <div className="modal-header">
-                <div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <span className="badge badge-info" style={{ fontSize: '11px' }}>
-                      {modalTab === 'summary' ? 'KI-Zusammenfassung' : 'Originalbericht'}
-                    </span>
-                    <h3 style={{ margin: 0, fontSize: '17px', color: 'var(--color-slate-900)' }}>
-                      {selectedPastDoc.title}
-                    </h3>
-                  </div>
-                  <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '4px' }}>
-                    Erstellt am <strong>{selectedPastDoc.date}</strong> von <strong>{selectedPastDoc.authorOrSender}</strong> • Bauprojekt: {activeProject.name}
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setSelectedPastDoc(null)}
-                  style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}
-                  title="Schließen"
-                >
-                  <X size={20} />
-                </button>
-              </div>
-
-              {/* Modal Tabs */}
-              <div className="modal-tabs">
-                <button
-                  type="button"
-                  className={`modal-tab-btn ${modalTab === 'summary' ? 'active' : ''}`}
-                  onClick={() => setModalTab('summary')}
-                >
-                  <Sparkles size={14} />
-                  <span>{t('rep_modal_tab_summary')}</span>
-                </button>
-
-                <button
-                  type="button"
-                  className={`modal-tab-btn ${modalTab === 'raw' ? 'active' : ''}`}
-                  onClick={() => setModalTab('raw')}
-                >
-                  <FileText size={14} />
-                  <span>{t('rep_modal_tab_raw')}</span>
-                </button>
-              </div>
-
-              {/* TAB 1: STRUCTURED SUMMARY FOR THIS DAY */}
-              {modalTab === 'summary' && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-                  {/* Executive Summary */}
-                  <div className="summary-block">
-                    <span className="summary-block-title">
-                      <Sparkles size={16} color="var(--color-primary)" />
-                      <span>{t('rep_modal_exec_title')}</span>
-                    </span>
-                    <ul className="summary-block-list">
-                      {docSummary.executiveSummary.map((item, idx) => (
-                        <li key={idx}>{item}</li>
-                      ))}
-                    </ul>
-                  </div>
-
-                  {/* Key Decisions */}
-                  {docSummary.keyDecisions && docSummary.keyDecisions.length > 0 && (
-                    <div className="summary-block">
-                      <span className="summary-block-title">
-                        <CheckCircle2 size={16} color="#16a34a" />
-                        <span>{t('rep_modal_decisions_title')}</span>
-                      </span>
-                      <ul className="summary-block-list">
-                        {docSummary.keyDecisions.map((item, idx) => (
-                          <li key={idx}>{item}</li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
-
-                  {/* Action Items */}
-                  {docSummary.actionItems && docSummary.actionItems.length > 0 && (
-                    <div className="summary-block">
-                      <span className="summary-block-title">
-                        <ListTodo size={16} color="#2563eb" />
-                        <span>{t('rep_modal_actions_title')} ({docSummary.actionItems.length})</span>
-                      </span>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                        {docSummary.actionItems.map((act) => (
-                          <div
-                            key={act.id}
-                            style={{
-                              backgroundColor: 'white',
-                              border: '1px solid var(--border-light)',
-                              borderRadius: 'var(--radius-sm)',
-                              padding: '8px 12px',
-                              display: 'flex',
-                              justifyContent: 'space-between',
-                              alignItems: 'center',
-                              fontSize: '12px',
-                              gap: '8px'
-                            }}
-                          >
-                            <div>
-                              <strong style={{ color: act.done ? 'var(--text-muted)' : 'var(--color-slate-900)' }}>
-                                {act.task}
-                              </strong>
-                              <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px' }}>
-                                {act.responsible} • {act.deadline}
-                              </div>
-                            </div>
-                            <span
-                              className={`badge ${
-                                act.priority === 'Hoch'
-                                  ? 'badge-danger'
-                                  : act.priority === 'Mittel'
-                                  ? 'badge-warning'
-                                  : 'badge-info'
-                              }`}
-                              style={{ fontSize: '10px' }}
-                            >
-                              {act.priority}
-                            </span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* VOB Risks */}
-                  {docSummary.vobRisks && docSummary.vobRisks.length > 0 && (
-                    <div
-                      style={{
-                        backgroundColor: '#fffbeb',
-                        border: '1px solid #fde68a',
-                        borderRadius: 'var(--radius-md)',
-                        padding: '12px 14px',
-                        display: 'flex',
-                        flexDirection: 'column',
-                        gap: '6px'
-                      }}
-                    >
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#92400e', fontWeight: 700, fontSize: '13px' }}>
-                        <AlertTriangle size={16} />
-                        <span>{t('rep_modal_risks_title')}</span>
-                      </div>
-                      {docSummary.vobRisks.map((risk, idx) => (
-                        <div key={idx} style={{ fontSize: '12px', color: '#78350f', lineHeight: 1.4 }}>
-                          <strong>{risk.title}:</strong> {risk.description}
-                          <div style={{ marginTop: '4px', fontStyle: 'italic', color: '#92400e' }}>
-                            💡 {risk.recommendation}
-                          </div>
-                        </div>
-                      ))}
-                      <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '6px' }}>
-                        <button
-                          type="button"
-                          className="btn btn-primary"
-                          style={{ fontSize: '11px', padding: '4px 10px', backgroundColor: '#b45309' }}
-                          onClick={() => navigate('/drafts', { state: { type: docSummary.vobRisks[0].linkType ?? 'delay', keywords: `${docSummary.vobRisks[0].title}. ${docSummary.vobRisks[0].description}` } })}
-                        >
-                          <Mail size={12} />
-                          <span>{t('drafts_btn_generate')}</span>
-                        </button>
-                      </div>
-                    </div>
-                  )}
-
-                  <div style={{ fontSize: '11px', color: 'var(--text-muted)', fontStyle: 'italic' }}>
-                    🔍 {docSummary.traceabilityNotes}
-                  </div>
-                </div>
-              )}
-
-              {/* TAB 2: ORIGINAL RAW REPORT TEXT */}
-              {modalTab === 'raw' && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-                  <div style={{ display: 'flex', gap: '16px', fontSize: '13px', backgroundColor: 'var(--color-slate-50)', padding: '10px 14px', borderRadius: 'var(--radius-md)' }}>
-                    {selectedPastDoc.weather && (
-                      <div>
-                        <strong>Wetter:</strong> {selectedPastDoc.weather}
-                      </div>
-                    )}
-                    {selectedPastDoc.workforceCount && (
-                      <div>
-                        <strong>Fachkräfte:</strong> {selectedPastDoc.workforceCount}
-                      </div>
-                    )}
-                  </div>
-
-                  {selectedPastDoc.trades && selectedPastDoc.trades.length > 0 && (
-                    <div>
-                      <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--color-slate-700)', marginBottom: '4px' }}>
-                        Anwesende Gewerke:
-                      </div>
-                      <div className="trades-chips">
-                        {selectedPastDoc.trades.map((t) => (
-                          <span key={t} className="trade-chip">
-                            {t}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  <div>
-                    <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--color-slate-700)', marginBottom: '4px' }}>
-                      Vollständiger Berichtstext:
-                    </div>
-                    <pre
-                      style={{
-                        backgroundColor: 'var(--color-slate-900)',
-                        color: 'var(--color-slate-100)',
-                        padding: '14px',
-                        borderRadius: 'var(--radius-md)',
-                        fontSize: '12px',
-                        lineHeight: '1.6',
-                        whiteSpace: 'pre-wrap',
-                        fontFamily: 'monospace',
-                        maxHeight: '260px',
-                        overflowY: 'auto'
-                      }}
-                    >
-                      {selectedPastDoc.content}
-                    </pre>
-                  </div>
-
-                  {selectedPastDoc.hindrance && (
-                    <div className="history-item-hindrance" style={{ padding: '8px 12px' }}>
-                      <strong>VOB-Relevante Behinderung:</strong>
-                      <div>{selectedPastDoc.hindrance}</div>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* Modal Footer Actions */}
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '10px', paddingTop: '10px', borderTop: '1px solid var(--border-light)', flexWrap: 'wrap', gap: '10px' }}>
-                <button
-                  type="button"
-                  className="btn btn-secondary"
-                  onClick={() => {
-                    handleAdoptFromPastEntry(selectedPastDoc);
-                    setSelectedPastDoc(null);
-                  }}
-                >
-                  <Copy size={14} />
-                  <span>{t('rep_btn_adopt_trades')}</span>
-                </button>
-
-                <div style={{ display: 'flex', gap: '8px' }}>
-                  <button
-                    type="button"
-                    className="btn btn-secondary"
-                    onClick={() => {
-                      setSelectedPastDoc(null);
-                      navigate('/summary');
-                    }}
-                  >
-                    <BookOpen size={14} />
-                    <span>{t('rep_modal_btn_open_summary')}</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    className="btn btn-primary"
-                    onClick={() => setSelectedPastDoc(null)}
-                  >
-                    <span>{t('btn_close')}</span>
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        );
-      })()}
     </div>
   );
 };

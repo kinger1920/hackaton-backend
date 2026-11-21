@@ -86,7 +86,7 @@ export const ProjectAssistant: React.FC = () => {
                         <div key={idx} className={`chat-bubble ${m.role}`}>
                             {m.text}
                             {m.sources && m.sources.length > 0 && (
-                                <div className="chat-sources">🔍 Quellen: {m.sources.join(' • ')}</div>
+                                <div className="chat-sources">Quellen: {m.sources.join(' • ')}</div>
                             )}
                         </div>
                     ))}

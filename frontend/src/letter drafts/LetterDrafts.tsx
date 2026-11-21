@@ -28,11 +28,13 @@ import {
     Lock,
     CloudOff,
     Cloud,
-    X
+    X,
+    Mail
 } from 'lucide-react';
 import {useProjects, Project, Contractor} from '../context/ProjectContext';
 import {useLanguage} from '../context/LanguageContext';
 import {api, saveBlob, Company, Contract, DraftNavState, NoticeOut} from '../services/api';
+import {UserProfile, loadProfile, senderCompany, senderLine, signatureBlock} from '../profile/profileStore';
 import DispatchPanel from '../components/DispatchPanel';
 import '@frontend/src/index.css';
 import './LetterDrafts.css';
@@ -262,9 +264,7 @@ interface BuildContext {
     details: Details;
     contractor: Contractor | null;
     recipientIsContractor: boolean;
-    senderName: string;
-    senderRole: string;
-    companyName: string;
+    signature: string;   // closing + signature block from the profile
 }
 
 const staffingSentence = (contractor: Contractor, d: Details) => {
@@ -284,7 +284,7 @@ const buildLetter = (ctx: BuildContext): {subject: string; body: string} => {
     const {type, project, details: d, contractor, recipientIsContractor} = ctx;
     const today = new Date().toLocaleDateString('de-DE');
     const bv = `im Bauvorhaben "${project.name}" (Projekt-Nr. ${project.number})`;
-    const signature = `Mit freundlichen Grüßen\n\n${ctx.senderName}\n${ctx.senderRole} · ${ctx.companyName}`;
+    const signature = ctx.signature;
     const extra = d.extra.trim() ? `\n\nErgänzend weisen wir auf Folgendes hin:\n${d.extra.trim()}` : '';
     const area = d.area.trim();
     const desc = d.description.trim();
@@ -465,9 +465,7 @@ const toNoticeFields = (
    ========================================================================== */
 
 interface ExportData {
-    companyName: string;
-    senderName: string;
-    senderRole: string;
+    senderLine: string;  // company · address (one line above the recipient)
     recipientName: string;
     recipientAddress: string;
     projectName: string;
@@ -496,7 +494,7 @@ h1 { font-size: 12pt; margin: 0 0 14pt 0; }
 </head>
 <body>
 <p class="draft">ENTWURF – vor Versand prüfen</p>
-<div class="sender">${escapeHtml(data.companyName)} · ${escapeHtml(data.senderName)}, ${escapeHtml(data.senderRole)}</div>
+<div class="sender">${escapeHtml(data.senderLine)}</div>
 <div class="recipient"><strong>${escapeHtml(data.recipientName)}</strong><br/>${escapeHtml(data.recipientAddress).replace(/\n/g, '<br/>')}</div>
 <div class="meta">Bauvorhaben: ${escapeHtml(data.projectName)} (${escapeHtml(data.projectNumber)})<br/>Datum: ${escapeHtml(data.date)}</div>
 <h1>${escapeHtml(data.subject)}</h1>
@@ -523,20 +521,20 @@ export const LetterDrafts: React.FC = () => {
     const navigate = useNavigate();
     const navState = (location.state as DraftNavState | null) ?? null;
 
-    const senderName = localStorage.getItem('userName') || 'Max Mustermann';
-    const userProfile = (() => {
-        try {
-            return JSON.parse(localStorage.getItem('userProfile') || '');
-        } catch {
-            return null;
-        }
-    })();
-    const companyName: string = userProfile?.company || 'Baupartner AG & Co. KG';
-    const senderRole: string = userProfile?.role || t('role_site_manager');
-
     // --- master data from the backend (Stammdaten) ---
     const [companies, setCompanies] = useState<Company[]>([]);
     const [contracts, setContracts] = useState<Contract[]>([]);
+
+    // --- sender: site manager profile ("Mein Profil") + own company from Stammdaten ---
+    const [profile, setProfile] = useState<UserProfile>(loadProfile);
+    useEffect(() => {
+        const onUpdate = () => setProfile(loadProfile());
+        window.addEventListener('profile-updated', onUpdate);
+        return () => window.removeEventListener('profile-updated', onUpdate);
+    }, []);
+    const sender = senderCompany(profile, companies);
+    const signature = signatureBlock(profile, sender.name);
+    const senderLineText = senderLine(profile, sender);
 
     // Companies on site: project list + contracts (Sollstärke) from Stammdaten, without duplicates
     const contractors: Contractor[] = useMemo(() => {
@@ -634,11 +632,9 @@ export const LetterDrafts: React.FC = () => {
                 details,
                 contractor: selectedContractor,
                 recipientIsContractor,
-                senderName,
-                senderRole,
-                companyName
+                signature
             }),
-        [selectedType, activeProject, details, selectedContractor, recipientIsContractor, senderName, senderRole, companyName]
+        [selectedType, activeProject, details, selectedContractor, recipientIsContractor, signature]
     );
 
     // Live update of the letter while it hasn't been edited by hand
@@ -975,9 +971,7 @@ export const LetterDrafts: React.FC = () => {
     /* ---------------- export ---------------- */
 
     const currentExportData = (): ExportData => ({
-        companyName,
-        senderName,
-        senderRole,
+        senderLine: senderLineText,
         recipientName,
         recipientAddress,
         projectName: activeProject.name,
@@ -1059,9 +1053,7 @@ export const LetterDrafts: React.FC = () => {
             }
         }
         exportWordLocal({
-            companyName,
-            senderName,
-            senderRole,
+            senderLine: senderLineText,
             recipientName: l.recipientName,
             recipientAddress: l.recipientAddress,
             projectName: l.project,
@@ -1182,6 +1174,8 @@ export const LetterDrafts: React.FC = () => {
 
     // VOB reminders: project rules + rules of the recipient / affected company from Stammdaten
     const vobNotes: string[] = [];
+    // own company's rules (Stammdaten "Eigenes Unternehmen", chosen in Mein Profil)
+    if (sender.vobRules) vobNotes.push(`${sender.name}: ${sender.vobRules}`);
     if (activeProject.vob_notes?.trim()) vobNotes.push(activeProject.vob_notes.trim());
     for (const name of new Set([recipientName, selectedContractor?.name].filter(Boolean) as string[])) {
         const company = companies.find((co) => sameName(co.name, name));
@@ -1196,9 +1190,12 @@ export const LetterDrafts: React.FC = () => {
         <div className="drafts-container">
             {/* Header */}
             <div className="drafts-header">
-                <div>
-                    <h1>{t('ld_title')}</h1>
-                    <p>{t('ld_sub')}</p>
+                <div className="tp-title-group">
+                    <div className="tp-title-icon"><Mail size={22}/></div>
+                    <div>
+                        <h1>{t('ld_title')}</h1>
+                        <p>{t('ld_sub')}</p>
+                    </div>
                 </div>
 
                 {toast && (
@@ -1585,7 +1582,7 @@ export const LetterDrafts: React.FC = () => {
                             </span>
 
                             <div className="ld-sender-line">
-                                {companyName} · {senderName}, {senderRole}
+                                {senderLineText}
                             </div>
 
                             <div className="ld-letter-head">

@@ -151,7 +151,7 @@ button {
 .input-field:focus {
     border-color: var(--color-primary);
     box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
-    background-color: #ffffff;
+    background-color: var(--bg-surface);
 }
 
 .form-textarea {
