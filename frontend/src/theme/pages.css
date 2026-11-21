@@ -24,8 +24,6 @@
 :root .masterdata-header h1,
 :root .idea-title-group h1,
 :root .reports-title,
-:root .analysis-title,
-:root .termin-title,
 :root .capture-hero-title {
     margin: 0 0 4px 0;
     font-size: 24px;
@@ -37,8 +35,6 @@
 
 /* yellow underline (h1s get it from theme.css; these titles are not always h1) */
 :root .reports-title::after,
-:root .analysis-title::after,
-:root .termin-title::after,
 :root .capture-hero-title::after {
     content: '';
     display: block;
@@ -55,8 +51,6 @@
 :root .masterdata-header p,
 :root .idea-title-group p,
 :root .reports-subtitle,
-:root .analysis-sub,
-:root .termin-sub,
 :root .capture-hero-sub {
     margin-top: 6px;
     font-size: 14px;
@@ -68,8 +62,6 @@
    2. Page headers: plain on the page background (like Briefentwürfe), no box
    -------------------------------------------------------------------------- */
 :root .reports-header-card,
-:root .analysis-header-card,
-:root .termin-header,
 :root .capture-hero,
 :root .welcome-hero,
 :root .profile-hero-card {
@@ -85,8 +77,6 @@
 /* no icon next to the page title (Briefentwürfe has none either) */
 :root .capture-hero-icon,
 :root .reports-icon-badge,
-:root .termin-header-icon,
-:root .analysis-icon-badge,
 :root .idea-icon {
     display: none;
 }
@@ -109,8 +99,6 @@
 /* page containers: same rhythm between blocks everywhere */
 :root .capture-container,
 :root .reports-container,
-:root .analysis-container,
-:root .termin-container,
 :root .summary-container,
 :root .masterdata-container,
 :root .idea-page,
@@ -129,16 +117,10 @@
 :root .categories-container,
 :root .history-panel,
 :root .editor-panel,
-:root .calendar-card,
-:root .day-inspector-card,
 :root .summary-result-card,
 :root .chat-card,
 :root .progress-plan-card,
 :root .profile-section-card,
-:root .analysis-kpi-card,
-:root .wp-card,
-:root .chart-card,
-:root .deviation-card,
 :root .project-card,
 :root .create-project-card,
 :root .generator-card,
@@ -155,27 +137,12 @@
 :root .categories-container,
 :root .editor-panel,
 :root .summary-result-card,
-:root .wp-card,
 :root .profile-section-card,
-:root .calendar-card,
-:root .day-inspector-card,
-:root .history-panel,
-:root .chart-card {
+:root .history-panel {
     padding: 22px;
 }
 
 /* status cards: plain surface + coloured edge instead of tinted gradients */
-:root .deviation-card.critical {
-    border-left: 4px solid var(--color-danger);
-}
-
-:root .deviation-card.warning {
-    border-left: 4px solid var(--color-warning);
-}
-
-:root .deviation-card.info {
-    border-left: 4px solid var(--color-primary-fill);
-}
 
 /* --------------------------------------------------------------------------
    4. Inner boxes (like the grey sections in the project / letter form)
@@ -219,12 +186,7 @@
 :root .audio-title,
 :root .history-title,
 :root .editor-title,
-:root .inspector-date-title,
-:root .calendar-month-title,
 :root .section-block-title,
-:root .wp-title,
-:root .chart-title,
-:root .dash-analysis-title,
 :root .section-title,
 :root .create-project-title,
 :root .ld-step-title {
@@ -238,17 +200,13 @@
 :root .history-title svg:not(.lucide-sparkles),
 :root .editor-title svg:not(.lucide-sparkles),
 :root .section-block-title svg:not(.lucide-sparkles),
-:root .wp-title svg:not(.lucide-sparkles),
-:root .chart-title svg:not(.lucide-sparkles),
 :root .dash-subpanel-title svg:not(.lucide-sparkles),
 :root .create-project-title svg:not(.lucide-sparkles) {
     color: var(--color-primary);
     stroke: var(--color-primary);
 }
 
-:root .dash-analysis-sub,
-:root .section-desc,
-:root .inspector-date-sub {
+:root .section-desc {
     font-size: 13px;
     color: var(--text-muted);
 }
@@ -260,7 +218,6 @@
 :root .category-card-title,
 :root .general-notes-title,
 :root .summary-block-title,
-:root .critical-deadlines-title,
 :root .form-section-title {
     font-size: 12.5px;
     font-weight: 700;
@@ -273,11 +230,8 @@
 :root .masterdata-row-title,
 :root .idea-row-title,
 :root .history-item-title,
-:root .inspector-item-title,
 :root .project-doc-title,
-:root .alert-title,
-:root .doc-title,
-:root .deviation-title {
+:root .doc-title {
     font-weight: 700;
     color: var(--text-main);
 }
@@ -414,4 +368,79 @@
     background-color: var(--color-primary-fill);
     color: var(--color-on-primary);
     border: 3px solid var(--color-primary-light);
+}
+
+/* --------------------------------------------------------------------------
+   9. Terminplaner (tp-…) – same look as the other pages
+   -------------------------------------------------------------------------- */
+:root .tp-page {
+    gap: 20px;
+}
+
+:root .tp-title {
+    margin: 0 0 4px 0;
+    font-size: 24px;
+    font-weight: 800;
+    line-height: 1.25;
+    letter-spacing: -0.01em;
+    color: var(--text-main);
+}
+
+:root .tp-sub {
+    margin-top: 6px;
+    font-size: 14px;
+    color: var(--text-muted);
+}
+
+:root .tp-title-icon {
+    display: none;
+}
+
+/* toolbar = normal card */
+:root .tp-toolbar {
+    background: var(--bg-surface);
+    border: 1px solid var(--border-light);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-sm);
+}
+
+:root .tp-icon-btn {
+    background: var(--bg-surface);
+    border-color: var(--border-light);
+    color: var(--color-slate-700);
+}
+
+/* view switch (Monat / Woche / …) = pill toggle like "Neuer Brief | Meine Briefe" */
+:root .tp-segment {
+    gap: 4px;
+    padding: 4px;
+    border: 1px solid var(--color-slate-200);
+    border-radius: var(--radius-full);
+    background-color: var(--color-slate-100);
+}
+
+:root .tp-segment button {
+    padding: 7px 14px;
+    border-radius: var(--radius-full);
+    color: var(--color-slate-500);
+    font-size: 13px;
+    font-weight: 600;
+}
+
+:root .tp-segment button:hover {
+    color: var(--color-slate-800);
+}
+
+:root .tp-segment button.active {
+    background-color: var(--bg-surface);
+    color: var(--color-primary);
+    box-shadow: var(--shadow-md);
+}
+
+:root .tp-section h3 {
+    font-size: 12.5px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--color-slate-700);
 }

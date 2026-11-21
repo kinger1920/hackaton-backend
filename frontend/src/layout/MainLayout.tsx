@@ -13,7 +13,6 @@ import {
     TrendingUp,
     Calendar,
     Building2,
-    AlarmClock,
     MessageSquare,
     WifiOff,
     PanelLeftClose,
@@ -22,6 +21,7 @@ import {
     Moon
 } from 'lucide-react';
 import {useOnlineStatus} from '../components/useOnlineStatus';
+import {todayIso} from '../utils/dates';
 import {api, HealthStatus} from '../services/api';
 import {useProjects} from '../context/ProjectContext';
 import {useLanguage} from '../context/LanguageContext';
@@ -65,9 +65,8 @@ const NAV_GROUPS: NavGroup[] = [
         fallback: 'Schriftverkehr & Fristen',
         items: [
             {path: '/drafts', icon: <Mail size={19}/>, labelKey: 'nav_drafts'},
-            {path: '/summary', icon: <BookOpen size={19}/>, labelKey: 'nav_summary'},
-            // Idee #3: Fristen-Radar
-            {path: '/fristen', icon: <AlarmClock size={19}/>, labelKey: 'nav_deadlines', fallback: 'Fristen-Radar'}
+            {path: '/summary', icon: <BookOpen size={19}/>, labelKey: 'nav_summary'}
+            // Fristen-Radar ist jetzt die Ansicht „Fristen“ im Terminplaner (/fristen leitet dorthin um).
         ]
     },
     {
@@ -114,7 +113,7 @@ export const MainLayout: React.FC = () => {
 
     const isActive = (path: string) => location.pathname === path;
 
-    // Sidebar: pinned (icons + text) or collapsed (icons; slides open on hover). Remembered.
+    // Sidebar: pinned (icons + text) or collapsed (icons only). Remembered.
     const [sidebarMode, setSidebarMode] = useState<SidebarMode>(
         () => (localStorage.getItem(SIDEBAR_KEY) === 'collapsed' ? 'collapsed' : 'pinned')
     );
@@ -126,6 +125,23 @@ export const MainLayout: React.FC = () => {
 
     // Idee #6 (Offline/PWA): Netzstatus des Geräts – Details unter Profil → „Offline & App“
     const isOnline = useOnlineStatus();
+
+    // Wetter des Tages aus dem Bautagesbericht (Projektwechsel oder Seitenwechsel → neu laden)
+    const [todayWeather, setTodayWeather] = useState<{ temp: number | null; text: string | null } | null>(null);
+    useEffect(() => {
+        let cancelled = false;
+        api.getReport(todayIso(), Number(activeProject.id))
+            .then((r) => {
+                if (cancelled) return;
+                setTodayWeather(r.id != null && (r.weather || r.temperature_c != null)
+                    ? {temp: r.temperature_c ?? null, text: r.weather}
+                    : null);
+            })
+            .catch(() => !cancelled && setTodayWeather(null));
+        return () => {
+            cancelled = true;
+        };
+    }, [activeProject.id, location.pathname]);
 
     // Backend-Status (GET /health) – alle 30 s prüfen; zeigt auch, ob PDF-Export verfügbar ist
     const [health, setHealth] = useState<HealthStatus | null>(null);
@@ -261,10 +277,22 @@ export const MainLayout: React.FC = () => {
                             </div>
                         )}
 
-                        <div className="hdr-chip hdr-chip-muted hdr-weather">
+                        {/* Wetter aus dem heutigen Bautagesbericht (vorher fest "9°C • Trocken") */}
+                        <button
+                            type="button"
+                            className="hdr-chip hdr-chip-muted hdr-weather"
+                            style={{cursor: 'pointer'}}
+                            onClick={() => navigate('/reports')}
+                            title={t('hdr_weather_hint', 'Wetter aus dem heutigen Bautagesbericht')}
+                        >
                             <CloudSun size={16}/>
-                            <span>{siteLocation}: 9°C • {t('hdr_weather_dry')}</span>
-                        </div>
+                            <span>
+                                {siteLocation}
+                                {todayWeather
+                                    ? `: ${todayWeather.temp != null ? `${todayWeather.temp}°C • ` : ''}${todayWeather.text || ''}`
+                                    : ` • ${t('hdr_weather_missing', 'Wetter noch nicht erfasst')}`}
+                            </span>
+                        </button>
 
                         <LanguageSwitcher/>
 

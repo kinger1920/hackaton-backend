@@ -36,6 +36,10 @@ class Settings(BaseSettings):
     demo_user_name: str = "Bauleiter"
     demo_company: str = "Baupartner AG & Co. KG"
 
+    # POST /api/demo/reset löscht die KOMPLETTE Datenbank und lädt den Demo-Stand.
+    # Lokal/für die Jury an; auf einem Server mit echten Daten auf false setzen.
+    demo_reset_enabled: bool = True
+
 
 settings = Settings()
 

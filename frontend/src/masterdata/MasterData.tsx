@@ -11,8 +11,11 @@ import {
     X,
     UploadCloud,
     RefreshCw,
-    Sparkles
+    Sparkles,
+    ListTree
 } from 'lucide-react';
+import PlanTasksPanel from './PlanTasksPanel';
+import {formatDe} from '../utils/dates';
 import {useProjects} from '../context/ProjectContext';
 import {useLanguage} from '../context/LanguageContext';
 import {
@@ -72,11 +75,7 @@ function cleanCompany(data: CompanyCreate): CompanyCreate {
     return out;
 }
 
-function formatDate(iso?: string | null): string {
-    if (!iso) return '–';
-    const d = new Date(iso.endsWith('Z') || iso.includes('+') ? iso : `${iso}Z`);
-    return Number.isNaN(d.getTime()) ? iso : d.toLocaleDateString('de-DE');
-}
+const formatDate = (v?: string | null) => formatDe(v);
 
 export const MasterData: React.FC = () => {
     const {t} = useLanguage();
@@ -592,6 +591,7 @@ const PlansTab: React.FC<{ projectId: number; onError: (msg: string) => void }> 
     const [loading, setLoading] = useState(false);
     const [form, setForm] = useState<{ title: string; version: string } | null>(null);
     const [editingId, setEditingId] = useState<number | null>(null);
+    const [openPlanId, setOpenPlanId] = useState<number | null>(null);
 
     const load = async () => {
         setLoading(true);
@@ -675,22 +675,32 @@ const PlansTab: React.FC<{ projectId: number; onError: (msg: string) => void }> 
             ) : (
                 <div className="masterdata-list">
                     {plans.map((p) => (
-                        <div key={p.id} className="masterdata-row">
-                            <div className="masterdata-row-main">
-                                <div className="masterdata-row-title">
-                                    {p.title} <span className="badge badge-info">v{p.version || '1.0'}</span>
+                        <div key={p.id} className="masterdata-plan">
+                            <div className="masterdata-row">
+                                <div className="masterdata-row-main">
+                                    <div className="masterdata-row-title">
+                                        {p.title} <span className="badge badge-info">v{p.version || '1.0'}</span>
+                                    </div>
+                                    <div className="masterdata-row-meta">
+                                        {p.file_name ? `📎 ${p.file_name} • ` : ''}angelegt {formatDate(p.uploaded_at)}
+                                    </div>
                                 </div>
-                                <div className="masterdata-row-meta">
-                                    {p.file_name ? `📎 ${p.file_name} • ` : ''}angelegt {formatDate(p.uploaded_at)}
+                                <div className="masterdata-row-actions">
+                                    <button
+                                        className={`btn ${openPlanId === p.id ? 'btn-primary' : 'btn-secondary'}`}
+                                        onClick={() => setOpenPlanId(openPlanId === p.id ? null : p.id)}
+                                        title="Vorgänge anzeigen, bearbeiten, importieren"
+                                    >
+                                        <ListTree size={14}/> <span>Vorgänge</span>
+                                    </button>
+                                    <button className="btn btn-secondary" title="Bearbeiten"
+                                            onClick={() => { setEditingId(p.id); setForm({title: p.title, version: p.version || ''}); }}>
+                                        <Pencil size={14}/>
+                                    </button>
+                                    <button className="btn btn-danger" onClick={() => handleDelete(p)} title="Löschen"><Trash2 size={14}/></button>
                                 </div>
                             </div>
-                            <div className="masterdata-row-actions">
-                                <button className="btn btn-secondary" title="Bearbeiten"
-                                        onClick={() => { setEditingId(p.id); setForm({title: p.title, version: p.version || ''}); }}>
-                                    <Pencil size={14}/>
-                                </button>
-                                <button className="btn btn-danger" onClick={() => handleDelete(p)} title="Löschen"><Trash2 size={14}/></button>
-                            </div>
+                            {openPlanId === p.id && <PlanTasksPanel planId={p.id} onError={onError}/>}
                         </div>
                     ))}
                 </div>

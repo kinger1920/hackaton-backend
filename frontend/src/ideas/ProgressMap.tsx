@@ -4,6 +4,7 @@ import {TrendingUp, Play, Pause, Mail, MapPin, UploadCloud} from 'lucide-react';
 import {useProjects} from '../context/ProjectContext';
 import {api, PlanAnalysis, WorkPackage} from '../services/api';
 import {ComingSoonBadge, ComingSoonNote} from '../components/ComingSoon';
+import {addDays, parseAnyDate, startOfToday, toIsoDate} from '../utils/dates';
 import './Ideas.css';
 
 /**
@@ -56,20 +57,8 @@ function wpState(wp: WorkPackage): ZoneState {
 
 const SEVERITY: ZoneState[] = ['done', 'notstarted', 'ontrack', 'warning', 'delayed'];
 
-function parseDe(d: string): Date | null {
-    const m = d.match(/(\d{1,2})\.(\d{1,2})\.(\d{4})/);
-    return m ? new Date(Number(m[3]), Number(m[2]) - 1, Number(m[1])) : null;
-}
-
-function iso(d: Date): string {
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-}
-
-function addDays(d: Date, n: number): Date {
-    const r = new Date(d);
-    r.setDate(r.getDate() + n);
-    return r;
-}
+const parseDe = (d: string) => parseAnyDate(d);
+const iso = toIsoDate;
 
 export const ProgressMap: React.FC = () => {
     const navigate = useNavigate();
@@ -92,11 +81,7 @@ export const ProgressMap: React.FC = () => {
     });
     const cache = useRef<Map<string, PlanAnalysis>>(new Map());
 
-    const today = useMemo(() => {
-        const d = new Date();
-        d.setHours(0, 0, 0, 0);
-        return d;
-    }, []);
+    const today = useMemo(startOfToday, []);
 
     // Zeitbereich: 3 Wochen vor dem frühesten Soll-Ende bis 1 Woche nach dem spätesten
     const range = useMemo(() => {

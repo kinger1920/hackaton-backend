@@ -30,7 +30,8 @@ import {
   DocumentSourceType
 } from '../context/ProjectDocuments';
 import { extractTextFromFile } from '../utils/fileExtractor';
-import { api, SummarizeRequest } from '../services/api';
+import { api, saveBlob, SummarizeRequest } from '../services/api';
+import { addDays, isoToDe, toIsoDate, todayIso } from '../utils/dates';
 import '@frontend/src/index.css';
 import './Summary.css';
 
@@ -85,10 +86,29 @@ export const Summary: React.FC = () => {
   const [isSynthesizing, setIsSynthesizing] = useState(false);
   const [copyDone, setCopyDone] = useState(false);
 
-  // Load project-specific documents whenever activeProject changes or documents are added
+  // Dokumente: Tagebuch = echte Berichte + Diktate aus dem Backend (/api/timeline, 90 Tage),
+  // Protokolle/E-Mails = lokale Ablage (dafür gibt es noch keinen Backend-Speicher).
   useEffect(() => {
-    const refreshDocs = () => {
-      const docs = getDocumentsForProject(activeProject.id);
+    let cancelled = false;
+    const refreshDocs = async () => {
+      const local = getDocumentsForProject(activeProject.id);
+      let docs = local;
+      try {
+        const tl = await api.getTimeline(Number(activeProject.id), toIsoDate(addDays(new Date(), -90)), todayIso(), ['report', 'note']);
+        const diary: ProjectDocumentItem[] = tl.items.map((it) => ({
+          id: `${it.type}-${it.refId ?? it.id}`,
+          projectId: activeProject.id,
+          type: 'diary',
+          title: it.title,
+          date: isoToDe(it.date),
+          authorOrSender: it.source,
+          content: it.summary
+        }));
+        docs = [...diary, ...local.filter((d) => d.type !== 'diary')];
+      } catch (err) {
+        console.warn('Timeline nicht erreichbar – Tagebuch aus lokaler Ablage:', err);
+      }
+      if (cancelled) return;
       setProjectDocs(docs);
 
       // If on a doc tab, set first document for this project
@@ -97,7 +117,8 @@ export const Summary: React.FC = () => {
         if (filtered.length > 0) {
           setSelectedDocId(filtered[0].id);
           setInputText(filtered[0].content);
-          setSummaryData(getDocumentSummary(filtered[0]));
+          // Nur hinterlegte Zusammenfassungen anzeigen – für Backend-Einträge erst per „Synthese“ (KI) erzeugen
+          if (filtered[0].summary) setSummaryData(getDocumentSummary(filtered[0]));
         } else {
           setSelectedDocId(null);
           setInputText(`Noch keine ${getSourceLabel(activeSource)} für das Bauprojekt "${activeProject.name}" hinterlegt.`);
@@ -106,8 +127,14 @@ export const Summary: React.FC = () => {
     };
 
     refreshDocs();
-    window.addEventListener('project-documents-updated', refreshDocs);
-    return () => window.removeEventListener('project-documents-updated', refreshDocs);
+    const onUpdate = () => {
+      refreshDocs();
+    };
+    window.addEventListener('project-documents-updated', onUpdate);
+    return () => {
+      cancelled = true;
+      window.removeEventListener('project-documents-updated', onUpdate);
+    };
   }, [activeProject.id, activeSource]);
 
   // Structured summary state initialized to the active project
@@ -136,9 +163,8 @@ export const Summary: React.FC = () => {
     setSelectedDocId(doc.id);
     setInputText(doc.content);
     setUploadedFile(null);
-    // Immediately display the associated structured summary for this document!
-    const docSummary = getDocumentSummary(doc);
-    setSummaryData(docSummary);
+    // Hinterlegte Zusammenfassung sofort zeigen; Backend-Einträge werden per „Synthese“ (KI) zusammengefasst
+    if (doc.summary) setSummaryData(getDocumentSummary(doc));
   };
 
   const handleSelectAllForProject = () => {
@@ -413,13 +439,7 @@ ${summaryData.vobRisks.map((r) => `<p><strong>${r.title}</strong><br/>${r.descri
 </body>
 </html>`;
 
-    const blob = new Blob([html], { type: 'application/msword;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `Zusammenfassung_${activeProject.number}_${new Date().toISOString().slice(0, 10)}.doc`;
-    a.click();
-    URL.revokeObjectURL(url);
+    saveBlob(new Blob([html], { type: 'application/msword;charset=utf-8' }), `Zusammenfassung_${activeProject.number}_${todayIso()}.doc`);
   };
 
   const filteredDocs = projectDocs.filter((d) => d.type === activeSource);

@@ -15,6 +15,7 @@ import { useLanguage } from '../context/LanguageContext';
 import '@frontend/src/index.css';
 import './Profile.css';
 import OfflineAppCard from '../components/OfflineAppCard';
+import DemoResetCard from '../components/DemoResetCard';
 
 interface UserProfileData {
     fullName: string;
@@ -535,6 +536,9 @@ export const Profile: React.FC = () => {
 
                 {/* Idee #6: Offline-Modus & App-Installation */}
                 <OfflineAppCard/>
+
+                {/* POST /api/demo/reset */}
+                <DemoResetCard/>
             </div>
         </div>
     );

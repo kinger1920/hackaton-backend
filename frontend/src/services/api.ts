@@ -109,20 +109,33 @@ export interface ConstructionPlanCreate {
   raw_data?: string | null;
 }
 
+/** Projekt wie vom Backend geliefert (/projects), inkl. Stammdaten und Nachunternehmer-Liste */
 export interface BackendProject {
   id: number;
   name: string;
-  number: string;
-  client: string;
-  location: string;
-  phase: string;
+  number?: string | null;
+  client?: string | null;
+  location?: string | null;
+  phase?: string | null;
   status: string;
-  description?: string;
-  start_date?: string;
-  end_date?: string;
+  description?: string | null;
+  construction_volume_eur?: number | null;
+  budget_eur?: number | null;
+  gross_floor_area_m2?: number | null;
+  gross_volume_m3?: number | null;
+  construction_type?: string | null;
+  start_date?: string | null;
+  end_date?: string | null;
+  contract_type?: string | null;
+  vob_b_agreed?: boolean | null;
+  vob_notes?: string | null;
+  contractors?: { name: string; trade: string; required_workers: number | null; phone: string }[];
   created_at?: string;
   updated_at?: string;
 }
+
+/** Schreib-Payload für POST/PATCH /projects (leere Strings erlaubt, Backend macht daraus null) */
+export type ProjectPayload = Partial<Record<keyof Omit<BackendProject, 'id' | 'created_at' | 'updated_at'>, unknown>>;
 
 // ---- Analysis Types ----
 export interface WorkPackage {
@@ -403,6 +416,136 @@ export interface ContractText {
   extracted_text: string;
 }
 
+// ---- Schedule (/api/schedule) – Zukunft: Aufgaben je Werktag + Termine ----
+export type AppointmentCategory = 'deadline' | 'milestone' | 'inspection' | 'meeting' | 'delivery';
+
+export interface DayTask {
+  taskId: number;
+  code: string;
+  title: string;
+  trade: string | null;
+  company: string | null;
+  plannedWorkforce: number | null;
+  planPercent: number;
+  actualPercent: number;
+  status: 'delayed' | 'warning' | 'ontrack';
+  isStart: boolean;
+  isEnd: boolean;
+  isOverdue: boolean;
+  source: string;
+}
+
+export interface ScheduleDay {
+  date: string; // YYYY-MM-DD
+  tasks: DayTask[];
+}
+
+export interface ScheduleAppointment {
+  id: string;
+  projectId: number;
+  title: string;
+  date: string;
+  time?: string | null;
+  category: AppointmentCategory;
+  trade?: string | null;
+  description?: string | null;
+  vobReference?: string | null;
+  isUrgent?: boolean;
+}
+
+export interface Schedule {
+  projectId: number;
+  dateFrom: string;
+  dateTo: string;
+  refDate: string;
+  days: ScheduleDay[];
+  appointments: ScheduleAppointment[];
+}
+
+// ---- Timeline (/api/timeline) – Vergangenheit: Berichte, Notizen, Briefe, Fortschritt, Warnungen ----
+export type TimelineType = 'report' | 'note' | 'notice' | 'progress' | 'alert';
+
+export interface TimelineItem {
+  id: string;
+  type: TimelineType;
+  date: string;
+  time?: string | null;
+  title: string;
+  summary: string;
+  source: string;
+  refId?: number | null;
+  severity?: 'critical' | 'warning' | 'info' | null;
+}
+
+export interface Timeline {
+  projectId: number;
+  dateFrom: string;
+  dateTo: string;
+  items: TimelineItem[];
+}
+
+// ---- Vorgänge eines Bauzeitenplans (/api/plans/{id}/tasks, /import, /tasks/bulk) ----
+export type PlanTaskStatus = 'pending' | 'in_progress' | 'delayed' | 'completed';
+
+export interface PlanTask {
+  id: number;
+  plan_id: number;
+  task_code?: string | null;
+  title: string;
+  trade?: string | null;
+  planned_start?: string | null;
+  planned_end?: string | null;
+  actual_start?: string | null;
+  actual_end?: string | null;
+  status: PlanTaskStatus | string;
+  notes?: string | null;
+}
+
+export interface PlanTaskIn {
+  task_code?: string | null;
+  title: string;
+  trade?: string | null;
+  planned_start: string;
+  planned_end: string;
+  status?: string;
+}
+
+export type PlanTaskPatch = Partial<Omit<PlanTask, 'id' | 'plan_id' | 'notes'>>;
+
+/** Gelesener Vorgang aus CSV/PDF (Vorschau). `source` = Fundstelle (Zeile / PDF-Zitat) */
+export interface ImportedTask {
+  code?: string | null;
+  title: string;
+  trade?: string | null;
+  start: string;
+  end: string;
+  source?: string | null;
+}
+
+export interface ImportResult {
+  planId: number;
+  mode: 'csv' | 'ai' | 'offline';
+  dryRun: boolean;
+  tasks: ImportedTask[];
+  errors: { row: number; error: string }[];
+  warnings: string[];
+  created: number;
+  updated: number;
+}
+
+// ---- Demo-Reset (/api/demo/reset) ----
+export interface DemoResetResult {
+  ok: boolean;
+  project_id?: number;
+  reports?: number;
+  contracts?: number;
+  tasks?: number;
+  notes?: number;
+  last_report_date?: string;
+  shifted_workdays?: number;
+  [key: string]: unknown;
+}
+
 // ---- Health (/health) ----
 export interface HealthStatus {
   status: string;
@@ -484,14 +627,23 @@ export interface FillResponse extends DailyReportOut {
 // API Helpers
 // ==========================================
 
+/** Fehlermeldung des Backends lesbar machen: `detail` als Text, FastAPI-Validierungsliste oder Objekt */
 async function errorDetail(res: Response): Promise<string> {
   try {
     const errJson = await res.json();
-    if (errJson && errJson.detail) {
-      return typeof errJson.detail === 'object' ? JSON.stringify(errJson.detail) : errJson.detail;
+    const detail = errJson?.detail;
+    if (typeof detail === 'string') return detail;
+    if (Array.isArray(detail)) {
+      return detail
+        .map((d: any) => {
+          const field = Array.isArray(d?.loc) ? d.loc.filter((x: unknown) => x !== 'body').join('.') : '';
+          return field ? `${field}: ${d?.msg}` : String(d?.msg ?? JSON.stringify(d));
+        })
+        .join('; ');
     }
+    if (detail) return JSON.stringify(detail);
   } catch {
-    // not JSON
+    // kein JSON
   }
   return `HTTP ${res.status}`;
 }
@@ -513,18 +665,7 @@ export function saveBlob(blob: Blob, fileName: string): void {
 }
 
 async function handleResponse<T>(res: Response, errorPrefix: string): Promise<T> {
-  if (!res.ok) {
-    let errorDetail = `HTTP ${res.status}`;
-    try {
-      const errJson = await res.json();
-      if (errJson && errJson.detail) {
-        errorDetail = typeof errJson.detail === 'object' ? JSON.stringify(errJson.detail) : errJson.detail;
-      }
-    } catch {
-      // not JSON
-    }
-    throw new Error(`${errorPrefix}: ${errorDetail}`);
-  }
+  if (!res.ok) throw new Error(`${errorPrefix}: ${await errorDetail(res)}`);
   return res.json() as Promise<T>;
 }
 
@@ -611,12 +752,6 @@ export const api = {
   },
 
   // ---- Site Notes Endpoints ----
-  async listSiteNotes(projectId?: number): Promise<SiteNote[]> {
-    const url = projectId ? `${API_BASE_URL}/site-notes?project_id=${projectId}` : `${API_BASE_URL}/site-notes`;
-    const res = await fetch(url);
-    return handleResponse<SiteNote[]>(res, 'Fehler beim Abrufen der Notizen');
-  },
-
   async createSiteNote(note: SiteNoteCreate): Promise<SiteNote> {
     const res = await fetch(`${API_BASE_URL}/site-notes/create`, {
       method: 'POST',
@@ -675,22 +810,20 @@ export const api = {
     return handleResponse<BackendProject[]>(res, 'Fehler beim Laden der Projekte');
   },
 
-  async createProject(project: Omit<BackendProject, 'id'>): Promise<BackendProject> {
+  async createProject(project: ProjectPayload): Promise<BackendProject> {
     const res = await fetch(`${API_BASE_URL}/projects`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(project),
     });
-    return handleResponse<BackendProject>(res, 'Fehler beim Erstellen des Projekts');
+    return handleResponse<BackendProject>(res, 'Projekt konnte nicht angelegt werden');
   },
 
   async deleteProject(projectId: number): Promise<void> {
     const res = await fetch(`${API_BASE_URL}/projects/${projectId}`, {
       method: 'DELETE',
     });
-    if (!res.ok && res.status !== 404) {
-      throw new Error(`Fehler beim Löschen des Projekts: HTTP ${res.status}`);
-    }
+    await expectOk(res, 'Projekt konnte nicht gelöscht werden');
   },
 
   // ---- Analysis Endpoints ----
@@ -766,13 +899,13 @@ export const api = {
   },
 
   // ---- Projects (update) ----
-  async updateProject(projectId: number, changes: Partial<Omit<BackendProject, 'id'>>): Promise<BackendProject> {
+  async updateProject(projectId: number, changes: ProjectPayload): Promise<BackendProject> {
     const res = await fetch(`${API_BASE_URL}/projects/${projectId}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(changes),
     });
-    return handleResponse<BackendProject>(res, 'Fehler beim Aktualisieren des Projekts');
+    return handleResponse<BackendProject>(res, 'Projekt konnte nicht gespeichert werden');
   },
 
   // ---- Companies (/companies) ----
@@ -858,6 +991,81 @@ export const api = {
   async parseContract(contractId: number): Promise<ContractParseResponse> {
     const res = await fetch(`${API_BASE_URL}/api/contracts/${contractId}/parse`, { method: 'POST' });
     return handleResponse<ContractParseResponse>(res, 'Vertrag konnte nicht ausgelesen werden');
+  },
+
+  /** GET /api/schedule – max. 31 Tage je Abruf (days 1–31) */
+  async getSchedule(projectId: number, from: string, days: number, refDate?: string): Promise<Schedule> {
+    const params = new URLSearchParams({ project_id: String(projectId), from, days: String(Math.min(31, Math.max(1, days))) });
+    if (refDate) params.set('ref_date', refDate);
+    const res = await fetch(`${API_BASE_URL}/api/schedule?${params.toString()}`);
+    return handleResponse<Schedule>(res, 'Terminplan konnte nicht geladen werden');
+  },
+
+  /** GET /api/timeline – max. 92 Tage je Abruf, neueste zuerst */
+  async getTimeline(projectId: number, from: string, to: string, types?: TimelineType[]): Promise<Timeline> {
+    const params = new URLSearchParams({ project_id: String(projectId), from, to });
+    if (types && types.length > 0) params.set('types', types.join(','));
+    const res = await fetch(`${API_BASE_URL}/api/timeline?${params.toString()}`);
+    return handleResponse<Timeline>(res, 'Timeline konnte nicht geladen werden');
+  },
+
+  // ---- Vorgänge (PlanTask) ----
+  async listPlanTasks(planId: number): Promise<PlanTask[]> {
+    const res = await fetch(`${API_BASE_URL}/api/plans/${planId}/tasks`);
+    return handleResponse<PlanTask[]>(res, 'Vorgänge konnten nicht geladen werden');
+  },
+
+  async createPlanTask(planId: number, task: PlanTaskIn): Promise<PlanTask> {
+    const res = await fetch(`${API_BASE_URL}/api/plans/${planId}/tasks`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(task),
+    });
+    return handleResponse<PlanTask>(res, 'Vorgang konnte nicht angelegt werden');
+  },
+
+  async updatePlanTask(planId: number, taskId: number, changes: PlanTaskPatch): Promise<PlanTask> {
+    const res = await fetch(`${API_BASE_URL}/api/plans/${planId}/tasks/${taskId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(changes),
+    });
+    return handleResponse<PlanTask>(res, 'Vorgang konnte nicht gespeichert werden');
+  },
+
+  /** 409, wenn schon Fortschritt gemeldet wurde – dann mit force=true erneut (löscht die Historie) */
+  async deletePlanTask(planId: number, taskId: number, force = false): Promise<void> {
+    const res = await fetch(`${API_BASE_URL}/api/plans/${planId}/tasks/${taskId}${force ? '?force=true' : ''}`, { method: 'DELETE' });
+    if (!res.ok) {
+      const err = new Error(`Vorgang konnte nicht gelöscht werden: ${await errorDetail(res)}`) as Error & { status?: number };
+      err.status = res.status;
+      throw err;
+    }
+  },
+
+  /** POST /api/plans/{id}/import – CSV (dryRun=true → Vorschau) oder PDF (immer Vorschau) */
+  async importPlanFile(planId: number, file: File, dryRun = true): Promise<ImportResult> {
+    const form = new FormData();
+    form.append('file', file, file.name);
+    const res = await fetch(`${API_BASE_URL}/api/plans/${planId}/import?dry_run=${dryRun}`, { method: 'POST', body: form });
+    return handleResponse<ImportResult>(res, 'Terminplan konnte nicht gelesen werden');
+  },
+
+  /** Bestätigte Vorschau übernehmen (Upsert per Code/Titel, nichts wird gelöscht) */
+  async bulkPlanTasks(planId: number, tasks: ImportedTask[]): Promise<ImportResult> {
+    const res = await fetch(`${API_BASE_URL}/api/plans/${planId}/tasks/bulk`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tasks }),
+    });
+    return handleResponse<ImportResult>(res, 'Vorgänge konnten nicht übernommen werden');
+  },
+
+  // ---- Demo ----
+  /** POST /api/demo/reset – löscht ALLE Daten und lädt den Demo-Stand (403, wenn deaktiviert) */
+  async demoReset(refDate?: string): Promise<DemoResetResult> {
+    const res = await fetch(`${API_BASE_URL}/api/demo/reset${refDate ? `?ref_date=${refDate}` : ''}`, { method: 'POST' });
+    return handleResponse<DemoResetResult>(res, 'Demo-Reset fehlgeschlagen');
   },
 
   // ---- System ----

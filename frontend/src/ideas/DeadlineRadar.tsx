@@ -4,6 +4,7 @@ import {AlarmClock, RefreshCw, Mail, CalendarDays, Layers, FileText} from 'lucid
 import {useProjects} from '../context/ProjectContext';
 import {api, NoticeOut, PlanAnalysis} from '../services/api';
 import {ComingSoonNote} from '../components/ComingSoon';
+import {parseAnyDate, startOfToday, todayIso} from '../utils/dates';
 import './Ideas.css';
 
 /**
@@ -32,19 +33,7 @@ const TYPE_LABEL: Record<string, string> = {
     concern: 'Bedenkenanmeldung'
 };
 
-function parseDate(value?: string | null): Date | null {
-    if (!value) return null;
-    const v = value.trim().replace(/^Prognose\s+/i, '');
-    const de = v.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})$/);
-    const d = de ? new Date(Number(de[3]), Number(de[2]) - 1, Number(de[1])) : new Date(v.length === 10 ? `${v}T00:00:00` : v);
-    return Number.isNaN(d.getTime()) ? null : d;
-}
-
-function startOfToday(): Date {
-    const d = new Date();
-    d.setHours(0, 0, 0, 0);
-    return d;
-}
+const parseDate = parseAnyDate;
 
 function daysUntil(d: Date): number {
     return Math.round((d.getTime() - startOfToday().getTime()) / 86400000);
@@ -132,18 +121,41 @@ function fromAppointments(projectId: number): DeadlineItem[] {
     }
 }
 
-export const DeadlineRadar: React.FC = () => {
+/** `embedded`: im Terminplaner (Ansicht „Fristen“) – ohne eigenen Seitenkopf */
+export const DeadlineRadar: React.FC<{ embedded?: boolean }> = ({embedded = false}) => {
     const navigate = useNavigate();
     const {activeProject} = useProjects();
     const projectId = Number(activeProject.id);
     const [notices, setNotices] = useState<NoticeOut[]>([]);
+    const [scheduled, setScheduled] = useState<DeadlineItem[]>([]);
     const [analysis, setAnalysis] = useState<PlanAnalysis | null>(null);
     const [loading, setLoading] = useState(false);
     const [filter, setFilter] = useState<'all' | Kind>('all');
 
     const load = async () => {
         setLoading(true);
-        const [n, a] = await Promise.allSettled([api.listNotices(projectId), api.getAnalysis(projectId, 'all')]);
+        const from = todayIso();
+        const [n, a, s] = await Promise.allSettled([
+            api.listNotices(projectId),
+            api.getAnalysis(projectId, 'all'),
+            api.getSchedule(projectId, from, 31) // Fristen/Abnahmen der nächsten 31 Tage aus dem Terminplan
+        ]);
+        setScheduled(
+            s.status === 'fulfilled'
+                ? s.value.appointments
+                      .filter((ap) => ap.category === 'deadline' || ap.category === 'inspection')
+                      .map((ap) => ({
+                          id: `s-${ap.id}`,
+                          kind: 'appointment' as Kind,
+                          title: ap.title,
+                          detail: ap.description || '',
+                          due: parseDate(ap.date)!,
+                          source: 'Terminplan (Backend)',
+                          vob: ap.vobReference ?? undefined
+                      }))
+                      .filter((x) => x.due)
+                : []
+        );
         setNotices(n.status === 'fulfilled' ? n.value : []);
         setAnalysis(a.status === 'fulfilled' ? a.value : null);
         setLoading(false);
@@ -154,18 +166,18 @@ export const DeadlineRadar: React.FC = () => {
     }, [projectId]);
 
     const items = useMemo(() => {
-        const all = [...fromNotices(notices), ...fromAnalysis(analysis), ...fromAppointments(projectId)];
+        const all = [...fromNotices(notices), ...fromAnalysis(analysis), ...scheduled, ...fromAppointments(projectId)];
         return all
             .filter((i) => filter === 'all' || i.kind === filter)
             .sort((x, y) => x.due.getTime() - y.due.getTime());
-    }, [notices, analysis, projectId, filter]);
+    }, [notices, analysis, scheduled, projectId, filter]);
 
     const overdue = items.filter((i) => daysUntil(i.due) < 0).length;
     const soon = items.filter((i) => daysUntil(i.due) >= 0 && daysUntil(i.due) <= 3).length;
 
     return (
         <div className="idea-page">
-            <div className="idea-header">
+            {!embedded && <div className="idea-header">
                 <div className="idea-title-group">
                     <div className="idea-icon"><AlarmClock size={22}/></div>
                     <div>
@@ -176,7 +188,7 @@ export const DeadlineRadar: React.FC = () => {
                 <button className="btn btn-secondary" onClick={load} disabled={loading}>
                     <RefreshCw size={14}/> <span>Aktualisieren</span>
                 </button>
-            </div>
+            </div>}
 
             <div className="idea-kpis">
                 <div className="idea-kpi danger"><span>{overdue}</span>überfällig</div>

@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import React, { useState, useEffect } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import {
   FileText,
   Calendar,
@@ -25,6 +25,8 @@ import {
   Camera
 } from 'lucide-react';
 import { ComingSoonBadge, ComingSoonNote, isNotImplemented } from '../components/ComingSoon';
+import { addDays, deToIso, isoToDe, toIsoDate as dateToIso, todayIso } from '../utils/dates';
+import { useAudioRecorder } from '../utils/useAudioRecorder';
 import { useProjects } from '../context/ProjectContext';
 import {
   getDiaryEntriesForProject,
@@ -47,6 +49,8 @@ import './DailyReports.css';
 
 export const DailyReports: React.FC = () => {
   const navigate = useNavigate();
+  // Aus dem Terminplaner: navigate('/reports', {state: {date: 'YYYY-MM-DD'}}) öffnet diesen Tag
+  const navDate = (useLocation().state as { date?: string } | null)?.date;
   const { t } = useLanguage();
   const { activeProject } = useProjects();
   const userName = localStorage.getItem('userName') || t('role_site_manager');
@@ -60,7 +64,13 @@ export const DailyReports: React.FC = () => {
 
   // New diary entry form state
   const [reportNumber, setReportNumber] = useState('143');
-  const [reportDate, setReportDate] = useState('21.11.2026');
+  const [reportDate, setReportDate] = useState(() => {
+    if (navDate && /^\d{4}-\d{2}-\d{2}$/.test(navDate)) {
+      const [y, m, d] = navDate.split('-');
+      return `${d}.${m}.${y}`;
+    }
+    return '21.11.2026';
+  });
   const [weather, setWeather] = useState('9°C, bedeckt, windstill');
   const [workforceCount, setWorkforceCount] = useState<number>(34);
   const [trades, setTrades] = useState<string[]>([
@@ -81,10 +91,7 @@ export const DailyReports: React.FC = () => {
   );
 
   // Dictation state (echte Aufnahme → /api/transcribe → /api/reports/{date}/fill)
-  const [isRecording, setIsRecording] = useState(false);
   const [isProcessingDictation, setIsProcessingDictation] = useState(false);
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-  const audioChunksRef = useRef<Blob[]>([]);
   const [savedSuccessMsg, setSavedSuccessMsg] = useState(false);
 
   // Abschluss-Status (finalized = kein "ENTWURF"-Wasserzeichen im Export)
@@ -187,16 +194,8 @@ export const DailyReports: React.FC = () => {
     });
   };
 
-  function toIsoDate(dateStr: string): string {
-    if (dateStr.includes('.')) {
-      const parts = dateStr.split('.');
-      if (parts.length === 3) {
-        const [d, m, y] = parts;
-        return `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
-      }
-    }
-    return dateStr;
-  }
+  // Formular-Datum (TT.MM.JJJJ) → ISO für das Backend
+  const toIsoDate = deToIso;
 
   // Load backend daily report for current date and project
   useEffect(() => {
@@ -234,47 +233,33 @@ export const DailyReports: React.FC = () => {
     };
   }, [reportDate, activeProject.id]);
 
-  // Load project diary entries whenever project changes or custom event fires
+  // Verlauf: Bautagesberichte + Diktate der letzten 90 Tage aus dem Backend (/api/timeline).
+  // Lokale Beispiel-Dokumente nur, wenn das Backend nicht erreichbar ist.
   const loadHistory = async () => {
-    const localEntries = getDiaryEntriesForProject(activeProject.id);
-    let combined = [...localEntries];
-
+    let combined: ProjectDocumentItem[];
     try {
-      const backendNotes = await api.listSiteNotes(Number(activeProject.id));
-      if (backendNotes && backendNotes.length > 0) {
-        const mappedNotes: ProjectDocumentItem[] = backendNotes.map((bn) => ({
-          id: `backend-note-${bn.id}`,
-          projectId: bn.project_id,
-          type: 'diary',
-          title: `Tagebuchnotiz #${bn.id} (${bn.category || 'allgemein'})`,
-          date: new Date(bn.created_at).toLocaleDateString('de-DE'),
-          authorOrSender: bn.author || userName,
-          content: bn.content,
-          trades: ['Bautagebuch'],
-          hindrance: bn.category === 'delay' || bn.category === 'incident' ? bn.content : undefined
-        }));
-
-        const existingIds = new Set(combined.map((c) => c.id));
-        mappedNotes.forEach((mn) => {
-          if (!existingIds.has(mn.id)) {
-            combined.push(mn);
-          }
-        });
-      }
+      const tl = await api.getTimeline(Number(activeProject.id), dateToIso(addDays(new Date(), -90)), todayIso(), ['report', 'note']);
+      combined = tl.items.map((it) => ({
+        id: `${it.type}-${it.refId ?? it.id}`,
+        projectId: activeProject.id,
+        type: 'diary',
+        title: it.title,
+        date: isoToDe(it.date),
+        authorOrSender: it.source,
+        content: it.summary,
+        hindrance: it.severity === 'warning' || it.severity === 'critical' ? it.summary : undefined
+      }));
     } catch (err) {
-      console.warn('Backend listSiteNotes Fallback:', err);
+      console.warn('Timeline nicht erreichbar, zeige lokale Einträge:', err);
+      combined = getDiaryEntriesForProject(activeProject.id);
     }
 
     setDiaryHistory(combined);
 
-    // Auto-calculate next report number based on history
-    if (combined.length > 0) {
-      const match = combined[0].title.match(/Nr\.\s*(\d+)/i);
-      if (match && match[1]) {
-        const nextNum = parseInt(match[1], 10) + 1;
-        setReportNumber(String(nextNum));
-      }
-    }
+    // Nächste Berichtsnummer aus dem neuesten Bericht ableiten
+    const latest = combined.find((c) => /Nr\.\s*\d+/i.test(c.title));
+    const match = latest?.title.match(/Nr\.\s*(\d+)/i);
+    if (match) setReportNumber(String(parseInt(match[1], 10) + 1));
   };
 
   useEffect(() => {
@@ -300,11 +285,22 @@ export const DailyReports: React.FC = () => {
   });
 
   // Action: Adopt workforce & trades from previous entry ("Werte von gestern übernehmen")
-  const handleAdoptFromPastEntry = (pastDoc: ProjectDocumentItem) => {
-    if (pastDoc.weather) setWeather(pastDoc.weather);
-    if (pastDoc.workforceCount) setWorkforceCount(pastDoc.workforceCount);
-    if (pastDoc.trades && pastDoc.trades.length > 0) {
-      setTrades([...pastDoc.trades]);
+  const handleAdoptFromPastEntry = async (pastDoc: ProjectDocumentItem) => {
+    if (pastDoc.id.startsWith('report-')) {
+      try {
+        const r = await api.getReport(toIsoDate(pastDoc.date), Number(activeProject.id));
+        if (r.weather) setWeather(r.weather);
+        if (r.temperature_c != null) setTemperatureC(String(r.temperature_c));
+        if (r.workforce_count) setWorkforceCount(r.workforce_count);
+        if (r.trades.length > 0) setTrades([...r.trades]);
+        if (r.attendance && r.attendance.length > 0) setAttendance(r.attendance.map((a) => ({ ...a })));
+      } catch (err) {
+        console.warn('Vorbericht konnte nicht geladen werden:', err);
+      }
+    } else {
+      if (pastDoc.weather) setWeather(pastDoc.weather);
+      if (pastDoc.workforceCount) setWorkforceCount(pastDoc.workforceCount);
+      if (pastDoc.trades && pastDoc.trades.length > 0) setTrades([...pastDoc.trades]);
     }
     setReferencedDoc(pastDoc);
   };
@@ -359,47 +355,27 @@ export const DailyReports: React.FC = () => {
     if (typed && typed.trim()) applyDictation(typed.trim());
   };
 
-  // Action: Audio dictation toggle – Aufnahme → /api/transcribe → fill
+  // Aufnahme → /api/transcribe → fill (gemeinsamer Hook utils/useAudioRecorder)
+  const recorder = useAudioRecorder(async (blob) => {
+    setIsProcessingDictation(true);
+    let text = '';
+    try {
+      text = (await api.transcribeAudio(blob, 'de')).text.trim();
+    } catch (err) {
+      console.warn('Transkription fehlgeschlagen:', err);
+    }
+    setIsProcessingDictation(false);
+    if (text) applyDictation(text);
+    else askForTypedDictation();
+  });
+  const isRecording = recorder.isRecording;
+
   const handleToggleMic = async () => {
     if (isRecording) {
-      mediaRecorderRef.current?.stop();
-      setIsRecording(false);
+      recorder.stop();
       return;
     }
-
-    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
-      askForTypedDictation();
-      return;
-    }
-
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const recorder = new MediaRecorder(stream);
-      audioChunksRef.current = [];
-      recorder.ondataavailable = (e) => {
-        if (e.data.size > 0) audioChunksRef.current.push(e.data);
-      };
-      recorder.onstop = async () => {
-        stream.getTracks().forEach((track) => track.stop());
-        const blob = new Blob(audioChunksRef.current, { type: recorder.mimeType || 'audio/webm' });
-        setIsProcessingDictation(true);
-        let text = '';
-        try {
-          text = (await api.transcribeAudio(blob, 'de')).text.trim();
-        } catch (err) {
-          console.warn('Transkription fehlgeschlagen:', err);
-        }
-        setIsProcessingDictation(false);
-        if (text) applyDictation(text);
-        else askForTypedDictation();
-      };
-      mediaRecorderRef.current = recorder;
-      recorder.start();
-      setIsRecording(true);
-    } catch (err) {
-      console.warn('Mikrofon nicht verfügbar:', err);
-      askForTypedDictation();
-    }
+    if (!(await recorder.start())) askForTypedDictation();
   };
 
   // Export: GET /api/reports/{date}/pdf|docx (Bericht wird vorher gespeichert, sonst 404)
@@ -438,7 +414,7 @@ export const DailyReports: React.FC = () => {
 
   // Tagebucheintrag aus dem Backend löschen (DELETE /site-notes/{id})
   const handleDeleteBackendNote = async (itemId: string) => {
-    const noteId = Number(itemId.replace('backend-note-', ''));
+    const noteId = Number(itemId.replace('note-', ''));
     if (!noteId || !window.confirm('Diesen Tagebucheintrag wirklich löschen?')) return;
     try {
       await api.deleteSiteNote(noteId);
@@ -474,55 +450,34 @@ export const DailyReports: React.FC = () => {
     );
   };
 
-  // Action: Save new entry to project documents, backend /api/reports/{date} & site notes
+  // Speichern: PUT /api/reports/{date}. Nur wenn das Backend nicht erreichbar ist, lokal sichern.
+  // (Früher zusätzlich als lokale Kopie UND als Tagebuchnotiz gespeichert → doppelt in Timeline/Verlauf.)
   const handleSaveReport = async () => {
-    const title = `Bautagesbericht Nr. ${reportNumber} — ${progressText.slice(0, 35)}...`;
-    const fullContent = `Bautagesbericht Nr. ${reportNumber} — Datum: ${reportDate}
-Projekt: ${activeProject.name} (${activeProject.number})
-Bauleiter: ${userName}
-Wetter: ${weather}
-Personal: ${workforceCount} Fachkräfte (${trades.join(', ')})
-
-Tagesleistung & Arbeitsfortschritt:
-${progressText}
-
-${hindranceText ? `Vorkommnisse & VOB-relevante Behinderungen:\n${hindranceText}\n` : ''}
-${deliveriesText ? `Lieferungen, Abnahmen & Prüfungen:\n${deliveriesText}\n` : ''}
-${referencedDoc ? `[Bezug auf Vorbericht: ${referencedDoc.title} (${referencedDoc.date})]` : ''}`.trim();
-
-    const newDoc: ProjectDocumentItem = {
-      id: `doc-${activeProject.id}-d${Date.now()}`,
-      projectId: activeProject.id,
-      type: 'diary',
-      title,
-      date: reportDate,
-      authorOrSender: userName,
-      weather,
-      workforceCount,
-      trades,
-      hindrance: hindranceText,
-      content: fullContent
-    };
-
-    saveProjectDocument(newDoc);
-
-    // Save to backend /api/reports/{date}
     try {
       await saveReportToBackend();
     } catch (err) {
-      console.warn('Backend putReport Fallback:', err);
-    }
-
-    // Also persist into backend SiteNote database
-    try {
-      await api.createSiteNote({
-        project_id: Number(activeProject.id),
-        content: fullContent,
-        category: hindranceText ? 'incident' : 'progress',
-        author: userName
+      console.warn('Backend nicht erreichbar – Bericht lokal gesichert:', err);
+      saveProjectDocument({
+        id: `doc-${activeProject.id}-d${Date.now()}`,
+        projectId: activeProject.id,
+        type: 'diary',
+        title: `Bautagesbericht Nr. ${reportNumber} — ${progressText.slice(0, 35)}...`,
+        date: reportDate,
+        authorOrSender: userName,
+        weather,
+        workforceCount,
+        trades,
+        hindrance: hindranceText,
+        content: [
+          `Bautagesbericht Nr. ${reportNumber} — Datum: ${reportDate}`,
+          `Wetter: ${weather}`,
+          `Personal: ${workforceCount} (${trades.join(', ')})`,
+          `Tagesleistung: ${progressText}`,
+          hindranceText ? `Vorkommnisse: ${hindranceText}` : '',
+          deliveriesText ? `Lieferungen/Abnahmen: ${deliveriesText}` : '',
+          referencedDoc ? `[Bezug auf: ${referencedDoc.title} (${referencedDoc.date})]` : ''
+        ].filter(Boolean).join('\n')
       });
-    } catch (err) {
-      console.warn('Backend createSiteNote Fallback:', err);
     }
 
     loadHistory();
@@ -741,7 +696,7 @@ ${referencedDoc ? `[Bezug auf Vorbericht: ${referencedDoc.title} (${referencedDo
                         </button>
                       )}
 
-                      {item.id.startsWith('backend-note-') && (
+                      {item.id.startsWith('note-') && (
                         <button
                           type="button"
                           className="history-btn-small"
