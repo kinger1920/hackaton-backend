@@ -6,9 +6,12 @@ from sqlmodel import Field, SQLModel
 
 class ProjectBase(SQLModel):
     name: str = Field(index=True)
-    code: Optional[str] = Field(default=None, index=True)
-    description: Optional[str] = None
+    number: Optional[str] = Field(default=None, index=True)
+    client: Optional[str] = None
     location: Optional[str] = None
+    phase: Optional[str] = Field(default="Rohbau")
+    status: str = Field(default="Aktiv")  # Aktiv, In Planung, Abgeschlossen
+    description: Optional[str] = None
 
 
 class Project(ProjectBase, table=True):
