@@ -4,13 +4,16 @@ Router bleiben dünn: Laden, Service aufrufen, Fehler in Statuscodes übersetzen
 Die Logik (Vorlagen, Pflichtfelder, Audit) liegt in `services/notices.py` und `services/letters.py`.
 """
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlmodel import Session
 
 from src.database import get_session
-from src.models import FormalNotice
+from src.models import FormalNotice, Project
 from src.schemas.notices import ApproveConflict, NoticeOut, NoticePatch
-from src.services import notices
+from src.services import documents, notices
+
+PDF_MEDIA_TYPE = "application/pdf"
+DOCX_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 
 router = APIRouter(prefix="/api/notices", tags=["Notices"])
 
@@ -75,3 +78,53 @@ def approve_notice(notice_id: int, session: Session = Depends(get_session)) -> N
     except notices.NoticeLocked:
         raise HTTPException(status_code=409, detail=f"Notice {notice_id} ist bereits '{notice.status}'")
     return notices.to_out(notice, data)
+
+
+def _export(notice_id: int, ext: str, session: Session) -> Response:
+    """Gemeinsamer Ablauf für PDF und Word: laden → Freigabe prüfen → rendern → Datei-Download."""
+    notice = _get_or_404(session, notice_id)
+    data = notices.get_data(session, notice)
+    project = session.get(Project, notice.project_id)
+    try:
+        # Erst prüfen, dann rendern: ein Entwurf wird nie als Datei herausgegeben.
+        if notice.status == notices.STATUS_DRAFT:
+            raise notices.NotApproved()
+        content = documents.render_pdf(notice, data, project) if ext == "pdf" else documents.render_docx(notice, data, project)
+        notices.mark_exported(session, notice)
+    except notices.NotApproved:
+        raise HTTPException(status_code=409, detail=f"Notice {notice_id} ist nicht freigegeben – Export erst nach /approve")
+    except documents.PdfUnavailable as e:
+        # 503 = Server kann gerade nicht: fehlende Systembibliothek, kein Fehler im Request.
+        raise HTTPException(status_code=503, detail=str(e))
+
+    media_type = PDF_MEDIA_TYPE if ext == "pdf" else DOCX_MEDIA_TYPE
+    # Content-Disposition "attachment" → Browser lädt die Datei herunter statt sie anzuzeigen.
+    headers = {"Content-Disposition": f'attachment; filename="{documents.filename(notice, project, ext)}"'}
+    return Response(content=content, media_type=media_type, headers=headers)
+
+
+@router.get(
+    "/{notice_id}/pdf",
+    response_class=Response,
+    responses={200: {"content": {PDF_MEDIA_TYPE: {}}}, 409: {"description": "Noch nicht freigegeben"}},
+)
+def export_pdf(notice_id: int, session: Session = Depends(get_session)) -> Response:
+    """Freigegebenen Brief als PDF herunterladen (Contract: GET /api/notices/{id}/pdf).
+
+    Fehler: 404 unbekannte ID; 409 noch nicht freigegeben; 503 PDF-Bibliothek fehlt.
+    Setzt den Status beim ersten Export auf "Exportiert".
+    """
+    return _export(notice_id, "pdf", session)
+
+
+@router.get(
+    "/{notice_id}/docx",
+    response_class=Response,
+    responses={200: {"content": {DOCX_MEDIA_TYPE: {}}}, 409: {"description": "Noch nicht freigegeben"}},
+)
+def export_docx(notice_id: int, session: Session = Depends(get_session)) -> Response:
+    """Freigegebenen Brief als Word-Datei herunterladen (Contract: GET /api/notices/{id}/docx).
+
+    Fehler: 404 unbekannte ID; 409 noch nicht freigegeben. Setzt den Status auf "Exportiert".
+    """
+    return _export(notice_id, "docx", session)

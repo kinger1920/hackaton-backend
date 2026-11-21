@@ -87,6 +87,19 @@ cd backend && uv add <package-name>
 cd backend && uv run uvicorn src.main:app --reload
 ```
 
+### Environment & PDF Export
+
+- Copy `backend/.env.example` to `backend/.env` and set `GROQ_API_KEY` (LLM + Whisper via Groq). Without a key, all AI endpoints fall back to offline rules.
+- PDF export (`GET /api/notices/{id}/pdf`) uses WeasyPrint, which needs Pango as a system library:
+
+```bash
+# macOS (once): install Pango and make it findable for Python (add the export to ~/.zshrc)
+brew install pango
+export DYLD_FALLBACK_LIBRARY_PATH=/opt/homebrew/lib
+```
+
+Without Pango the PDF endpoint returns `503` and the PDF test is skipped; Word export (`/docx`) works without system libraries. Linux/Docker: install `libpango-1.0-0 libpangoft2-1.0-0`.
+
 ---
 
 ## 7. Guidelines for Coding Agents
