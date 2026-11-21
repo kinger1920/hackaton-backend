@@ -271,8 +271,11 @@ Streng nur Fakten aus dem Bericht: keine Bewertungen oder Details ergänzen, die
 Keine Rechtsberatung. Leere Liste, wenn nichts zutrifft."""
 
 
-async def analyze_day(session: Session, project: Project, date: dt.date) -> DayAnalysis:
-    """Was lief am Tag gut/schlecht: Fakten aus Code (Plan, Personal, Wetter) + KI für den Freitext."""
+async def analyze_day(session: Session, project: Project, date: dt.date, use_llm: bool = True) -> DayAnalysis:
+    """Was lief am Tag gut/schlecht: Fakten aus Code (Plan, Personal, Wetter) + KI für den Freitext.
+
+    use_llm=False: nur Regeln (z. B. für den Datei-Export – schnell, ohne Tokens, reproduzierbar).
+    """
     report = find_report(session, project.id, date)
     title = f"Tagesanalyse {_de(date)} • {project.name}"
     if report is None:
@@ -323,7 +326,7 @@ async def analyze_day(session: Session, project: Project, date: dt.date) -> DayA
                      ("Vorkommnisse", report.deviations_incidents), ("Lieferungen/Abnahmen", report.deliveries))
                      if v and v.strip())
     mode: Literal["ai", "offline"] = "offline"
-    result = await llm.complete_json(DAY_PROMPT, text, _LLMDay, max_tokens=600) if text else None
+    result = await llm.complete_json(DAY_PROMPT, text, _LLMDay, max_tokens=600) if text and use_llm else None
     if result is not None:
         mode = "ai"
         well += [DayItem(text=s.strip(), source=label) for s in result.wentWell if s.strip()]
