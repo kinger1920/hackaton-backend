@@ -116,7 +116,9 @@ def compute_stats(reports: list[DailyReport], notices: list[FormalNotice]) -> Su
                 if isinstance(c, dict):
                     day_workers += int(c.get("workers") or 0)
                     hours += float(c.get("hours") or 0)
-            workers_per_day.append(day_workers)
+            workers_per_day.append(r.workforce_count if r.workforce_count is not None else day_workers)
+        elif r.workforce_count is not None:  # Bericht aus dem Formular (nur Personalanzahl, kein JSON)
+            workers_per_day.append(r.workforce_count)
         weather = _json(r.weather)
         if isinstance(weather, dict):
             rain = float(weather.get("rain_mm") or 0)

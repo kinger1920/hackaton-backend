@@ -1,13 +1,16 @@
-"""Legt Demo-Tagesberichte (Werktage 02.11.–20.11.2026) für ein Projekt an – Daten für /api/summarize.
+"""Legt Demo-Daten an: Bauzeitenplan + Tagesberichte (Werktage 02.11.–20.11.2026) + Fortschritt je Vorgang.
+
+Genutzt von /api/summarize, /api/reports und der Soll/Ist-Analyse.
 
 Aufruf:  cd backend && DATABASE_URL=sqlite:///pfad/zur/kopie.db uv run python scripts/seed_reports.py [--project-id 1]
 
 ACHTUNG: Ohne DATABASE_URL schreibt das Skript in die getrackte `data/site_assistant.db`.
 Diese Änderung NICHT committen (Datenbank gehört Yannick, Seed/Reset ist sein Bereich).
 
-Idempotent: Tage, für die es schon einen Bericht gibt, werden übersprungen.
+Idempotent: Vorhandene Pläne/Vorgänge/Berichte werden wiederverwendet, nur Fehlendes ergänzt.
 Die Story: normaler Rohbau-Fortschritt, Regentag am 10.11., verspätete Betonlieferung am 12.11.,
 Behinderung durch fehlende Leitungspläne vom 17.–19.11., Freigabe der Pläne am 20.11.
+Ergebnis für die Analyse am 20.11.: "Aushub Achse B" Soll 100 % / Ist 55 % bei 4 Werktagen → 1,8 Tage Verzug.
 """
 
 import argparse
@@ -21,7 +24,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))  # damit `src` i
 from sqlmodel import Session, select  # noqa: E402
 
 from src.database import engine, init_db  # noqa: E402
-from src.models import DailyReport, Project  # noqa: E402
+from src.models import ConstructionPlan, DailyReport, PlanTask, Project, ReportProgress  # noqa: E402
 
 CREW_NORMAL = [{"trade": "Erdbau", "workers": 3, "hours": 24}, {"trade": "Rohbau", "workers": 8, "hours": 64}]
 CREW_REDUCED = [{"trade": "Erdbau", "workers": 1, "hours": 8}, {"trade": "Rohbau", "workers": 4, "hours": 32}]
@@ -67,6 +70,49 @@ DAYS: dict[str, tuple[dict, list, str, str]] = {
                    ""),
 }
 
+PLAN_TITLE = "Bauzeitenplan Rohbau"
+# (Code, Titel, Gewerk, Soll-Start, Soll-Ende)
+TASKS = [
+    ("A-100", "Baustelleneinrichtung", "Rohbau", "2026-11-02", "2026-11-02"),
+    ("A-110", "Aushub Achse A", "Erdbau", "2026-11-02", "2026-11-04"),
+    ("A-120", "Fundamente Achse A", "Rohbau", "2026-11-05", "2026-11-12"),
+    ("B-200", "Aushub Achse B", "Erdbau", "2026-11-16", "2026-11-19"),
+    ("A-130", "Wände Achse A", "Rohbau", "2026-11-23", "2026-11-30"),
+    ("B-210", "Fundamente Achse B", "Rohbau", "2026-11-23", "2026-11-27"),
+]
+# Datum → {Vorgangscode: Fertigstellung in %}
+PROGRESS = {
+    "2026-11-02": {"A-100": 100, "A-110": 30}, "2026-11-03": {"A-110": 65}, "2026-11-04": {"A-110": 100},
+    "2026-11-05": {"A-120": 15}, "2026-11-06": {"A-120": 30}, "2026-11-09": {"A-120": 50},
+    "2026-11-10": {"A-120": 50}, "2026-11-11": {"A-120": 55}, "2026-11-12": {"A-120": 70},
+    "2026-11-13": {"A-120": 100}, "2026-11-16": {"B-200": 25}, "2026-11-17": {"B-200": 30},
+    "2026-11-18": {"B-200": 30}, "2026-11-19": {"B-200": 30, "A-130": 5}, "2026-11-20": {"B-200": 55},
+}
+DELIVERIES = {
+    "2026-11-06": "Betonstahl B500B (12 t) angeliefert.",
+    "2026-11-12": "Bewehrungsabnahme Achse A durch Statiker ohne Beanstandung.",
+    "2026-11-13": "Transportbeton C25/30, 38 m³ (Fa. Huber).",
+}
+
+
+def seed_plan(session: Session, project: Project) -> dict[str, PlanTask]:
+    """Plan + Vorgänge anlegen (oder vorhandene wiederverwenden). Rückgabe: Code → Vorgang."""
+    plan = session.exec(select(ConstructionPlan).where(
+        ConstructionPlan.project_id == project.id, ConstructionPlan.title == PLAN_TITLE)).first()
+    if plan is None:
+        plan = ConstructionPlan(project_id=project.id, title=PLAN_TITLE, version="1.0")
+        session.add(plan)
+        session.flush()
+    existing = {t.task_code: t for t in session.exec(select(PlanTask).where(PlanTask.plan_id == plan.id)).all()}
+    for code, title, trade, start, end in TASKS:
+        if code not in existing:
+            existing[code] = PlanTask(plan_id=plan.id, task_code=code, title=title, trade=trade,
+                                      planned_start=dt.date.fromisoformat(start),
+                                      planned_end=dt.date.fromisoformat(end), status="pending")
+            session.add(existing[code])
+    session.flush()
+    return existing
+
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
@@ -80,25 +126,39 @@ def main() -> None:
         if project is None:
             sys.exit("Kein Projekt gefunden – zuerst ein Projekt anlegen (POST /projects).")
 
-        existing = set(session.exec(select(DailyReport.report_date)
-                                    .where(DailyReport.project_id == project.id)).all())
+        tasks = seed_plan(session, project)
+        existing = {r.report_date: r for r in session.exec(
+            select(DailyReport).where(DailyReport.project_id == project.id)).all()}
         created = 0
-        for day, (weather, crew, done, incidents) in DAYS.items():
+        for number, (day, (weather, crew, done, incidents)) in enumerate(DAYS.items(), start=120):
             date = dt.date.fromisoformat(day)
-            if date in existing:
-                continue
-            session.add(DailyReport(
-                project_id=project.id, report_date=date,
-                summary=done.split(".")[0] + ".",
-                weather=json.dumps(weather, ensure_ascii=False),
-                workforce=json.dumps(crew, ensure_ascii=False),
-                equipment=json.dumps(EQUIP if crew is CREW_NORMAL else EQUIP[:1], ensure_ascii=False),
-                work_completed=done, deviations_incidents=incidents or None, status="finalized",
-            ))
-            created += 1
+            report = existing.get(date)
+            if report is None:
+                report = DailyReport(
+                    project_id=project.id, report_date=date,
+                    summary=done.split(".")[0] + ".",
+                    weather=json.dumps(weather, ensure_ascii=False),
+                    workforce=json.dumps(crew, ensure_ascii=False),
+                    equipment=json.dumps(EQUIP if crew is CREW_NORMAL else EQUIP[:1], ensure_ascii=False),
+                    work_completed=done, deviations_incidents=incidents or None, status="finalized",
+                )
+                created += 1
+            # Neue Spalten auch bei älteren Seed-Berichten nachtragen (nur wenn leer).
+            report.report_number = report.report_number or number
+            report.workforce_count = report.workforce_count or sum(c["workers"] for c in crew)
+            report.trades = report.trades or json.dumps([c["trade"] for c in crew], ensure_ascii=False)
+            report.deliveries = report.deliveries or DELIVERIES.get(day)
+            session.add(report)
+            session.flush()
+            for code, percent in PROGRESS.get(day, {}).items():
+                known = session.exec(select(ReportProgress).where(
+                    ReportProgress.report_id == report.id, ReportProgress.task_id == tasks[code].id)).first()
+                if known is None:
+                    session.add(ReportProgress(report_id=report.id, task_id=tasks[code].id,
+                                               percent=percent, source="nutzer"))
         session.commit()
-        print(f"Projekt #{project.id} ({project.name}): {created} Tagesberichte angelegt, "
-              f"{len(DAYS) - created} übersprungen.")
+        print(f"Projekt #{project.id} ({project.name}): Plan '{PLAN_TITLE}' mit {len(tasks)} Vorgängen, "
+              f"{created} Tagesberichte neu, {len(DAYS) - created} vorhanden (ergänzt).")
 
 
 if __name__ == "__main__":
