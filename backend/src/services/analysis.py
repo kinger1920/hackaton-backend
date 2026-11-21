@@ -131,7 +131,8 @@ def evaluate_tasks(session: Session, project: Project, ref: dt.date) -> tuple[li
         plan_pct, actual_pct = plan_percent(t, ref), actual_percent(t, history, ref)
         delay = delay_days(t, plan_pct, actual_pct)
         packages.append(WorkPackage(
-            id=t.task_code or str(t.id), name=t.title, trade=t.trade or "",
+            id=t.task_code or str(t.id), taskId=t.id, planId=t.plan_id, location=t.location,
+            name=t.title, trade=t.trade or "",
             subcontractor=by_trade.get((t.trade or "").lower(), ""),
             planDate=_de(t.planned_end) if t.planned_end else "Ungeplant",
             actualDate=_actual_date(t, history, actual_pct, delay),

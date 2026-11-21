@@ -1081,7 +1081,136 @@
 .tp-appt-top {
   display: flex;
   justify-content: space-between;
+  align-items: flex-start;
   gap: 6px;
+}
+
+.tp-appt-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.tp-appt.auto {
+  border-left-style: dashed;
+}
+
+.tp-auto-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--color-slate-100, #f1f5f9);
+  color: var(--color-slate-600, #475569);
+  margin-left: 4px;
+}
+
+.tp-auto-box {
+  background: #f8fafc;
+  border: 1px solid var(--border-light, #e2e8f0);
+  border-radius: 10px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--color-slate-700, #334155);
+}
+
+.tp-auto-box strong {
+  color: var(--color-slate-900, #0f172a);
+}
+
+.tp-auto-hint {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--color-slate-600, #475569);
+}
+
+.tp-badge.photo {
+  background: #ecfeff;
+  color: #0e7490;
+  border-color: #a5f3fc;
+}
+
+.tp-photo-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+  gap: 8px;
+}
+
+.tp-photo-card {
+  position: relative;
+  border: 1px solid var(--border-light, #e2e8f0);
+  border-radius: 8px;
+  overflow: hidden;
+  background: white;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.tp-photo-card:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.08);
+}
+
+.tp-photo-thumb {
+  width: 100%;
+  height: 74px;
+  object-fit: cover;
+  display: block;
+  background: #f1f5f9;
+}
+
+.tp-photo-body {
+  padding: 5px 6px;
+  font-size: 11px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.tp-photo-caption {
+  font-weight: 600;
+  color: var(--color-slate-800, #1e293b);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tp-photo-issue {
+  font-size: 10px;
+  color: #b91c1c;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tp-photo-del {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  border: none;
+  background: rgba(15, 23, 42, 0.65);
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.tp-photo-del:hover {
+  background: #dc2626;
 }
 
 .tp-appt-meta {

@@ -164,31 +164,27 @@ export const Summary: React.FC = () => {
     const startScheduling = (item: SummaryActionItem) =>
         setScheduling({id: item.id, date: parseDeadline(item.deadline) || todayIso()});
 
-    /** Adds the item as a deadline to the Terminplaner (same local list the Terminplaner uses). */
-    const confirmScheduling = (item: SummaryActionItem) => {
+    /** Adds the item as a deadline to the Terminplaner via Backend POST /api/appointments. */
+    const confirmScheduling = async (item: SummaryActionItem) => {
         if (!scheduling?.date) return;
-        const key = `siteAppointments_${Number(activeProject.id)}`;
-        let list: unknown[] = [];
+        const description = [
+            item.responsible && `${t('su_responsible')}: ${item.responsible}`,
+            item.source && `${t('su_source')}: ${item.source}`,
+            t('su_from_summary')
+        ].filter(Boolean).join(' · ');
         try {
-            list = JSON.parse(localStorage.getItem(key) || '[]');
-            if (!Array.isArray(list)) list = [];
-        } catch {
-            list = [];
+            await api.createAppointment({
+                projectId: Number(activeProject.id),
+                title: item.task,
+                date: scheduling.date,
+                category: 'deadline',
+                description,
+                isUrgent: item.priority === 'Hoch'
+            });
+        } catch (err) {
+            setError((err as Error)?.message || 'Termin konnte nicht gespeichert werden');
+            return;
         }
-        list.push({
-            id: `sum-${Date.now()}`,
-            projectId: Number(activeProject.id),
-            title: item.task,
-            date: scheduling.date,
-            category: 'deadline',
-            description: [
-                item.responsible && `${t('su_responsible')}: ${item.responsible}`,
-                item.source && `${t('su_source')}: ${item.source}`,
-                t('su_from_summary')
-            ].filter(Boolean).join(' · '),
-            isUrgent: item.priority === 'Hoch'
-        });
-        localStorage.setItem(key, JSON.stringify(list));
         setScheduledIds((prev) => new Set(prev).add(item.id));
         setScheduling(null);
         showToast(t('su_toast_scheduled'));

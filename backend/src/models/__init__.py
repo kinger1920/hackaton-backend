@@ -1,9 +1,12 @@
+from .appointment import Appointment
 from .chat import ChatSession, ChatSessionCreate, ChatSessionRead, ChatMessage, ChatMessageCreate, ChatMessageRead
 from .company import Company, CompanyCreate, CompanyRead, CompanyUpdate
 from .contract import Contract, ContractCreate, ContractRead, ContractUpdate
+from .document import ProjectDocument, UserProfile
 from .note import SiteNote, SiteNoteCreate, SiteNoteRead
 from .notice import FormalNotice, FormalNoticeCreate, FormalNoticeRead
 from .notice_draft import NoticeDraftData
+from .photo import SitePhoto
 from .plan import (
     ConstructionPlan,
     ConstructionPlanCreate,
@@ -18,6 +21,10 @@ from .report import DailyReport, DailyReportCreate, DailyReportRead
 from .report_progress import ReportProgress
 
 __all__ = [
+    "Appointment",
+    "SitePhoto",
+    "ProjectDocument",
+    "UserProfile",
     "Project",
     "ProjectCreate",
     "ProjectUpdate",

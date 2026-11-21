@@ -23,7 +23,7 @@ import {
   Eye,
   PenLine
 } from 'lucide-react';
-import { ComingSoonBadge, ComingSoonNote, isNotImplemented } from '../components/ComingSoon';
+import { ComingSoonNote, isNotImplemented } from '../components/ComingSoon';
 import { addDays, deToIso, isoToDe, toIsoDate as dateToIso, todayIso } from '../utils/dates';
 import { useAudioRecorder } from '../utils/useAudioRecorder';
 import { useProjects } from '../context/ProjectContext';
@@ -36,7 +36,9 @@ import { useLanguage } from '../context/LanguageContext';
 import { api, AttendanceItem, Contract, DayAnalysis, PhotoDescribeResponse, saveBlob } from '../services/api';
 
 interface ReportPhoto {
-  file: File;
+  photoId?: number;
+  file?: File;
+  fileName: string;
   url: string;
   status: 'analyzing' | 'done' | 'unavailable' | 'error';
   result?: PhotoDescribeResponse;
@@ -203,19 +205,43 @@ export const DailyReports: React.FC = () => {
 
   const handlePhotosSelected = (files: FileList | null) => {
     if (!files) return;
+    const iso = toIsoDate(reportDate);
     Array.from(files).forEach((file) => {
-      const url = URL.createObjectURL(file);
-      setPhotos((prev) => [...prev, { file, url, status: 'analyzing' }]);
-      api.describePhoto(file, Number(activeProject.id))
-        .then((result) => {
-          setPhotos((prev) => prev.map((p) => (p.url === url ? { ...p, status: 'done', result } : p)));
+      const localUrl = URL.createObjectURL(file);
+      setPhotos((prev) => [...prev, { file, fileName: file.name, url: localUrl, status: 'analyzing' }]);
+      api.uploadPhoto(file, Number(activeProject.id), iso)
+        .then((saved) => {
+          const remoteUrl = api.getPhotoFileUrl(saved);
+          URL.revokeObjectURL(localUrl);
+          setPhotos((prev) =>
+            prev.map((p) =>
+              p.url === localUrl
+                ? {
+                    photoId: saved.id,
+                    fileName: saved.file_name,
+                    url: remoteUrl,
+                    status: 'done',
+                    result: {
+                      caption: saved.caption,
+                      diary_text: saved.diary_text,
+                      issues: saved.issues,
+                      mode: saved.mode,
+                      id: saved.id,
+                      url: saved.url
+                    }
+                  }
+                : p
+            )
+          );
           // Vorschlag in den Bericht übernehmen (Nutzer kann bearbeiten – human in the loop)
-          if (result.diary_text) setProgressText((prev) => (prev ? `${prev}\n[Foto] ${result.diary_text}` : `[Foto] ${result.diary_text}`));
+          if (saved.diary_text) {
+            setProgressText((prev) => (prev ? `${prev}\n[Foto] ${saved.diary_text}` : `[Foto] ${saved.diary_text}`));
+          }
         })
         .catch((err) => {
           setPhotos((prev) =>
             prev.map((p) =>
-              p.url === url
+              p.url === localUrl
                 ? { ...p, status: isNotImplemented(err) ? 'unavailable' : 'error', error: (err as Error)?.message }
                 : p
             )
@@ -224,12 +250,20 @@ export const DailyReports: React.FC = () => {
     });
   };
 
-  const removePhoto = (idx: number) => {
-    setPhotos((prev) => {
-      const p = prev[idx];
-      if (p) URL.revokeObjectURL(p.url);
-      return prev.filter((_, i) => i !== idx);
-    });
+  const removePhoto = async (idx: number) => {
+    const target = photos[idx];
+    if (!target) return;
+    if (target.photoId != null) {
+      try {
+        await api.deletePhoto(target.photoId);
+      } catch (err) {
+        console.warn('Foto konnte nicht im Backend gelöscht werden:', err);
+      }
+    }
+    if (target.url.startsWith('blob:')) {
+      URL.revokeObjectURL(target.url);
+    }
+    setPhotos((prev) => prev.filter((_, i) => i !== idx));
   };
 
   // Formular-Datum (TT.MM.JJJJ) → ISO für das Backend
@@ -243,7 +277,28 @@ export const DailyReports: React.FC = () => {
     const fetchBackendReport = async () => {
       try {
         const iso = toIsoDate(reportDate);
-        const report = await api.getReport(iso, Number(activeProject.id));
+        const [report, dayPhotos] = await Promise.all([
+          api.getReport(iso, Number(activeProject.id)),
+          api.listPhotos(Number(activeProject.id), undefined, undefined, iso).catch(() => [])
+        ]);
+        if (!cancelled) {
+          setPhotos(
+            dayPhotos.map((p) => ({
+              photoId: p.id,
+              fileName: p.file_name,
+              url: api.getPhotoFileUrl(p),
+              status: 'done',
+              result: {
+                caption: p.caption,
+                diary_text: p.diary_text,
+                issues: p.issues,
+                mode: p.mode,
+                id: p.id,
+                url: p.url
+              }
+            }))
+          );
+        }
         if (!cancelled && report) {
           const hasSaved = Boolean(
             report.id != null ||
@@ -972,9 +1027,9 @@ export const DailyReports: React.FC = () => {
                       <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                         {photos.map((p) => (
                           <img
-                            key={p.url}
+                            key={p.photoId ?? p.url}
                             src={p.url}
-                            alt={p.file.name}
+                            alt={p.fileName}
                             style={{ width: '130px', height: '85px', objectFit: 'cover', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-light)' }}
                           />
                         ))}
@@ -1247,11 +1302,11 @@ export const DailyReports: React.FC = () => {
                 </div>
               </div>
 
-              {/* Idee #1: Foto → Tagebucheintrag (Backend folgt: POST /api/photos/describe) */}
+              {/* Idee #1: Foto → Tagebucheintrag (POST /api/photos) */}
               <div className="form-group">
                 <div className="section-header-row">
                   <label className="form-label" style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
-                    Baustellenfotos <ComingSoonBadge label="KI-Analyse: Backend folgt" />
+                    Baustellenfotos ({photos.length})
                   </label>
                   <label className="history-btn-small" style={{ cursor: 'pointer' }}>
                     <Camera size={12} />
@@ -1273,10 +1328,10 @@ export const DailyReports: React.FC = () => {
                   <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '8px' }}>
                     {photos.map((p, idx) => (
                       <div
-                        key={p.url}
+                        key={p.photoId ?? p.url}
                         style={{ width: '150px', border: '1px solid var(--border-light)', borderRadius: 'var(--radius-md)', overflow: 'hidden', fontSize: '11px', backgroundColor: 'var(--bg-surface)' }}
                       >
-                        <img src={p.url} alt={p.file.name} style={{ width: '100%', height: '90px', objectFit: 'cover', display: 'block' }} />
+                        <img src={p.url} alt={p.fileName} style={{ width: '100%', height: '90px', objectFit: 'cover', display: 'block' }} />
                         <div style={{ padding: '6px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
                           {p.status === 'analyzing' && <span>KI analysiert…</span>}
                           {p.status === 'done' && p.result && (

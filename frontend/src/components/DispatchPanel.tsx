@@ -1,12 +1,11 @@
 import React, {useEffect, useState} from 'react';
 import {Send, CheckCircle2} from 'lucide-react';
 import {api, DispatchMethod, NoticeDispatch} from '../services/api';
-import {ComingSoonBadge, isNotImplemented} from './ComingSoon';
 
 /**
  * Idee #4: Versand & Zugangsnachweis eines freigegebenen Briefs.
  * Eine Behinderungsanzeige wirkt nur, wenn ihr Zugang nachweisbar ist (§ 6 Abs. 1 VOB/B).
- * Backend folgt (GET/PUT /api/notices/{id}/dispatch). Bis dahin wird lokal im Browser gespeichert.
+ * Gespeichert über GET/PUT /api/notices/{id}/dispatch im Backend.
  */
 
 const METHODS: Record<DispatchMethod, string> = {
@@ -17,7 +16,7 @@ const METHODS: Record<DispatchMethod, string> = {
     persoenlich: 'Übergabe in Baubesprechung (Protokoll)'
 };
 
-const localKey = (id: number) => `noticeDispatch_${id}`;
+const legacyLocalKey = (id: number) => `noticeDispatch_${id}`;
 
 function nowLocal(): string {
     const d = new Date();
@@ -29,7 +28,6 @@ export const DispatchPanel: React.FC<{ noticeId: number | null; approved: boolea
     const [data, setData] = useState<NoticeDispatch | null>(null);
     const [form, setForm] = useState<NoticeDispatch>({method: 'einschreiben', sent_at: nowLocal()});
     const [editing, setEditing] = useState(false);
-    const [localOnly, setLocalOnly] = useState(false);
     const [msg, setMsg] = useState<string | null>(null);
 
     useEffect(() => {
@@ -38,20 +36,31 @@ export const DispatchPanel: React.FC<{ noticeId: number | null; approved: boolea
         setMsg(null);
         if (!noticeId) return;
         api.getDispatch(noticeId)
-            .then((d) => {
-                setData(d);
-                setLocalOnly(false);
+            .then(async (d) => {
+                if (d) {
+                    setData(d);
+                    try {
+                        localStorage.removeItem(legacyLocalKey(noticeId));
+                    } catch {
+                        // ignore
+                    }
+                    return;
+                }
+                // Einmalige Migration alter Browser-Versanddaten ins Backend
+                try {
+                    const raw = localStorage.getItem(legacyLocalKey(noticeId));
+                    if (raw) {
+                        const legacy: NoticeDispatch = JSON.parse(raw);
+                        const saved = await api.saveDispatch(noticeId, legacy);
+                        localStorage.removeItem(legacyLocalKey(noticeId));
+                        setData(saved);
+                    }
+                } catch {
+                    // ignore
+                }
             })
             .catch((err) => {
-                if (isNotImplemented(err)) {
-                    setLocalOnly(true);
-                    try {
-                        const raw = localStorage.getItem(localKey(noticeId));
-                        setData(raw ? JSON.parse(raw) : null);
-                    } catch {
-                        setData(null);
-                    }
-                }
+                setMsg((err as Error)?.message ?? 'Versanddaten konnten nicht geladen werden');
             });
     }, [noticeId]);
 
@@ -62,23 +71,11 @@ export const DispatchPanel: React.FC<{ noticeId: number | null; approved: boolea
         try {
             const saved = await api.saveDispatch(noticeId, form);
             setData(saved);
-            setLocalOnly(false);
             setMsg(null);
+            setEditing(false);
         } catch (err) {
-            if (isNotImplemented(err)) {
-                try {
-                    localStorage.setItem(localKey(noticeId), JSON.stringify(form));
-                } catch {
-                    // ignore
-                }
-                setData(form);
-                setLocalOnly(true);
-                setMsg('Nur lokal in diesem Browser gespeichert – Backend folgt.');
-            } else {
-                setMsg((err as Error)?.message ?? 'Speichern fehlgeschlagen');
-            }
+            setMsg((err as Error)?.message ?? 'Speichern fehlgeschlagen');
         }
-        setEditing(false);
     };
 
     const box: React.CSSProperties = {
@@ -98,7 +95,6 @@ export const DispatchPanel: React.FC<{ noticeId: number | null; approved: boolea
             <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', flexWrap: 'wrap'}}>
                 <strong style={{display: 'flex', alignItems: 'center', gap: '6px'}}>
                     <Send size={14}/> Versand & Zugangsnachweis
-                    {localOnly && <ComingSoonBadge/>}
                 </strong>
                 {approved && !editing && (
                     <button
@@ -159,10 +155,6 @@ export const DispatchPanel: React.FC<{ noticeId: number | null; approved: boolea
                         Zugang bestätigt am
                         <input className="form-input" type="date" value={form.received_at ?? ''}
                                onChange={(e) => setForm({...form, received_at: e.target.value || null})}/>
-                    </label>
-                    <label style={{display: 'flex', flexDirection: 'column', gap: '2px', gridColumn: '1 / -1'}}>
-                        Nachweis (Rückschein, Quittung) <ComingSoonBadge label="Upload: Backend folgt"/>
-                        <input className="form-input" type="file" accept="image/*,application/pdf" disabled/>
                     </label>
                     <div style={{gridColumn: '1 / -1', display: 'flex', justifyContent: 'flex-end', gap: '8px'}}>
                         <button className="btn btn-secondary" onClick={() => setEditing(false)}>Abbrechen</button>

@@ -140,3 +140,166 @@ def test_notice_steps_in_same_minute_newest_first(client, engine, pid):
         s.commit()
     items = _timeline(client, pid, "2026-11-19", "2026-11-19", "notice").json()["items"]
     assert [i["id"].rsplit("-", 1)[-1] for i in items] == ["exported", "approved", "created"]
+
+
+# ---------------------------------------------------------------- Manuelle Termine (CRUD + Schedule-Merge + .ics)
+
+def test_manual_appointments_crud_schedule_merge_and_ics(client, pid):
+    # Anlegen
+    res = client.post("/api/appointments", json={
+        "projectId": pid,
+        "title": "Baubesprechung Rohbau",
+        "date": "2026-11-23",
+        "time": "09:30",
+        "category": "meeting",
+        "trade": "Rohbau",
+        "description": "Abstimmung Schalung",
+        "vobReference": "§ 4 VOB/B",
+        "isUrgent": True,
+    })
+    assert res.status_code == 201
+    created = res.json()
+    assert created["id"].startswith("appt-")
+    assert created["source"] == "manual" and created["editable"] is True
+    assert created["title"] == "Baubesprechung Rohbau" and created["time"] == "09:30"
+    numeric_id = int(created["id"].removeprefix("appt-"))
+
+    # In GET /api/appointments gelistet
+    listed = client.get(f"/api/appointments?project_id={pid}&from=2026-11-20&to=2026-11-25").json()
+    assert [a["id"] for a in listed] == [created["id"]]
+
+    # In GET /api/schedule zusammen mit automatischen Terminen (klar unterscheidbar über source/editable)
+    sched_appts = {a["id"]: a for a in _schedule(client, pid, "2026-11-20", days=7)["appointments"]}
+    assert created["id"] in sched_appts
+    assert sched_appts[created["id"]]["editable"] is True
+    auto_plan = next(a for a in sched_appts.values() if a["id"].startswith("task-"))
+    assert auto_plan["source"] == "plan" and auto_plan["editable"] is False
+
+    # iCalendar Feed (.ics)
+    ics_res = client.get(f"/api/schedule/ics?project_id={pid}&ref_date=2026-11-20")
+    assert ics_res.status_code == 200
+    assert "BEGIN:VCALENDAR" in ics_res.text
+    assert "Baubesprechung Rohbau" in ics_res.text
+
+    # Bearbeiten
+    upd = client.patch(f"/api/appointments/{numeric_id}", json={
+        "title": "Baubesprechung Rohbau (verschoben)",
+        "time": "11:00",
+        "isUrgent": False,
+    })
+    assert upd.status_code == 200
+    assert upd.json()["title"] == "Baubesprechung Rohbau (verschoben)"
+    assert upd.json()["time"] == "11:00" and upd.json()["isUrgent"] is False
+
+    # Löschen
+    assert client.delete(f"/api/appointments/{numeric_id}").status_code == 204
+    assert client.get(f"/api/appointments?project_id={pid}").json() == []
+    assert client.delete(f"/api/appointments/{numeric_id}").status_code == 404
+
+
+def test_manual_appointments_validation_errors(client, pid):
+    assert client.post("/api/appointments", json={"projectId": pid, "title": "   ", "date": "2026-11-23"}).status_code == 422
+    assert client.patch("/api/appointments/99999", json={"title": "Test"}).status_code == 404
+    assert client.get(f"/api/appointments?project_id={pid}&from=2026-11-25&to=2026-11-20").status_code == 422
+
+
+# ---------------------------------------------------------------- Fotos, Versand, Zonen, Dokumente, Profil & Projekt-Delete
+
+def test_photos_upload_describe_list_serve_and_delete(client, pid):
+    png_bytes = (
+        b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01"
+        b"\x08\x02\x00\x00\x00\x90wS\xde\x00\x00\x00\x0cIDATx\x9cc\xf8\xcf\xc0"
+        b"\x00\x00\x03\x01\x01\x00\x18\xdd\x8d\xb0\x00\x00\x00\x00IEND\xaeB`\x82"
+    )
+    up = client.post(
+        "/api/photos",
+        data={"project_id": str(pid), "report_date": "2026-11-20", "caption": "Riss an Schalung Achse B"},
+        files={"file": ("riss_achse_b.png", png_bytes, "image/png")},
+    )
+    assert up.status_code == 201
+    photo = up.json()
+    assert photo["id"] > 0
+    assert photo["report_date"] == "2026-11-20"
+    assert "Riss an Schalung Achse B" in photo["caption"]
+    assert len(photo["issues"]) >= 1
+
+    # Liste für Tag & Zeitraum
+    by_day = client.get(f"/api/photos?project_id={pid}&date=2026-11-20").json()
+    assert [p["id"] for p in by_day] == [photo["id"]]
+    by_range = client.get(f"/api/photos?project_id={pid}&from=2026-11-18&to=2026-11-21").json()
+    assert [p["id"] for p in by_range] == [photo["id"]]
+
+    # Bilddatei abrufen
+    file_res = client.get(photo["url"])
+    assert file_res.status_code == 200
+    assert file_res.content == png_bytes
+
+    # Löschen
+    assert client.delete(f"/api/photos/{photo['id']}").status_code == 204
+    assert client.get(f"/api/photos?project_id={pid}&date=2026-11-20").json() == []
+
+
+def test_dispatch_location_documents_profile_and_project_delete(client, pid):
+    # 1. Brief anlegen + Versandnachweis speichern
+    cap = client.post("/api/capture", json={"text": "Bagger steht seit 10 Uhr wegen fehlender Pläne", "project_id": pid}).json()
+    nid = cap["notice_id"]
+    assert client.get(f"/api/notices/{nid}/dispatch").json() is None
+    disp_payload = {
+        "method": "einschreiben",
+        "sent_at": "2026-11-20T14:30",
+        "tracking_number": "RR-123456789-DE",
+        "received_at": "2026-11-21",
+    }
+    saved_disp = client.put(f"/api/notices/{nid}/dispatch", json=disp_payload)
+    assert saved_disp.status_code == 200
+    assert client.get(f"/api/notices/{nid}/dispatch").json()["tracking_number"] == "RR-123456789-DE"
+
+    # 2. Bereich/Zone am Vorgang speichern und in /api/analysis prüfen
+    analysis = client.get(f"/api/analysis?project_id={pid}&period=all&ref_date=2026-11-20").json()
+    wp = analysis["workPackages"][0]
+    assert wp["taskId"] is not None and wp["planId"] is not None
+    patched_task = client.patch(
+        f"/api/plans/{wp['planId']}/tasks/{wp['taskId']}",
+        json={"location": "Bauteil C / 2. OG"},
+    )
+    assert patched_task.status_code == 200
+    assert patched_task.json()["location"] == "Bauteil C / 2. OG"
+    analysis_after = client.get(f"/api/analysis?project_id={pid}&period=all&ref_date=2026-11-20").json()
+    assert analysis_after["workPackages"][0]["location"] == "Bauteil C / 2. OG"
+
+    # 3. Projektdokumente & Bauleiter-Profil
+    docs = client.get(f"/api/documents?project_id={pid}").json()
+    assert len(docs) >= 2  # Standard-Protokoll + Standard-E-Mail geseedet
+    new_doc = client.post("/api/documents", json={
+        "projectId": pid,
+        "type": "minutes",
+        "title": "Sonderbesprechung Kranstandort",
+        "date": "21.11.2026",
+        "authorOrSender": "Bauleitung",
+        "content": "Kran 2 bleibt bis Ende Dezember.",
+    })
+    assert new_doc.status_code == 201
+
+    prof = client.put("/api/profile", json={
+        "fullName": "Dipl.-Ing. Anna Baustark",
+        "email": "a.baustark@bau-ag.de",
+        "phone": "+49 171 9998877",
+        "company": "Baupartner AG",
+        "role": "Oberbauleiter",
+        "officeLocation": "Berlin",
+        "workplaceType": "Baustellencontainer vor Ort",
+        "permissions": {"dailyReports": True, "vobLetters": True, "defectNotices": True, "claims": True},
+    })
+    assert prof.status_code == 200
+    assert client.get("/api/profile").json()["fullName"] == "Dipl.-Ing. Anna Baustark"
+
+    # 4. Termin + Foto für das Projekt anlegen und dann Projekt komplett löschen (Foreign-Key-Check!)
+    client.post("/api/appointments", json={"projectId": pid, "title": "Abnahme", "date": "2026-11-25", "category": "inspection"})
+    client.post(
+        "/api/photos",
+        data={"project_id": str(pid), "report_date": "2026-11-20"},
+        files={"file": ("test.jpg", b"\xff\xd8\xff\xe0\x00\x10JFIF", "image/jpeg")},
+    )
+    del_res = client.delete(f"/projects/{pid}")
+    assert del_res.status_code == 204
+

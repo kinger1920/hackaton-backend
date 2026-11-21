@@ -3,7 +3,7 @@
  * Stored in localStorage ("userProfile"); there is no user endpoint in the backend yet.
  * Company address and VOB rules come from Stammdaten (company_type "own") when available.
  */
-import type {Company} from '../services/api';
+import {api, Company} from '../services/api';
 
 export type SignAs = 'iA' | 'iV' | 'none';
 
@@ -64,6 +64,16 @@ export const loadProfile = (): UserProfile => {
 export const saveProfile = (p: UserProfile) => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(p));
     if (p.fullName.trim()) localStorage.setItem('userName', p.fullName.trim());
+    api.saveProfile({
+        fullName: p.fullName,
+        email: p.email,
+        phone: p.mobile || p.phone,
+        company: p.company,
+        role: p.role,
+        officeLocation: p.companyAddress,
+        workplaceType: 'Baustellencontainer vor Ort',
+        permissions: {dailyReports: true, vobLetters: true, defectNotices: true, claims: false}
+    }).catch(() => undefined);
     window.dispatchEvent(new Event('profile-updated'));
 };
 

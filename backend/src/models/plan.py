@@ -46,6 +46,7 @@ class PlanTaskBase(SQLModel):
     actual_end: Optional[date] = None
     status: str = Field(default="pending")  # pending, in_progress, delayed, completed
     notes: Optional[str] = None
+    location: Optional[str] = None  # Bereich/Zone im Grundriss, z. B. "Achse B", "Haus C", "1. OG"
 
 
 class PlanTask(PlanTaskBase, table=True):

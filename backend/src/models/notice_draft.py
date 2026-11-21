@@ -21,3 +21,6 @@ class NoticeDraftData(SQLModel, table=True):
     # Audit der Freigabe ("nichts ohne Freigabe": wer hat wann freigegeben)
     approved_by: Optional[str] = None
     approved_at: Optional[datetime] = None
+
+    # Versand & Zugangsnachweis (JSON: NoticeDispatch)
+    dispatch_json: Optional[str] = None
