@@ -501,7 +501,7 @@ export const DailyReports: React.FC = () => {
           </div>
         </div>
 
-        <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+        <div className="reports-header-actions">
           <button
             type="button"
             className="btn btn-secondary"
@@ -661,8 +661,7 @@ export const DailyReports: React.FC = () => {
                     <div className="history-item-actions" onClick={(e) => e.stopPropagation()}>
                       <button
                         type="button"
-                        className="history-btn-small"
-                        style={{ color: 'var(--color-primary)', fontWeight: 600, backgroundColor: '#eff6ff', borderColor: '#bfdbfe' }}
+                        className="history-btn-small primary-tint"
                         onClick={() => {
                           setSelectedPastDoc(item);
                           setModalTab('summary');
@@ -686,8 +685,7 @@ export const DailyReports: React.FC = () => {
                       {item.hindrance && (
                         <button
                           type="button"
-                          className="history-btn-small"
-                          style={{ color: '#b45309' }}
+                          className="history-btn-small warning-tint"
                           onClick={() => handleContinueHindrance(item)}
                           title={t('rep_btn_continue_hindrance')}
                         >
@@ -699,8 +697,7 @@ export const DailyReports: React.FC = () => {
                       {item.id.startsWith('note-') && (
                         <button
                           type="button"
-                          className="history-btn-small"
-                          style={{ color: '#dc2626' }}
+                          className="history-btn-small danger-tint"
                           onClick={() => handleDeleteBackendNote(item.id)}
                           title="Eintrag löschen"
                         >
@@ -723,15 +720,10 @@ export const DailyReports: React.FC = () => {
               <span>{t('rep_editor_title')}</span>
             </div>
 
-            <div style={{ display: 'flex', gap: '8px' }}>
+            <div className="editor-toolbar">
               <button
                 type="button"
-                className={`history-btn-small ${isRecording ? 'active' : ''}`}
-                style={{
-                  backgroundColor: isRecording ? '#fee2e2' : 'white',
-                  color: isRecording ? '#dc2626' : 'var(--color-slate-700)',
-                  borderColor: isRecording ? '#f87171' : 'var(--border-light)'
-                }}
+                className={`history-btn-small ${isRecording ? 'recording-active' : ''}`}
                 onClick={handleToggleMic}
                 disabled={isProcessingDictation}
               >
@@ -814,13 +806,13 @@ export const DailyReports: React.FC = () => {
             </div>
 
             <div className="form-group">
-              <label className="form-label" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '6px' }}>
+              <label className="form-label" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
                 <span>{t('rep_form_weather')}</span>
                 {/* Idee #2: Wetter automatisch (Backend folgt: GET /api/weather) */}
                 <button
                   type="button"
                   className="history-btn-small"
-                  style={{ padding: '1px 6px', fontSize: '10px' }}
+                  style={{ padding: '2px 7px', fontSize: '10px' }}
                   onClick={handleAutoWeather}
                   disabled={isLoadingWeather}
                   title="Wetter für Datum und Baustelle automatisch übernehmen"
@@ -876,11 +868,11 @@ export const DailyReports: React.FC = () => {
 
           {/* Anwesenheit je Firma (Backend: attendance) – Basis für den Sollstärken-Check gegen die Verträge */}
           <div className="form-group">
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px', gap: '8px', flexWrap: 'wrap' }}>
+            <div className="section-header-row">
               <label className="form-label" style={{ margin: 0 }}>
                 Anwesenheit je Firma ({attendance.reduce((s, a) => s + (a.workers || 0), 0)} Personen)
               </label>
-              <div style={{ display: 'flex', gap: '6px' }}>
+              <div className="section-header-actions">
                 {contracts.length > 0 && (
                   <button
                     type="button"
@@ -907,12 +899,12 @@ export const DailyReports: React.FC = () => {
                 Noch keine Anwesenheit erfasst. Pro Firma eintragen, damit die Sollstärke laut Vertrag geprüft werden kann.
               </div>
             ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              <div className="attendance-list">
                 {attendance.map((a, idx) => {
                   const planned = plannedFor(a.company);
                   const below = planned != null && a.workers < planned;
                   return (
-                    <div key={idx} style={{ display: 'grid', gridTemplateColumns: '2fr 1.3fr 0.8fr 0.8fr auto', gap: '6px', alignItems: 'center' }}>
+                    <div key={idx} className="attendance-row">
                       <input
                         className="form-input"
                         placeholder="Firma"
@@ -945,12 +937,11 @@ export const DailyReports: React.FC = () => {
                       />
                       <button
                         type="button"
-                        className="history-btn-small"
-                        style={{ color: '#dc2626' }}
+                        className="history-btn-small danger-tint"
                         onClick={() => setAttendance(attendance.filter((_, i) => i !== idx))}
                         title="Zeile entfernen"
                       >
-                        <Trash2 size={11} />
+                        <Trash2 size={12} />
                       </button>
                       {below && (
                         <div style={{ gridColumn: '1 / -1', fontSize: '11px', color: '#b91c1c' }}>
@@ -966,7 +957,7 @@ export const DailyReports: React.FC = () => {
 
           {/* Trades & Subcontractors Present */}
           <div className="form-group">
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+            <div className="section-header-row">
               <label className="form-label" style={{ margin: 0 }}>
                 {t('rep_form_trades')} ({trades.length})
               </label>
@@ -992,11 +983,10 @@ export const DailyReports: React.FC = () => {
               ))}
             </div>
 
-            <div style={{ display: 'flex', gap: '8px', marginTop: '10px' }}>
+            <div className="trade-add-row">
               <input
                 type="text"
                 className="form-input"
-                style={{ flex: 1 }}
                 placeholder="Gewerk..."
                 value={newTradeInput}
                 onChange={(e) => setNewTradeInput(e.target.value)}
@@ -1007,21 +997,21 @@ export const DailyReports: React.FC = () => {
                   }
                 }}
               />
-              <button type="button" className="btn btn-secondary" onClick={handleAddTrade}>
-                <Plus size={14} />
-                <span>+</span>
+              <button type="button" className="btn btn-secondary" onClick={handleAddTrade} title="Gewerk hinzufügen">
+                <Plus size={15} />
+                <span>Hinzufügen</span>
               </button>
             </div>
           </div>
 
           {/* Idee #1: Foto → Tagebucheintrag (Backend folgt: POST /api/photos/describe) */}
           <div className="form-group">
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-              <label className="form-label" style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <div className="section-header-row">
+              <label className="form-label" style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
                 Baustellenfotos <ComingSoonBadge label="KI-Analyse: Backend folgt" />
               </label>
               <label className="history-btn-small" style={{ cursor: 'pointer' }}>
-                <Camera size={11} />
+                <Camera size={12} />
                 <span>Foto aufnehmen / hochladen</span>
                 <input
                   type="file"
@@ -1056,8 +1046,8 @@ export const DailyReports: React.FC = () => {
                       {p.status === 'error' && <span style={{ color: '#b91c1c' }}>{p.error}</span>}
                       <button
                         type="button"
-                        className="history-btn-small"
-                        style={{ alignSelf: 'flex-start', color: '#dc2626' }}
+                        className="history-btn-small danger-tint"
+                        style={{ alignSelf: 'flex-start' }}
                         onClick={() => removePhoto(idx)}
                       >
                         <Trash2 size={10} />
@@ -1096,11 +1086,11 @@ export const DailyReports: React.FC = () => {
               placeholder="Behinderungen..."
             />
             {hindranceText.trim() && (
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', flexWrap: 'wrap' }}>
                 <button
                   type="button"
                   className="btn btn-primary"
-                  style={{ fontSize: '12px', padding: '6px 12px', backgroundColor: '#b45309' }}
+                  style={{ fontSize: '12px', padding: '7px 14px', backgroundColor: '#b45309' }}
                   onClick={() => navigate('/drafts', { state: { type: 'delay', keywords: hindranceText.trim() } })}
                 >
                   <Mail size={14} />
@@ -1123,7 +1113,7 @@ export const DailyReports: React.FC = () => {
           </div>
 
           {/* Save & Action Footer */}
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: '10px', borderTop: '1px solid var(--border-light)' }}>
+          <div className="editor-footer">
             <button
               type="button"
               className="btn btn-secondary"
@@ -1137,16 +1127,15 @@ export const DailyReports: React.FC = () => {
               {t('btn_clear')}
             </button>
 
-            <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
+            <div className="editor-footer-actions">
               <label
-                style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: 'var(--color-slate-700)', cursor: 'pointer' }}
+                className={`finalize-checkbox-chip ${isFinalized ? 'active' : ''}`}
                 title="Abgeschlossene Berichte werden ohne ENTWURF-Wasserzeichen exportiert"
               >
                 <input
                   type="checkbox"
                   checked={isFinalized}
                   onChange={(e) => setIsFinalized(e.target.checked)}
-                  style={{ accentColor: 'var(--color-primary)' }}
                 />
                 <span>Bericht abschließen</span>
               </label>
@@ -1295,12 +1284,12 @@ export const DailyReports: React.FC = () => {
                   style={{ fontSize: '12px', backgroundColor: '#fffbeb', border: '1px solid #fde68a', borderRadius: 'var(--radius-md)', padding: '8px 10px' }}
                 >
                   <strong>{dev.title}</strong> — {dev.cause} <em>({dev.vobReference})</em>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '4px', gap: '8px' }}>
-                    <span style={{ color: '#92400e' }}>💡 {dev.suggestedAction}</span>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', marginTop: '6px', gap: '8px' }}>
+                    <span style={{ color: '#92400e', flex: '1 1 220px' }}>💡 {dev.suggestedAction}</span>
                     <button
                       type="button"
                       className="btn btn-primary"
-                      style={{ fontSize: '11px', padding: '4px 10px', backgroundColor: '#b45309', whiteSpace: 'nowrap' }}
+                      style={{ fontSize: '11px', padding: '5px 10px', backgroundColor: '#b45309', whiteSpace: 'nowrap' }}
                       onClick={() =>
                         navigate('/drafts', {
                           state: { type: dev.draftType, keywords: `${dev.title}. Ursache: ${dev.cause}. Auswirkung: ${dev.impact} (Quelle: ${dev.sourceReport})` }
@@ -1557,7 +1546,7 @@ export const DailyReports: React.FC = () => {
               )}
 
               {/* Modal Footer Actions */}
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '10px', paddingTop: '10px', borderTop: '1px solid var(--border-light)', flexWrap: 'wrap', gap: '10px' }}>
+              <div className="modal-footer">
                 <button
                   type="button"
                   className="btn btn-secondary"
@@ -1570,7 +1559,7 @@ export const DailyReports: React.FC = () => {
                   <span>{t('rep_btn_adopt_trades')}</span>
                 </button>
 
-                <div style={{ display: 'flex', gap: '8px' }}>
+                <div className="modal-footer-right">
                   <button
                     type="button"
                     className="btn btn-secondary"
