@@ -137,13 +137,36 @@ export const DeadlineRadar: React.FC = () => {
     const {activeProject} = useProjects();
     const projectId = Number(activeProject.id);
     const [notices, setNotices] = useState<NoticeOut[]>([]);
+    const [scheduled, setScheduled] = useState<DeadlineItem[]>([]);
     const [analysis, setAnalysis] = useState<PlanAnalysis | null>(null);
     const [loading, setLoading] = useState(false);
     const [filter, setFilter] = useState<'all' | Kind>('all');
 
     const load = async () => {
         setLoading(true);
-        const [n, a] = await Promise.allSettled([api.listNotices(projectId), api.getAnalysis(projectId, 'all')]);
+        const t0 = new Date();
+        const from = `${t0.getFullYear()}-${String(t0.getMonth() + 1).padStart(2, '0')}-${String(t0.getDate()).padStart(2, '0')}`;
+        const [n, a, s] = await Promise.allSettled([
+            api.listNotices(projectId),
+            api.getAnalysis(projectId, 'all'),
+            api.getSchedule(projectId, from, 31) // Fristen/Abnahmen der nächsten 31 Tage aus dem Terminplan
+        ]);
+        setScheduled(
+            s.status === 'fulfilled'
+                ? s.value.appointments
+                      .filter((ap) => ap.category === 'deadline' || ap.category === 'inspection')
+                      .map((ap) => ({
+                          id: `s-${ap.id}`,
+                          kind: 'appointment' as Kind,
+                          title: ap.title,
+                          detail: ap.description || '',
+                          due: parseDate(ap.date)!,
+                          source: 'Terminplan (Backend)',
+                          vob: ap.vobReference ?? undefined
+                      }))
+                      .filter((x) => x.due)
+                : []
+        );
         setNotices(n.status === 'fulfilled' ? n.value : []);
         setAnalysis(a.status === 'fulfilled' ? a.value : null);
         setLoading(false);
@@ -154,11 +177,11 @@ export const DeadlineRadar: React.FC = () => {
     }, [projectId]);
 
     const items = useMemo(() => {
-        const all = [...fromNotices(notices), ...fromAnalysis(analysis), ...fromAppointments(projectId)];
+        const all = [...fromNotices(notices), ...fromAnalysis(analysis), ...scheduled, ...fromAppointments(projectId)];
         return all
             .filter((i) => filter === 'all' || i.kind === filter)
             .sort((x, y) => x.due.getTime() - y.due.getTime());
-    }, [notices, analysis, projectId, filter]);
+    }, [notices, analysis, scheduled, projectId, filter]);
 
     const overdue = items.filter((i) => daysUntil(i.due) < 0).length;
     const soon = items.filter((i) => daysUntil(i.due) >= 0 && daysUntil(i.due) <= 3).length;

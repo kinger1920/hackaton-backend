@@ -229,9 +229,11 @@ export const Projects: React.FC = () => {
                 await addProject(payload);
             }
             closeForm();
-        } catch (err) {
+        } catch (err: any) {
             console.error(err);
-            alert('Projekt konnte nicht gespeichert werden. Läuft das Backend?');
+            alert(err?.message?.includes('HTTP') || !err?.message
+                ? 'Projekt konnte nicht gespeichert werden. Läuft das Backend?'
+                : err.message);
         }
     };
 

@@ -1,891 +1,1163 @@
-import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import React, {useEffect, useMemo, useRef, useState} from 'react';
+import {useNavigate} from 'react-router-dom';
 import {
-  Calendar as CalendarIcon,
-  ChevronLeft,
-  ChevronRight,
-  Plus,
-  Clock,
-  AlertTriangle,
-  CheckCircle2,
-  Users,
-  HardHat,
-  Truck,
-  Printer,
-  X,
-  Mail
+    Calendar as CalendarIcon,
+    ChevronLeft,
+    ChevronRight,
+    Plus,
+    Printer,
+    Download,
+    X,
+    Mail,
+    FileText,
+    Camera,
+    AlertTriangle,
+    Wrench,
+    StickyNote,
+    TrendingUp,
+    ClipboardList,
+    Users,
+    Search,
+    RefreshCw,
+    Link2,
+    Trash2,
+    Flag,
+    PlayCircle,
+    CheckCircle2
 } from 'lucide-react';
-import { useProjects } from '../context/ProjectContext';
-import { useLanguage } from '../context/LanguageContext';
-import { api, ConstructionPlan } from '../services/api';
+import {useProjects} from '../context/ProjectContext';
+import {useLanguage} from '../context/LanguageContext';
+import {api, AppointmentCategory, DayTask, saveBlob, ScheduleAppointment, TimelineItem} from '../services/api';
+import {ComingSoonBadge} from '../components/ComingSoon';
 import '@frontend/src/index.css';
 import './Termin.css';
 
-export type EventCategory = 'deadline' | 'milestone' | 'inspection' | 'meeting' | 'delivery';
+/**
+ * Terminplaner & Kalender – alles auf einer Seite.
+ *  Vergangenheit: GET /api/timeline  (Berichte, Notizen, Briefe/Mängel, Fortschritt, Warnungen; max. 92 Tage je Abruf)
+ *  Planung:       GET /api/schedule  (Arbeiten je Werktag aus dem Bauzeitenplan + Termine; max. 31 Tage je Abruf)
+ *  Eigene Termine: lokal (localStorage `siteAppointments_<projectId>`), bis es einen Backend-Endpunkt zum Anlegen gibt.
+ *  Fotos: Backend folgt (Idee #1).
+ */
+
+// Format der lokal gespeicherten Termine (wird auch vom Fristen-Radar gelesen)
+export type EventCategory = AppointmentCategory;
 
 export interface SiteAppointment {
-  id: string;
-  projectId: string | number;
-  title: string;
-  date: string; // YYYY-MM-DD
-  time?: string;
-  category: EventCategory;
-  trade?: string;
-  description?: string;
-  vobReference?: string;
-  isUrgent?: boolean;
+    id: string;
+    projectId: string | number;
+    title: string;
+    date: string; // YYYY-MM-DD
+    time?: string;
+    category: EventCategory;
+    trade?: string;
+    description?: string;
+    vobReference?: string;
+    isUrgent?: boolean;
 }
 
-const INITIAL_PROJECT_EVENTS: Record<string, SiteAppointment[]> = {
-  // Proj-1: Schulzentrum Nord
-  'proj-1': [
-    {
-      id: 'e-1',
-      projectId: 'proj-1',
-      title: 'Fristablauf TGA-Freigabe Schacht 3 (§ 6 VOB/B)',
-      date: '2026-11-20',
-      time: '12:00',
-      category: 'deadline',
-      trade: 'TGA (Fa. Elektro-Klima)',
-      description: 'Zusage aus Jour Fixe 18 nicht eingehalten. Behinderungsanzeige erforderlich.',
-      vobReference: '§ 6 Abs. 1 VOB/B',
-      isUrgent: true
-    },
-    {
-      id: 'e-2',
-      projectId: 'proj-1',
-      title: 'Prüfstatische Abnahme Deckenbewehrung 1. OG',
-      date: '2026-11-21',
-      time: '15:30',
-      category: 'inspection',
-      trade: 'Rohbau & Prüfstatik',
-      description: 'Vor-Ort-Begehung mit Prüfstatiker Dr. Lang zur Betonierfreigabe Bauteil B.',
-      vobReference: 'DIN 1045 / VOB/C'
-    },
-    {
-      id: 'e-3',
-      projectId: 'proj-1',
-      title: 'Betonage Decke über 1. OG (280 m³ C30/37)',
-      date: '2026-11-23',
-      time: '07:30',
-      category: 'milestone',
-      trade: 'Rohbau (Fa. BetonTech)',
-      description: 'Pumpeinsatz ab 07:30 Uhr. 2 Betonmischer-Züge getaktet.'
-    },
-    {
-      id: 'e-4',
-      projectId: 'proj-1',
-      title: 'Rügefrist: 24x Brandschutztüren Lieferverzug',
-      date: '2026-11-25',
-      time: '17:00',
-      category: 'deadline',
-      trade: 'Türen & Innenausbau',
-      description: '14 Tage Lieferverzug Hoffmann GmbH. Schadensersatzvorbehalt nach § 6 Abs. 6 VOB/B.',
-      vobReference: '§ 6 Abs. 6 VOB/B',
-      isUrgent: true
-    },
-    {
-      id: 'e-5',
-      projectId: 'proj-1',
-      title: 'SiGeKo Sicherheitsbegehung Baustelle',
-      date: '2026-11-27',
-      time: '10:00',
-      category: 'inspection',
-      trade: 'Arbeitssicherheit',
-      description: 'Kontrolle Absturzsicherungen 1. OG und Gerüstfreigabescheine.'
-    },
-    {
-      id: 'e-6',
-      projectId: 'proj-1',
-      title: 'Jour Fixe Nr. 19 mit Bauherr & Planern',
-      date: '2026-11-25',
-      time: '14:00',
-      category: 'meeting',
-      trade: 'Gesamtbauleitung',
-      description: 'Abstimmung Terminplanfortschreibung und Kostenfortschreibung.'
-    },
-    {
-      id: 'e-7',
-      projectId: 'proj-1',
-      title: 'Lieferung 40t Fertigteil-Treppenläufe',
-      date: '2026-11-28',
-      time: '08:00',
-      category: 'delivery',
-      trade: 'Logistik & Krane',
-      description: 'Mobilkran 90t bestellt. Zufahrt Süd freihalten.'
-    },
-    {
-      id: 'e-8',
-      projectId: 'proj-1',
-      title: 'Meilenstein: Rohbaufertigstellung Bauteil B',
-      date: '2026-12-04',
-      time: '16:00',
-      category: 'milestone',
-      trade: 'Rohbau',
-      description: 'Abschluss aller tragenden Decken und Außenwände Bauteil B.'
-    }
-  ],
+type View = 'day' | 'week' | 'month' | 'year' | 'all';
+type Layer = 'tasks' | 'appointments' | 'report' | 'defect' | 'note' | 'notice' | 'progress' | 'alert' | 'photos';
 
-  // Proj-2: Spreebogen
-  'proj-2': [
-    {
-      id: 'e-201',
-      projectId: 'proj-2',
-      title: 'Baugrund-Frist: Anzeigepflicht Altfundamente Kaimauer',
-      date: '2026-11-21',
-      time: '11:00',
-      category: 'deadline',
-      trade: 'Spezialtiefbau',
-      description: 'Schriftliche Mehrkostenanmeldung Baugrundhindernis an AG.',
-      vobReference: '§ 2 Abs. 6 / § 6 VOB/B',
-      isUrgent: true
-    },
-    {
-      id: 'e-202',
-      projectId: 'proj-2',
-      title: 'Meilenstein: Einbringen Spundwand Achse 1-4',
-      date: '2026-11-24',
-      time: '16:30',
-      category: 'milestone',
-      trade: 'Spezialtiefbau (Fa. Bauer-Ramm)',
-      description: 'Verbau zur Wasserseite vollständig gerammt.'
-    },
-    {
-      id: 'e-203',
-      projectId: 'proj-2',
-      title: 'Wasserrechtliche Prüfung (Umweltamt)',
-      date: '2026-11-26',
-      time: '09:30',
-      category: 'inspection',
-      trade: 'Wasserhaltung',
-      description: 'Überprüfung Einleitwerte Grundwasserabsenkung Spree.'
-    },
-    {
-      id: 'e-204',
-      projectId: 'proj-2',
-      title: 'Lieferung Rammrohre & Spunddielen',
-      date: '2026-11-27',
-      time: '07:00',
-      category: 'delivery',
-      trade: 'Logistik',
-      description: 'Schwerlasttransport 3 Tieflader.'
-    }
-  ],
+interface Appt extends ScheduleAppointment {
+    local?: boolean;
+}
 
-  // Proj-3: Airport City
-  'proj-3': [
-    {
-      id: 'e-301',
-      projectId: 'proj-3',
-      title: 'Brandschutz-Abnahme Brandabschnitt 2 (TÜV)',
-      date: '2026-11-22',
-      time: '10:00',
-      category: 'inspection',
-      trade: 'Brandschutz & TGA',
-      description: 'Vollständige Prüfung der Entrauchungs- und Sprinklerklappen.',
-      isUrgent: true
-    },
-    {
-      id: 'e-302',
-      projectId: 'proj-3',
-      title: 'Meilenstein: Endmontage RLT-Zentralgeräte Dach',
-      date: '2026-11-24',
-      time: '15:00',
-      category: 'milestone',
-      trade: 'Lüftungsbau',
-      description: 'Hubarbeiten mit Autokran 160t.'
-    },
-    {
-      id: 'e-303',
-      projectId: 'proj-3',
-      title: 'VOB-Frist: Mängelbeseitigung Estrichfugen',
-      date: '2026-11-26',
-      time: '18:00',
-      category: 'deadline',
-      trade: 'Bodenleger',
-      description: 'Frist nach § 4 Abs. 7 VOB/B zur Nachbesserung.',
-      vobReference: '§ 4 Abs. 7 VOB/B',
-      isUrgent: true
-    }
-  ]
+interface DayInfo {
+    tasks: DayTask[];
+    appts: Appt[];
+    reports: TimelineItem[];
+    notes: TimelineItem[];
+    notices: TimelineItem[];
+    progress: TimelineItem[];
+    alerts: TimelineItem[];
+    defects: TimelineItem[];
+}
+
+type DayDataFn = (d: string) => DayInfo;
+
+const VIEWS: { id: View; label: string }[] = [
+    {id: 'day', label: 'Tag'},
+    {id: 'week', label: 'Woche'},
+    {id: 'month', label: 'Monat'},
+    {id: 'year', label: 'Jahr'},
+    {id: 'all', label: 'Gesamt'}
+];
+
+const LAYERS: { id: Layer; label: string; color: string; soon?: boolean }[] = [
+    {id: 'tasks', label: 'Arbeiten (Plan)', color: '#2563eb'},
+    {id: 'appointments', label: 'Termine', color: '#7c3aed'},
+    {id: 'report', label: 'Berichte', color: '#0f766e'},
+    {id: 'defect', label: 'Mängel', color: '#dc2626'},
+    {id: 'notice', label: 'Briefe', color: '#b45309'},
+    {id: 'note', label: 'Notizen', color: '#475569'},
+    {id: 'progress', label: 'Fortschritt', color: '#16a34a'},
+    {id: 'alert', label: 'Warnungen', color: '#ea580c'},
+    {id: 'photos', label: 'Fotos', color: '#0891b2', soon: true}
+];
+
+const CATEGORY: Record<AppointmentCategory, { label: string; color: string }> = {
+    deadline: {label: 'Frist', color: '#dc2626'},
+    milestone: {label: 'Meilenstein', color: '#7c3aed'},
+    inspection: {label: 'Abnahme/Prüfung', color: '#16a34a'},
+    meeting: {label: 'Besprechung', color: '#2563eb'},
+    delivery: {label: 'Lieferung/Logistik', color: '#d97706'}
 };
 
+const WEEKDAYS = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'];
+const MONTHS = ['Januar', 'Februar', 'März', 'April', 'Mai', 'Juni', 'Juli', 'August', 'September', 'Oktober', 'November', 'Dezember'];
+
+// ---------- Datums-Helfer (lokale Zeit, ISO YYYY-MM-DD) ----------
+const iso = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+const parseIso = (s: string) => {
+    const [y, m, d] = s.slice(0, 10).split('-').map(Number);
+    return new Date(y, m - 1, d);
+};
+const addDays = (d: Date, n: number) => {
+    const r = new Date(d);
+    r.setDate(r.getDate() + n);
+    return r;
+};
+const weekdayIndex = (d: Date) => (d.getDay() + 6) % 7; // Montag = 0
+const startOfWeek = (d: Date) => addDays(d, -weekdayIndex(d));
+const daysBetween = (a: Date, b: Date) => Math.round((b.getTime() - a.getTime()) / 86400000);
+const fmt = (d: Date, opts: Intl.DateTimeFormatOptions) => d.toLocaleDateString('de-DE', opts);
+const todayDate = () => {
+    const d = new Date();
+    d.setHours(0, 0, 0, 0);
+    return d;
+};
+
+/** Ist ein Timeline-Eintrag ein Mangel? (Mängelrüge-Brief oder Diktat "Mangel") */
+const isDefect = (it: TimelineItem) => /m[äa]ngel/i.test(`${it.title} ${it.summary}`);
+const warningCount = (d: DayInfo) =>
+    d.alerts.length + [...d.reports, ...d.notes].filter((it) => it.severity === 'warning' || it.severity === 'critical').length;
+
+function isoWeek(d: Date): number {
+    const date = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+    const day = date.getUTCDay() || 7;
+    date.setUTCDate(date.getUTCDate() + 4 - day);
+    const yearStart = new Date(Date.UTC(date.getUTCFullYear(), 0, 1));
+    return Math.ceil(((date.getTime() - yearStart.getTime()) / 86400000 + 1) / 7);
+}
+
+function rangeFor(view: View, anchor: Date, projectStart: Date, projectEnd: Date): [Date, Date] {
+    switch (view) {
+        case 'day':
+            return [anchor, anchor];
+        case 'week': {
+            const s = startOfWeek(anchor);
+            return [s, addDays(s, 6)];
+        }
+        case 'month': {
+            const first = new Date(anchor.getFullYear(), anchor.getMonth(), 1);
+            const last = new Date(anchor.getFullYear(), anchor.getMonth() + 1, 0);
+            return [startOfWeek(first), addDays(startOfWeek(last), 6)]; // ganzes Monatsraster
+        }
+        case 'year':
+            return [new Date(anchor.getFullYear(), 0, 1), new Date(anchor.getFullYear(), 11, 31)];
+        case 'all':
+            return [projectStart, projectEnd];
+    }
+}
+
+/** Teilt [from, to] in Blöcke von max. `size` Tagen */
+function chunks(from: Date, to: Date, size: number): [Date, Date][] {
+    const out: [Date, Date][] = [];
+    let s = from;
+    while (s <= to) {
+        const e = addDays(s, size - 1) < to ? addDays(s, size - 1) : to;
+        out.push([s, e]);
+        s = addDays(e, 1);
+    }
+    return out;
+}
+
 export const Termin: React.FC = () => {
-  const navigate = useNavigate();
-  const { activeProject } = useProjects();
-  const { t } = useLanguage();
+    const navigate = useNavigate();
+    const {t} = useLanguage();
+    const {activeProject} = useProjects();
+    const projectId = Number(activeProject.id);
+    const today = useMemo(todayDate, []);
+    const todayIso = iso(today);
 
-  // Calendar Date State (Standard: November 2026, where today is 21.11.2026)
-  const [currentYear, setCurrentYear] = useState<number>(2026);
-  const [currentMonth, setCurrentMonth] = useState<number>(10); // 0-indexed: 10 = November
-  const [selectedDateStr, setSelectedDateStr] = useState<string>('2026-11-21');
-  const [activeCategoryFilter, setActiveCategoryFilter] = useState<string>('all');
+    const [view, setView] = useState<View>('month');
+    const [anchor, setAnchor] = useState<Date>(today);
+    const [selected, setSelected] = useState<string>(todayIso);
+    const [layers, setLayers] = useState<Set<Layer>>(new Set(LAYERS.filter((l) => !l.soon).map((l) => l.id)));
+    const [search, setSearch] = useState('');
 
-  // Helper to get fallback appointments
-  const getInitialForProject = (pid: string | number): SiteAppointment[] => {
-    const s = String(pid);
-    return INITIAL_PROJECT_EVENTS[s] || INITIAL_PROJECT_EVENTS[`proj-${s}`] || (s === '1' ? INITIAL_PROJECT_EVENTS['proj-1'] : undefined) || (s === '2' ? INITIAL_PROJECT_EVENTS['proj-2'] : undefined) || (s === '3' ? INITIAL_PROJECT_EVENTS['proj-3'] : undefined) || INITIAL_PROJECT_EVENTS['proj-1'] || [];
-  };
+    // Daten (akkumuliert über alle geladenen Zeiträume)
+    const [tasksByDay, setTasksByDay] = useState<Record<string, DayTask[]>>({});
+    const [items, setItems] = useState<Record<string, TimelineItem>>({});
+    const [backendAppts, setBackendAppts] = useState<Record<string, ScheduleAppointment>>({});
+    const [loading, setLoading] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+    const loaded = useRef<Set<string>>(new Set());
 
-  // Appointments State
-  const [appointments, setAppointments] = useState<SiteAppointment[]>(() => {
-    try {
-      const stored = localStorage.getItem(`siteAppointments_${activeProject.id}`);
-      if (stored) return JSON.parse(stored);
-    } catch {
-      // fallback
-    }
-    return getInitialForProject(activeProject.id);
-  });
-
-  // Modal State for adding new appointment
-  const [showAddModal, setShowAddModal] = useState(false);
-  const [newTitle, setNewTitle] = useState('');
-  const [newDate, setNewDate] = useState(selectedDateStr);
-  const [newTime, setNewTime] = useState('09:00');
-  const [newCategory, setNewCategory] = useState<EventCategory>('deadline');
-  const [newTrade, setNewTrade] = useState('');
-  const [newDesc, setNewDesc] = useState('');
-  const [newVobRef, setNewVobRef] = useState('');
-  const [newIsUrgent, setNewIsUrgent] = useState(false);
-  const [backendPlans, setBackendPlans] = useState<ConstructionPlan[]>([]);
-
-  // Synchronize when project changes
-  useEffect(() => {
-    try {
-      const stored = localStorage.getItem(`siteAppointments_${activeProject.id}`);
-      if (stored) {
-        setAppointments(JSON.parse(stored));
-      } else {
-        setAppointments(getInitialForProject(activeProject.id));
-      }
-    } catch {
-      setAppointments(getInitialForProject(activeProject.id));
-    }
-
-    // Load backend construction plans
-    api.listPlans(Number(activeProject.id))
-      .then((plans) => setBackendPlans(plans))
-      .catch((err) => console.warn('Backend listPlans Fallback:', err));
-  }, [activeProject.id]);
-
-  const saveAppointments = (updated: SiteAppointment[]) => {
-    setAppointments(updated);
-    try {
-      localStorage.setItem(`siteAppointments_${activeProject.id}`, JSON.stringify(updated));
-    } catch {
-      // fallback
-    }
-  };
-
-  // Month navigation
-  const handlePrevMonth = () => {
-    if (currentMonth === 0) {
-      setCurrentMonth(11);
-      setCurrentYear((y) => y - 1);
-    } else {
-      setCurrentMonth((m) => m - 1);
-    }
-  };
-
-  const handleNextMonth = () => {
-    if (currentMonth === 11) {
-      setCurrentMonth(0);
-      setCurrentYear((y) => y + 1);
-    } else {
-      setCurrentMonth((m) => m + 1);
-    }
-  };
-
-  const handleJumpToToday = () => {
-    setCurrentYear(2026);
-    setCurrentMonth(10); // November 2026
-    setSelectedDateStr('2026-11-21');
-  };
-
-  // Calendar Day Computation
-  const daysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
-  const firstDayIndex = (new Date(currentYear, currentMonth, 1).getDay() + 6) % 7; // Monday = 0
-  const daysInPrevMonth = new Date(currentYear, currentMonth, 0).getDate();
-
-  // Create 42 grid cells (6 rows x 7 cols)
-  interface DayCellData {
-    dayNumber: number;
-    dateStr: string;
-    isCurrentMonth: boolean;
-    isToday: boolean;
-    isSelected: boolean;
-  }
-
-  const calendarDays: DayCellData[] = [];
-
-  // Previous month trailing days
-  for (let i = firstDayIndex - 1; i >= 0; i--) {
-    const day = daysInPrevMonth - i;
-    const prevM = currentMonth === 0 ? 12 : currentMonth;
-    const prevY = currentMonth === 0 ? currentYear - 1 : currentYear;
-    const dateStr = `${prevY}-${String(prevM).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-    calendarDays.push({
-      dayNumber: day,
-      dateStr,
-      isCurrentMonth: false,
-      isToday: dateStr === '2026-11-21',
-      isSelected: dateStr === selectedDateStr
+    // Eigene Termine (lokal)
+    const storageKey = `siteAppointments_${projectId}`;
+    const [localAppts, setLocalAppts] = useState<SiteAppointment[]>([]);
+    const [showAdd, setShowAdd] = useState(false);
+    const emptyForm = (date: string): SiteAppointment => ({
+        id: '', projectId, title: '', date, time: '09:00', category: 'meeting', trade: '', description: '', vobReference: '', isUrgent: false
     });
-  }
+    const [form, setForm] = useState<SiteAppointment>(emptyForm(todayIso));
 
-  // Current month days
-  for (let d = 1; d <= daysInMonth; d++) {
-    const dateStr = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
-    calendarDays.push({
-      dayNumber: d,
-      dateStr,
-      isCurrentMonth: true,
-      isToday: dateStr === '2026-11-21',
-      isSelected: dateStr === selectedDateStr
-    });
-  }
+    // Projektzeitraum für "Gesamt" (Projekt-Start/-Ende, sonst ±6 Monate um heute; max. 2 Jahre)
+    const [projectStart, projectEnd] = useMemo(() => {
+        const s = activeProject.start_date ? parseIso(activeProject.start_date) : addDays(today, -180);
+        let e = activeProject.end_date ? parseIso(activeProject.end_date) : addDays(today, 180);
+        if (e < s) e = addDays(s, 180);
+        if (daysBetween(s, e) > 730) e = addDays(s, 730);
+        return [s, e];
+    }, [activeProject.start_date, activeProject.end_date, today]);
 
-  // Next month leading days
-  const remainingCells = 42 - calendarDays.length;
-  for (let d = 1; d <= remainingCells; d++) {
-    const nextM = currentMonth === 11 ? 1 : currentMonth + 2;
-    const nextY = currentMonth === 11 ? currentYear + 1 : currentYear;
-    const dateStr = `${nextY}-${String(nextM).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
-    calendarDays.push({
-      dayNumber: d,
-      dateStr,
-      isCurrentMonth: false,
-      isToday: dateStr === '2026-11-21',
-      isSelected: dateStr === selectedDateStr
-    });
-  }
+    const [rangeFrom, rangeTo] = rangeFor(view, anchor, projectStart, projectEnd);
+    const rangeKey = `${iso(rangeFrom)}:${iso(rangeTo)}`;
 
-  // Filter appointments
-  const filteredAppointments = appointments.filter((app) => {
-    if (activeCategoryFilter === 'all') return true;
-    return app.category === activeCategoryFilter;
-  });
+    // Projektwechsel → alles zurücksetzen
+    useEffect(() => {
+        loaded.current.clear();
+        setTasksByDay({});
+        setItems({});
+        setBackendAppts({});
+        setError(null);
+        try {
+            setLocalAppts(JSON.parse(localStorage.getItem(storageKey) || '[]'));
+        } catch {
+            setLocalAppts([]);
+        }
+    }, [projectId]);
 
-  // Group filtered appointments by date
-  const eventsByDate: Record<string, SiteAppointment[]> = {};
-  filteredAppointments.forEach((app) => {
-    if (!eventsByDate[app.date]) {
-      eventsByDate[app.date] = [];
-    }
-    eventsByDate[app.date].push(app);
-  });
-
-  // Selected Day Events
-  const selectedDayEvents = appointments.filter((app) => app.date === selectedDateStr);
-
-  // Month Display Name
-  const monthNamesDe = [
-    'Januar', 'Februar', 'März', 'April', 'Mai', 'Juni',
-    'Juli', 'August', 'September', 'Oktober', 'November', 'Dezember'
-  ];
-  const currentMonthName = `${monthNamesDe[currentMonth]} ${currentYear}`;
-
-  // Form submit for new event
-  const handleCreateAppointment = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newTitle.trim() || !newDate) return;
-
-    const newApp: SiteAppointment = {
-      id: `app-${Date.now()}`,
-      projectId: activeProject.id,
-      title: newTitle.trim(),
-      date: newDate,
-      time: newTime || '09:00',
-      category: newCategory,
-      trade: newTrade.trim() || undefined,
-      description: newDesc.trim() || undefined,
-      vobReference: newVobRef.trim() || undefined,
-      isUrgent: newIsUrgent
+    // Daten für den sichtbaren Zeitraum nachladen (in Blöcken, bereits Geladenes wird übersprungen)
+    const loadRange = async (from: Date, to: Date) => {
+        const jobs: Promise<void>[] = [];
+        const tlTo = to < today ? to : today; // Timeline nur bis heute
+        if (from <= tlTo) {
+            for (const [s, e] of chunks(from, tlTo, 92)) {
+                const key = `${projectId}:tl:${iso(s)}:${iso(e)}`;
+                if (loaded.current.has(key)) continue;
+                loaded.current.add(key);
+                jobs.push(
+                    api.getTimeline(projectId, iso(s), iso(e)).then((tl) => {
+                        setItems((prev) => {
+                            const next = {...prev};
+                            tl.items.forEach((it) => (next[it.id] = it));
+                            return next;
+                        });
+                    }).catch((err) => {
+                        loaded.current.delete(key);
+                        throw err;
+                    })
+                );
+            }
+        }
+        for (const [s, e] of chunks(from, to, 31)) {
+            const key = `${projectId}:sc:${iso(s)}:${iso(e)}`;
+            if (loaded.current.has(key)) continue;
+            loaded.current.add(key);
+            jobs.push(
+                api.getSchedule(projectId, iso(s), daysBetween(s, e) + 1).then((sc) => {
+                    setTasksByDay((prev) => {
+                        const next = {...prev};
+                        sc.days.forEach((d) => (next[d.date] = d.tasks));
+                        return next;
+                    });
+                    setBackendAppts((prev) => {
+                        const next = {...prev};
+                        sc.appointments.forEach((a) => (next[a.id] = a));
+                        return next;
+                    });
+                }).catch((err) => {
+                    loaded.current.delete(key);
+                    throw err;
+                })
+            );
+        }
+        if (jobs.length === 0) return;
+        setLoading(true);
+        const results = await Promise.allSettled(jobs);
+        const failed = results.filter((r): r is PromiseRejectedResult => r.status === 'rejected');
+        setError(failed.length > 0 ? `Einige Daten konnten nicht geladen werden: ${failed[0].reason?.message ?? failed[0].reason}` : null);
+        setLoading(false);
     };
 
-    saveAppointments([...appointments, newApp]);
-    setSelectedDateStr(newDate);
-    setShowAddModal(false);
+    useEffect(() => {
+        loadRange(rangeFrom, rangeTo);
+    }, [projectId, rangeKey]);
 
-    // Reset inputs
-    setNewTitle('');
-    setNewDesc('');
-    setNewVobRef('');
-    setNewIsUrgent(false);
-  };
+    const reload = () => {
+        loaded.current.clear();
+        setTasksByDay({});
+        setItems({});
+        setBackendAppts({});
+        loadRange(rangeFrom, rangeTo);
+    };
 
-  const getCategoryLabel = (cat: EventCategory) => {
-    switch (cat) {
-      case 'deadline':
-        return t('term_cat_deadlines');
-      case 'milestone':
-        return t('term_cat_milestones');
-      case 'inspection':
-        return t('term_cat_inspections');
-      case 'meeting':
-        return t('term_cat_meetings');
-      case 'delivery':
-        return t('term_cat_deliveries');
-      default:
-        return cat;
-    }
-  };
+    // ---------- abgeleitete Daten ----------
+    const q = search.trim().toLowerCase();
+    const matches = (text: string) => !q || text.toLowerCase().includes(q);
 
-  const formatDisplayDate = (dStr: string) => {
-    try {
-      const [y, m, d] = dStr.split('-').map(Number);
-      const date = new Date(y, m - 1, d);
-      return date.toLocaleDateString('de-DE', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' });
-    } catch {
-      return dStr;
-    }
-  };
+    const allAppts: Appt[] = useMemo(() => {
+        const local: Appt[] = localAppts.map((a) => ({
+            id: a.id,
+            projectId,
+            title: a.title,
+            date: a.date,
+            time: a.time ?? null,
+            category: a.category,
+            trade: a.trade ?? null,
+            description: a.description ?? null,
+            vobReference: a.vobReference ?? null,
+            isUrgent: a.isUrgent ?? false,
+            local: true
+        }));
+        return [...Object.values(backendAppts), ...local];
+    }, [backendAppts, localAppts, projectId]);
 
-  return (
-    <div className="termin-container">
-      {/* Page Header */}
-      <section className="termin-header">
-        <div className="termin-header-left">
-          <div className="termin-header-icon">
-            <CalendarIcon size={28} />
-          </div>
-          <div>
-            <h1 className="termin-title">{t('term_title')}</h1>
-            <p className="termin-sub">
-              {t('term_sub')} <strong>{activeProject.name}</strong> ({activeProject.number})
-              {backendPlans.length > 0 && (
-                <span style={{ marginLeft: '10px', fontSize: '11px', color: '#16a34a', fontWeight: 600 }}>
-                  ✓ {backendPlans.length} {backendPlans.length === 1 ? 'Bauplan' : 'Baupläne'} synchronisiert
-                </span>
-              )}
-            </p>
-          </div>
-        </div>
+    const itemsByDay = useMemo(() => {
+        const map: Record<string, TimelineItem[]> = {};
+        Object.values(items).forEach((it) => {
+            (map[it.date] ??= []).push(it);
+        });
+        Object.values(map).forEach((list) => list.sort((a, b) => (b.time ?? '').localeCompare(a.time ?? '')));
+        return map;
+    }, [items]);
 
-        <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
-          <button
-            type="button"
-            className="btn btn-secondary"
-            onClick={() => window.print()}
-            title={t('btn_print')}
-          >
-            <Printer size={16} />
-            <span>{t('btn_print')}</span>
-          </button>
+    const apptsByDay = useMemo(() => {
+        const map: Record<string, Appt[]> = {};
+        allAppts.forEach((a) => (map[a.date] ??= []).push(a));
+        Object.values(map).forEach((l) => l.sort((a, b) => (a.time ?? '').localeCompare(b.time ?? '')));
+        return map;
+    }, [allAppts]);
 
-          <button
-            type="button"
-            className="btn btn-primary"
-            onClick={() => {
-              setNewDate(selectedDateStr);
-              setShowAddModal(true);
-            }}
-          >
-            <Plus size={16} />
-            <span>{t('term_btn_new')}</span>
-          </button>
-        </div>
-      </section>
+    /** Alles zu einem Tag, gefiltert nach Ebenen + Suche */
+    const dayData: DayDataFn = (d) => {
+        const its = (itemsByDay[d] ?? []).filter((it) => matches(`${it.title} ${it.summary}`));
+        const defectsOn = layers.has('defect');
+        const pick = (type: TimelineItem['type'], layer: Layer) =>
+            layers.has(layer) ? its.filter((it) => it.type === type && !(defectsOn && isDefect(it))) : [];
+        return {
+            tasks: layers.has('tasks') ? (tasksByDay[d] ?? []).filter((tk) => matches(`${tk.title} ${tk.trade ?? ''} ${tk.company ?? ''}`)) : [],
+            appts: layers.has('appointments') ? (apptsByDay[d] ?? []).filter((a) => matches(`${a.title} ${a.description ?? ''}`)) : [],
+            reports: pick('report', 'report'),
+            notes: pick('note', 'note'),
+            notices: pick('notice', 'notice'),
+            progress: pick('progress', 'progress'),
+            alerts: pick('alert', 'alert'),
+            defects: defectsOn ? its.filter(isDefect) : []
+        };
+    };
 
-      {/* Calendar Controls & Category Filter Bar */}
-      <section className="calendar-controls">
-        <div className="calendar-nav-group">
-          <button
-            type="button"
-            className="cal-nav-btn"
-            onClick={handlePrevMonth}
-            title="Vorheriger Monat"
-          >
-            <ChevronLeft size={18} />
-          </button>
+    // Kennzahlen für den sichtbaren Zeitraum
+    const stats = useMemo(() => {
+        let reports = 0, defects = 0, warnings = 0, appts = 0;
+        const taskIds = new Set<number>();
+        const overdue = new Set<number>();
+        for (let d = rangeFrom; d <= rangeTo; d = addDays(d, 1)) {
+            const dd = dayData(iso(d));
+            reports += dd.reports.length;
+            defects += dd.defects.length;
+            warnings += warningCount(dd);
+            appts += dd.appts.length;
+            dd.tasks.forEach((tk) => {
+                taskIds.add(tk.taskId);
+                if (tk.isOverdue) overdue.add(tk.taskId);
+            });
+        }
+        return {reports, defects, warnings, appts, tasks: taskIds.size, overdue: overdue.size};
+    }, [itemsByDay, tasksByDay, apptsByDay, layers, q, rangeKey]);
 
-          <div className="calendar-month-title">{currentMonthName}</div>
+    // ---------- Navigation ----------
+    const shift = (dir: -1 | 1) => {
+        const a = new Date(anchor);
+        if (view === 'day') a.setDate(a.getDate() + dir);
+        if (view === 'week') a.setDate(a.getDate() + 7 * dir);
+        if (view === 'month') a.setMonth(a.getMonth() + dir, 1);
+        if (view === 'year') a.setFullYear(a.getFullYear() + dir);
+        setAnchor(a);
+        if (view === 'day' || view === 'week') setSelected(iso(view === 'week' ? startOfWeek(a) : a));
+    };
 
-          <button
-            type="button"
-            className="cal-nav-btn"
-            onClick={handleNextMonth}
-            title="Nächster Monat"
-          >
-            <ChevronRight size={18} />
-          </button>
+    const goToday = () => {
+        setAnchor(today);
+        setSelected(todayIso);
+    };
 
-          <button
-            type="button"
-            className="cal-today-btn"
-            onClick={handleJumpToToday}
-          >
-            {t('term_today')} (21. Nov)
-          </button>
-        </div>
+    const selectDay = (d: string, switchToDay = false) => {
+        setSelected(d);
+        if (switchToDay) {
+            setAnchor(parseIso(d));
+            setView('day');
+        }
+    };
 
-        {/* Filter Pills */}
-        <div className="cal-filter-bar">
-          <button
-            type="button"
-            className={`cal-filter-chip ${activeCategoryFilter === 'all' ? 'active' : ''}`}
-            onClick={() => setActiveCategoryFilter('all')}
-          >
-            {t('term_cat_all')}
-          </button>
+    const changeView = (v: View) => {
+        setView(v);
+        if (v !== 'all') setAnchor(parseIso(selected));
+    };
 
-          <button
-            type="button"
-            className={`cal-filter-chip ${activeCategoryFilter === 'deadline' ? 'active' : ''}`}
-            onClick={() => setActiveCategoryFilter('deadline')}
-          >
-            <span className="filter-dot" style={{ backgroundColor: '#dc2626' }} />
-            <span>{t('term_cat_deadlines')}</span>
-          </button>
+    const rangeLabel = (() => {
+        switch (view) {
+            case 'day':
+                return fmt(anchor, {weekday: 'long', day: '2-digit', month: 'long', year: 'numeric'});
+            case 'week':
+                return `KW ${isoWeek(rangeFrom)} • ${fmt(rangeFrom, {day: '2-digit', month: '2-digit'})} – ${fmt(rangeTo, {day: '2-digit', month: '2-digit', year: 'numeric'})}`;
+            case 'month':
+                return `${MONTHS[anchor.getMonth()]} ${anchor.getFullYear()}`;
+            case 'year':
+                return String(anchor.getFullYear());
+            case 'all':
+                return `Projektlaufzeit ${fmt(projectStart, {month: '2-digit', year: 'numeric'})} – ${fmt(projectEnd, {month: '2-digit', year: 'numeric'})}`;
+        }
+    })();
 
-          <button
-            type="button"
-            className={`cal-filter-chip ${activeCategoryFilter === 'milestone' ? 'active' : ''}`}
-            onClick={() => setActiveCategoryFilter('milestone')}
-          >
-            <span className="filter-dot" style={{ backgroundColor: '#2563eb' }} />
-            <span>{t('term_cat_milestones')}</span>
-          </button>
+    // ---------- Aktionen ----------
+    const toggleLayer = (l: Layer) => {
+        setLayers((prev) => {
+            const next = new Set(prev);
+            if (next.has(l)) next.delete(l);
+            else next.add(l);
+            return next;
+        });
+    };
 
-          <button
-            type="button"
-            className={`cal-filter-chip ${activeCategoryFilter === 'inspection' ? 'active' : ''}`}
-            onClick={() => setActiveCategoryFilter('inspection')}
-          >
-            <span className="filter-dot" style={{ backgroundColor: '#9333ea' }} />
-            <span>{t('term_cat_inspections')}</span>
-          </button>
+    const saveLocal = (list: SiteAppointment[]) => {
+        setLocalAppts(list);
+        try {
+            localStorage.setItem(storageKey, JSON.stringify(list));
+        } catch {
+            // ignore
+        }
+    };
 
-          <button
-            type="button"
-            className={`cal-filter-chip ${activeCategoryFilter === 'meeting' ? 'active' : ''}`}
-            onClick={() => setActiveCategoryFilter('meeting')}
-          >
-            <span className="filter-dot" style={{ backgroundColor: '#16a34a' }} />
-            <span>{t('term_cat_meetings')}</span>
-          </button>
+    const openAdd = (date: string) => {
+        setForm(emptyForm(date));
+        setShowAdd(true);
+    };
 
-          <button
-            type="button"
-            className={`cal-filter-chip ${activeCategoryFilter === 'delivery' ? 'active' : ''}`}
-            onClick={() => setActiveCategoryFilter('delivery')}
-          >
-            <span className="filter-dot" style={{ backgroundColor: '#d97706' }} />
-            <span>{t('term_cat_deliveries')}</span>
-          </button>
-        </div>
-      </section>
+    const submitAdd = (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!form.title.trim()) return;
+        saveLocal([...localAppts, {...form, id: `local-${Date.now()}`, title: form.title.trim()}]);
+        setShowAdd(false);
+        setSelected(form.date);
+    };
 
-      {/* Main Split Layout: Big Foreground Calendar + Selected Day Inspector */}
-      <div className="termin-main-layout">
-        {/* Prominent Foreground Monthly Calendar Grid */}
-        <div className="calendar-card">
-          <div className="calendar-weekdays-row">
-            <div>Mo</div>
-            <div>Di</div>
-            <div>Mi</div>
-            <div>Do</div>
-            <div>Fr</div>
-            <div style={{ color: '#ef4444' }}>Sa</div>
-            <div style={{ color: '#ef4444' }}>So</div>
-          </div>
+    /** Termine des sichtbaren Zeitraums als .ics (Outlook, Google, Apple) */
+    const exportIcs = () => {
+        const esc = (s: string) => s.replace(/\\/g, '\\\\').replace(/[,;]/g, (m) => `\\${m}`).replace(/\n/g, '\\n');
+        const lines = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//SiteAI Assistant//Terminplaner//DE'];
+        allAppts
+            .filter((a) => a.date >= iso(rangeFrom) && a.date <= iso(rangeTo))
+            .forEach((a) => {
+                const d = a.date.replace(/-/g, '');
+                lines.push('BEGIN:VEVENT', `UID:${a.id}@siteai`, `SUMMARY:${esc(a.title)}`);
+                if (a.time) lines.push(`DTSTART:${d}T${a.time.slice(0, 5).replace(':', '')}00`);
+                else lines.push(`DTSTART;VALUE=DATE:${d}`);
+                const desc = [CATEGORY[a.category]?.label, a.trade, a.description, a.vobReference].filter(Boolean).join(' • ');
+                if (desc) lines.push(`DESCRIPTION:${esc(desc)}`);
+                lines.push('END:VEVENT');
+            });
+        lines.push('END:VCALENDAR');
+        saveBlob(new Blob([lines.join('\r\n')], {type: 'text/calendar'}), `Termine_${activeProject.number || projectId}_${iso(rangeFrom)}.ics`);
+    };
 
-          <div className="calendar-grid">
-            {calendarDays.map((cell, idx) => {
-              const dayEvents = eventsByDate[cell.dateStr] || [];
-              const hasUrgent = dayEvents.some((e) => e.isUrgent);
+    const exportReport = async (date: string, format: 'pdf' | 'docx') => {
+        try {
+            saveBlob(await api.downloadReportExport(date, format, projectId), `Bautagesbericht_${date}.${format}`);
+        } catch (err: any) {
+            alert(err?.message || 'Export fehlgeschlagen');
+        }
+    };
 
-              return (
-                <div
-                  key={idx}
-                  className={`calendar-day-cell ${cell.isCurrentMonth ? '' : 'other-month'} ${cell.isToday ? 'today' : ''} ${cell.isSelected ? 'selected' : ''}`}
-                  onClick={() => setSelectedDateStr(cell.dateStr)}
-                  title={`${cell.dateStr} - ${dayEvents.length} Termine`}
-                >
-                  <div className="calendar-day-header">
-                    <span className="calendar-day-number">{cell.dayNumber}</span>
-                    {hasUrgent && (
-                      <span className="day-urgent-badge">! Frist</span>
-                    )}
-                  </div>
+    const deleteLocal = (id: string) => saveLocal(localAppts.filter((a) => a.id !== id));
 
-                  <div className="day-events-list">
-                    {dayEvents.slice(0, 3).map((ev) => (
-                      <div
-                        key={ev.id}
-                        className={`event-chip ${ev.category}`}
-                        title={`${ev.time ? ev.time + ' - ' : ''}${ev.title}`}
-                      >
-                        {ev.category === 'deadline' && <AlertTriangle size={10} style={{ flexShrink: 0 }} />}
-                        {ev.category === 'milestone' && <CheckCircle2 size={10} style={{ flexShrink: 0 }} />}
-                        {ev.category === 'inspection' && <HardHat size={10} style={{ flexShrink: 0 }} />}
-                        {ev.category === 'meeting' && <Users size={10} style={{ flexShrink: 0 }} />}
-                        {ev.category === 'delivery' && <Truck size={10} style={{ flexShrink: 0 }} />}
-                        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                          {ev.title}
-                        </span>
-                      </div>
-                    ))}
+    // ---------- Darstellung ----------
+    const sel = dayData(selected);
+    const selRel: 'past' | 'today' | 'future' = selected < todayIso ? 'past' : selected === todayIso ? 'today' : 'future';
 
-                    {dayEvents.length > 3 && (
-                      <div className="event-more-tag">
-                        +{dayEvents.length - 3} weitere
-                      </div>
-                    )}
-                  </div>
+    return (
+        <div className="tp-page">
+            {/* Kopfzeile */}
+            <div className="tp-header">
+                <div className="tp-title-group">
+                    <div className="tp-title-icon"><CalendarIcon size={22}/></div>
+                    <div>
+                        <h1 className="tp-title">{t('nav_termin', 'Terminplaner & Kalender')}</h1>
+                        <p className="tp-sub">
+                            Rückblick (Berichte, Mängel, Fotos) und Planung (Arbeiten je Tag, Termine) • <strong>{activeProject.name}</strong>
+                        </p>
+                    </div>
                 </div>
-              );
-            })}
-          </div>
-        </div>
-
-        {/* Selected Day Inspector Sidebar */}
-        <div className="day-inspector-card">
-          <div className="inspector-header">
-            <div>
-              <div className="inspector-date-title">{formatDisplayDate(selectedDateStr)}</div>
-              <div className="inspector-date-sub">
-                {selectedDayEvents.length} {selectedDayEvents.length === 1 ? 'Eintrag' : 'Einträge'} an diesem Tag
-              </div>
-            </div>
-
-            <button
-              type="button"
-              className="btn btn-secondary"
-              style={{ fontSize: '11px', padding: '4px 8px' }}
-              onClick={() => {
-                setNewDate(selectedDateStr);
-                setShowAddModal(true);
-              }}
-              title="Termin für dieses Datum hinzufügen"
-            >
-              <Plus size={13} />
-              <span>Hinzufügen</span>
-            </button>
-          </div>
-
-          {/* Events for this day */}
-          {selectedDayEvents.length === 0 ? (
-            <div className="inspector-empty">
-              {t('term_empty_day')}
-            </div>
-          ) : (
-            <div className="inspector-events-list">
-              {selectedDayEvents.map((ev) => (
-                <div key={ev.id} className={`inspector-event-item ${ev.category}`}>
-                  <div className="inspector-item-top">
-                    <span className="inspector-item-time">
-                      <Clock size={11} />
-                      <span>{ev.time || 'Ganztägig'}</span>
-                    </span>
-                    <span className="badge badge-info" style={{ fontSize: '10px' }}>
-                      {getCategoryLabel(ev.category)}
-                    </span>
-                  </div>
-
-                  <div className="inspector-item-title">{ev.title}</div>
-
-                  {ev.trade && (
-                    <div className="inspector-item-meta">
-                      <HardHat size={11} />
-                      <span>{ev.trade}</span>
-                    </div>
-                  )}
-
-                  {ev.description && (
-                    <div className="inspector-item-desc">{ev.description}</div>
-                  )}
-
-                  {ev.vobReference && (
-                    <div style={{ marginTop: '2px' }}>
-                      <span className="vob-pill-small">
-                        ⚖️ {ev.vobReference}
-                      </span>
-                    </div>
-                  )}
-
-                  {/* VOB Action Link if it's a deadline or hindrance */}
-                  {ev.category === 'deadline' && (
-                    <button
-                      type="button"
-                      className="btn btn-secondary"
-                      style={{ marginTop: '6px', fontSize: '11px', padding: '4px 8px', color: '#b91c1c', borderColor: '#fca5a5' }}
-                      onClick={() => navigate('/drafts', { state: { type: 'delay', keywords: [ev.title, ev.description, `Frist: ${ev.date}`].filter(Boolean).join('. ') } })}
-                    >
-                      <Mail size={12} />
-                      <span>{t('term_btn_to_draft')}</span>
+                <div className="tp-header-actions">
+                    <button className="tp-btn" onClick={reload} title="Neu laden"><RefreshCw size={14} className={loading ? 'tp-spin' : ''}/></button>
+                    <button className="tp-btn" onClick={exportIcs} title="Termine des Zeitraums als .ics exportieren (Outlook/Google/Apple)">
+                        <Download size={14}/> <span>.ics</span>
                     </button>
-                  )}
+                    <button className="tp-btn" disabled title="Kalender-Abo (Outlook/Google) – Backend folgt">
+                        <Link2 size={14}/> <span>Kalender verbinden</span> <ComingSoonBadge label="folgt"/>
+                    </button>
+                    <button className="tp-btn" onClick={() => window.print()} title="Drucken"><Printer size={14}/></button>
+                    <button className="btn btn-primary" onClick={() => openAdd(selected)}>
+                        <Plus size={15}/> <span>Termin</span>
+                    </button>
                 </div>
-              ))}
-            </div>
-          )}
-
-          {/* Critical Deadlines Warning Box */}
-          <div className="critical-deadlines-box">
-            <div className="critical-deadlines-title">
-              <AlertTriangle size={15} color="#b45309" />
-              <span>Nächste akute VOB-Fristen</span>
-            </div>
-            {appointments
-              .filter((a) => a.category === 'deadline')
-              .slice(0, 3)
-              .map((d) => (
-                <div key={d.id} className="critical-deadline-row">
-                  <div>
-                    <strong>{d.date.slice(8, 10)}.{d.date.slice(5, 7)}:</strong> {d.title.slice(0, 28)}...
-                  </div>
-                  <span className="badge badge-danger" style={{ fontSize: '9px' }}>
-                    {d.vobReference || '§ 6 VOB/B'}
-                  </span>
-                </div>
-              ))}
-          </div>
-        </div>
-      </div>
-
-      {/* Modal Dialog for creating a new appointment */}
-      {showAddModal && (
-        <div className="termin-modal-overlay" onClick={() => setShowAddModal(false)}>
-          <div className="termin-modal-card" onClick={(e) => e.stopPropagation()}>
-            <div className="termin-modal-header">
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <CalendarIcon size={18} color="var(--color-primary)" />
-                <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 700 }}>
-                  {t('term_modal_title')}
-                </h3>
-              </div>
-              <button
-                type="button"
-                onClick={() => setShowAddModal(false)}
-                style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}
-              >
-                <X size={18} />
-              </button>
             </div>
 
-            <form onSubmit={handleCreateAppointment}>
-              <div className="termin-modal-body">
-                <div className="form-group">
-                  <label className="form-label">{t('term_modal_title_label')} *</label>
-                  <input
-                    type="text"
-                    className="form-input"
-                    required
-                    placeholder="z. B. Abnahme Deckenbewehrung oder Fristablauf TGA"
-                    value={newTitle}
-                    onChange={(e) => setNewTitle(e.target.value)}
-                    autoFocus
-                  />
+            {/* Steuerleiste */}
+            <div className="tp-toolbar">
+                <div className="tp-segment" role="tablist" aria-label="Zeitraum">
+                    {VIEWS.map((v) => (
+                        <button key={v.id} className={view === v.id ? 'active' : ''} onClick={() => changeView(v.id)}>
+                            {v.label}
+                        </button>
+                    ))}
                 </div>
-
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-                  <div className="form-group">
-                    <label className="form-label">{t('term_modal_date_label')} *</label>
-                    <input
-                      type="date"
-                      className="form-input"
-                      required
-                      value={newDate}
-                      onChange={(e) => setNewDate(e.target.value)}
-                    />
-                  </div>
-
-                  <div className="form-group">
-                    <label className="form-label">{t('term_modal_time_label')}</label>
-                    <input
-                      type="time"
-                      className="form-input"
-                      value={newTime}
-                      onChange={(e) => setNewTime(e.target.value)}
-                    />
-                  </div>
+                <div className="tp-nav">
+                    {view !== 'all' && (
+                        <>
+                            <button className="tp-icon-btn" onClick={() => shift(-1)} aria-label="Zurück"><ChevronLeft size={16}/></button>
+                            <button className="tp-btn" onClick={goToday}>Heute</button>
+                            <button className="tp-icon-btn" onClick={() => shift(1)} aria-label="Weiter"><ChevronRight size={16}/></button>
+                        </>
+                    )}
+                    <span className="tp-range-label">{rangeLabel}</span>
                 </div>
+                <div className="tp-search">
+                    <Search size={14}/>
+                    <input placeholder="Suchen: Vorgang, Firma, Termin…" value={search} onChange={(e) => setSearch(e.target.value)}/>
+                    {search && <button className="tp-icon-btn small" onClick={() => setSearch('')} aria-label="Suche leeren"><X size={12}/></button>}
+                </div>
+            </div>
 
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-                  <div className="form-group">
-                    <label className="form-label">{t('term_modal_cat_label')}</label>
-                    <select
-                      className="form-input"
-                      value={newCategory}
-                      onChange={(e) => setNewCategory(e.target.value as EventCategory)}
+            {/* Ebenen */}
+            <div className="tp-layers">
+                {LAYERS.map((l) => (
+                    <button
+                        key={l.id}
+                        className={`tp-layer ${layers.has(l.id) ? 'on' : ''}`}
+                        style={{'--layer': l.color} as React.CSSProperties}
+                        onClick={() => !l.soon && toggleLayer(l.id)}
+                        disabled={l.soon}
+                        title={l.soon ? 'Fotos: Backend folgt' : `${l.label} ein-/ausblenden`}
                     >
-                      <option value="deadline">{t('term_cat_deadlines')}</option>
-                      <option value="milestone">{t('term_cat_milestones')}</option>
-                      <option value="inspection">{t('term_cat_inspections')}</option>
-                      <option value="meeting">{t('term_cat_meetings')}</option>
-                      <option value="delivery">{t('term_cat_deliveries')}</option>
-                    </select>
-                  </div>
+                        <i/>{l.label}{l.soon && <ComingSoonBadge label="folgt"/>}
+                    </button>
+                ))}
+            </div>
 
-                  <div className="form-group">
-                    <label className="form-label">{t('term_modal_trade_label')}</label>
-                    <input
-                      type="text"
-                      className="form-input"
-                      placeholder="z. B. Rohbau Fa. BetonTech"
-                      value={newTrade}
-                      onChange={(e) => setNewTrade(e.target.value)}
-                    />
-                  </div>
+            {/* Kennzahlen für den Zeitraum */}
+            <div className="tp-kpis">
+                <Kpi icon={<FileText size={15}/>} label="Bautagesberichte" value={stats.reports}/>
+                <Kpi icon={<Wrench size={15}/>} label="Mängel" value={stats.defects} tone={stats.defects > 0 ? 'danger' : undefined}/>
+                <Kpi icon={<AlertTriangle size={15}/>} label="Warnungen" value={stats.warnings} tone={stats.warnings > 0 ? 'warning' : undefined}/>
+                <Kpi icon={<ClipboardList size={15}/>} label="Vorgänge geplant" value={stats.tasks}/>
+                <Kpi icon={<Flag size={15}/>} label="Überfällig" value={stats.overdue} tone={stats.overdue > 0 ? 'danger' : undefined}/>
+                <Kpi icon={<CalendarIcon size={15}/>} label="Termine" value={stats.appts}/>
+            </div>
+
+            {error && <div className="tp-error">{error}</div>}
+
+            <div className="tp-body">
+                <div className="tp-main">
+                    {view === 'month' && (
+                        <MonthGrid anchor={anchor} from={rangeFrom} todayIso={todayIso} selected={selected} dayData={dayData} onSelect={selectDay}/>
+                    )}
+                    {view === 'week' && (
+                        <WeekColumns from={rangeFrom} todayIso={todayIso} selected={selected} dayData={dayData} onSelect={selectDay}/>
+                    )}
+                    {view === 'day' && (
+                        <DayDetail date={selected} rel={selRel} data={sel} navigate={navigate} onExport={exportReport}
+                                   onAdd={() => openAdd(selected)} onDeleteLocal={deleteLocal} large/>
+                    )}
+                    {view === 'year' && (
+                        <YearGrid year={anchor.getFullYear()} todayIso={todayIso} selected={selected} dayData={dayData}
+                                  onSelect={selectDay}
+                                  onMonth={(m) => {
+                                      setAnchor(new Date(anchor.getFullYear(), m, 1));
+                                      setView('month');
+                                  }}/>
+                    )}
+                    {view === 'all' && (
+                        <ProjectGantt from={rangeFrom} to={rangeTo} today={today} tasksByDay={tasksByDay}
+                                      itemsByDay={itemsByDay} showTasks={layers.has('tasks')} matches={matches}
+                                      onSelect={(d) => selectDay(d)}/>
+                    )}
                 </div>
 
-                <div className="form-group">
-                  <label className="form-label">VOB-Paragraf / Rechtlicher Bezug (optional)</label>
-                  <input
-                    type="text"
-                    className="form-input"
-                    placeholder="z. B. § 6 Abs. 1 VOB/B oder § 4 Abs. 7 VOB/B"
-                    value={newVobRef}
-                    onChange={(e) => setNewVobRef(e.target.value)}
-                  />
-                </div>
+                {view !== 'day' && (
+                    <aside className="tp-side">
+                        <DayDetail date={selected} rel={selRel} data={sel} navigate={navigate} onExport={exportReport}
+                                   onAdd={() => openAdd(selected)} onDeleteLocal={deleteLocal}
+                                   onOpenDay={() => selectDay(selected, true)}/>
+                    </aside>
+                )}
+            </div>
 
-                <div className="form-group">
-                  <label className="form-label">{t('term_modal_desc_label')}</label>
-                  <textarea
-                    className="form-textarea"
-                    rows={3}
-                    placeholder="Details, Vereinbarungen oder Begründung..."
-                    value={newDesc}
-                    onChange={(e) => setNewDesc(e.target.value)}
-                  />
-                </div>
+            <div className="tp-footnote">
+                Quellen: Bautagesberichte, Diktate, Briefe und Bauzeitenplan aus dem Backend (Timeline & Terminplan).
+                Klick auf einen Tag zeigt Details, Doppelklick öffnet die Tagesansicht. Eigene Termine werden vorerst lokal gespeichert.
+            </div>
 
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <input
-                    type="checkbox"
-                    id="urgentCheck"
-                    checked={newIsUrgent}
-                    onChange={(e) => setNewIsUrgent(e.target.checked)}
-                    style={{ width: '16px', height: '16px', cursor: 'pointer' }}
-                  />
-                  <label htmlFor="urgentCheck" style={{ fontSize: '13px', fontWeight: 600, color: '#dc2626', cursor: 'pointer' }}>
-                    Als akute Frist markieren (Warnung anzeigen)
-                  </label>
+            {/* Neuer Termin */}
+            {showAdd && (
+                <div className="tp-modal-overlay" onClick={() => setShowAdd(false)}>
+                    <form className="tp-modal" onClick={(e) => e.stopPropagation()} onSubmit={submitAdd}>
+                        <div className="tp-modal-header">
+                            <strong>Neuer Termin / Frist</strong>
+                            <button type="button" className="tp-icon-btn" onClick={() => setShowAdd(false)} aria-label="Schließen"><X size={16}/></button>
+                        </div>
+                        <div className="tp-form-grid">
+                            <label className="span-2">Bezeichnung *
+                                <input className="form-input" required autoFocus value={form.title}
+                                       onChange={(e) => setForm({...form, title: e.target.value})}/>
+                            </label>
+                            <label>Datum
+                                <input className="form-input" type="date" required value={form.date} onChange={(e) => setForm({...form, date: e.target.value})}/>
+                            </label>
+                            <label>Uhrzeit
+                                <input className="form-input" type="time" value={form.time ?? ''} onChange={(e) => setForm({...form, time: e.target.value})}/>
+                            </label>
+                            <label>Kategorie
+                                <select className="form-input" value={form.category}
+                                        onChange={(e) => setForm({...form, category: e.target.value as AppointmentCategory})}>
+                                    {Object.entries(CATEGORY).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+                                </select>
+                            </label>
+                            <label>Gewerk / Firma
+                                <input className="form-input" value={form.trade ?? ''} onChange={(e) => setForm({...form, trade: e.target.value})}/>
+                            </label>
+                            <label className="span-2">Beschreibung
+                                <textarea className="form-textarea" rows={2} value={form.description ?? ''}
+                                          onChange={(e) => setForm({...form, description: e.target.value})}/>
+                            </label>
+                            <label>VOB-Bezug
+                                <input className="form-input" placeholder="z. B. § 6 Abs. 1 VOB/B" value={form.vobReference ?? ''}
+                                       onChange={(e) => setForm({...form, vobReference: e.target.value})}/>
+                            </label>
+                            <label className="tp-check">
+                                <input type="checkbox" checked={!!form.isUrgent} onChange={(e) => setForm({...form, isUrgent: e.target.checked})}/>
+                                Dringend
+                            </label>
+                        </div>
+                        <div className="tp-modal-note">
+                            Wird vorerst nur lokal in diesem Browser gespeichert <ComingSoonBadge label="Sync: Backend folgt"/>
+                        </div>
+                        <div className="tp-modal-actions">
+                            <button type="button" className="btn btn-secondary" onClick={() => setShowAdd(false)}>Abbrechen</button>
+                            <button type="submit" className="btn btn-primary">Speichern</button>
+                        </div>
+                    </form>
                 </div>
-              </div>
-
-              <div className="termin-modal-footer">
-                <button
-                  type="button"
-                  className="btn btn-secondary"
-                  onClick={() => setShowAddModal(false)}
-                >
-                  {t('btn_cancel')}
-                </button>
-                <button type="submit" className="btn btn-primary">
-                  <Plus size={16} />
-                  <span>{t('btn_save')}</span>
-                </button>
-              </div>
-            </form>
-          </div>
+            )}
         </div>
-      )}
+    );
+};
+
+// =====================================================================
+// Teil-Komponenten
+// =====================================================================
+
+const Kpi: React.FC<{ icon: React.ReactNode; label: string; value: number; tone?: 'danger' | 'warning' }> = ({icon, label, value, tone}) => (
+    <div className={`tp-kpi ${tone ?? ''}`}>
+        <div className="tp-kpi-icon">{icon}</div>
+        <div>
+            <div className="tp-kpi-value">{value}</div>
+            <div className="tp-kpi-label">{label}</div>
+        </div>
     </div>
-  );
+);
+
+/** Kleine Markierungen für eine Tageszelle */
+const DayBadges: React.FC<{ d: DayInfo; compact?: boolean }> = ({d, compact}) => {
+    const warn = warningCount(d);
+    const late = d.tasks.some((tk) => tk.isOverdue || tk.status === 'delayed');
+    return (
+        <div className="tp-badges">
+            {d.reports.length > 0 && <span className="tp-badge report" title="Bautagesbericht"><FileText size={10}/>{!compact && 'Bericht'}</span>}
+            {d.defects.length > 0 && <span className="tp-badge defect" title="Mängel"><Wrench size={10}/>{d.defects.length}</span>}
+            {warn > 0 && <span className="tp-badge alert" title="Warnungen"><AlertTriangle size={10}/>{warn}</span>}
+            {d.tasks.length > 0 && (
+                <span className={`tp-badge task ${late ? 'late' : ''}`} title="geplante Vorgänge"><ClipboardList size={10}/>{d.tasks.length}</span>
+            )}
+        </div>
+    );
+};
+
+const MonthGrid: React.FC<{
+    anchor: Date; from: Date; todayIso: string; selected: string; dayData: DayDataFn; onSelect: (d: string, toDay?: boolean) => void;
+}> = ({anchor, from, todayIso, selected, dayData, onSelect}) => {
+    const cells = Array.from({length: 42}, (_, n) => addDays(from, n));
+    const visible = cells[35].getMonth() === anchor.getMonth() ? cells : cells.slice(0, 35);
+    return (
+        <div className="tp-month">
+            {WEEKDAYS.map((w) => <div key={w} className="tp-month-head">{w}</div>)}
+            {visible.map((day) => {
+                const k = iso(day);
+                const d = dayData(k);
+                const outside = day.getMonth() !== anchor.getMonth();
+                const weekend = weekdayIndex(day) >= 5;
+                const max = 3;
+                const shownAppts = d.appts.slice(0, 2);
+                const shownTasks = d.tasks.slice(0, Math.max(0, max - shownAppts.length));
+                const rest = d.appts.length + d.tasks.length - shownAppts.length - shownTasks.length;
+                return (
+                    <button
+                        key={k}
+                        className={`tp-cell ${outside ? 'outside' : ''} ${weekend ? 'weekend' : ''} ${k < todayIso ? 'past' : ''} ${k === todayIso ? 'today' : ''} ${k === selected ? 'selected' : ''}`}
+                        onClick={() => onSelect(k)}
+                        onDoubleClick={() => onSelect(k, true)}
+                    >
+                        <div className="tp-cell-top">
+                            <span className="tp-cell-num">{day.getDate()}</span>
+                            <DayBadges d={d} compact/>
+                        </div>
+                        <div className="tp-cell-items">
+                            {shownAppts.map((a) => (
+                                <span key={a.id} className="tp-chip" style={{'--c': CATEGORY[a.category]?.color} as React.CSSProperties}>
+                                    {a.time ? `${a.time.slice(0, 5)} ` : ''}{a.title}
+                                </span>
+                            ))}
+                            {shownTasks.map((tk) => (
+                                <span key={tk.taskId} className={`tp-chip task ${tk.status} ${tk.isOverdue ? 'overdue' : ''}`}>
+                                    {tk.isStart ? '▶ ' : tk.isEnd ? '◼ ' : ''}{tk.title}
+                                </span>
+                            ))}
+                            {rest > 0 && <span className="tp-more">+{rest} weitere</span>}
+                        </div>
+                    </button>
+                );
+            })}
+        </div>
+    );
+};
+
+const WeekColumns: React.FC<{
+    from: Date; todayIso: string; selected: string; dayData: DayDataFn; onSelect: (d: string, toDay?: boolean) => void;
+}> = ({from, todayIso, selected, dayData, onSelect}) => (
+    <div className="tp-week">
+        {Array.from({length: 7}, (_, n) => addDays(from, n)).map((day) => {
+            const k = iso(day);
+            const d = dayData(k);
+            const past = k < todayIso;
+            const empty = d.tasks.length + d.appts.length + d.reports.length + d.defects.length === 0;
+            return (
+                <div
+                    key={k}
+                    className={`tp-week-col ${k === todayIso ? 'today' : ''} ${k === selected ? 'selected' : ''} ${past ? 'past' : ''} ${weekdayIndex(day) >= 5 ? 'weekend' : ''}`}
+                    onClick={() => onSelect(k)}
+                    onDoubleClick={() => onSelect(k, true)}
+                >
+                    <div className="tp-week-head">
+                        <span>{WEEKDAYS[weekdayIndex(day)]}</span>
+                        <strong>{fmt(day, {day: '2-digit', month: '2-digit'})}</strong>
+                    </div>
+                    <DayBadges d={d}/>
+                    {d.appts.map((a) => (
+                        <div key={a.id} className="tp-card appt" style={{'--c': CATEGORY[a.category]?.color} as React.CSSProperties}>
+                            <div className="tp-card-title">{a.time ? `${a.time.slice(0, 5)} • ` : ''}{a.title}</div>
+                            <div className="tp-card-meta">{CATEGORY[a.category]?.label}{a.isUrgent ? ' • dringend' : ''}</div>
+                        </div>
+                    ))}
+                    {d.tasks.map((tk) => (
+                        <div key={tk.taskId} className={`tp-card task ${tk.status} ${tk.isOverdue ? 'overdue' : ''}`}>
+                            <div className="tp-card-title">{tk.isStart ? '▶ ' : tk.isEnd ? '◼ ' : ''}{tk.title}</div>
+                            <div className="tp-card-meta">
+                                {tk.company || tk.trade || '–'}{tk.plannedWorkforce ? ` • ${tk.plannedWorkforce} P.` : ''} • Ist {tk.actualPercent} / Soll {tk.planPercent} %
+                            </div>
+                        </div>
+                    ))}
+                    {past && [...d.defects, ...d.reports].map((it) => (
+                        <div key={it.id} className={`tp-card past ${isDefect(it) ? 'defect' : 'report'}`}>
+                            <div className="tp-card-title">{it.title}</div>
+                            <div className="tp-card-meta">{it.summary}</div>
+                        </div>
+                    ))}
+                    {empty && <div className="tp-empty-small">—</div>}
+                </div>
+            );
+        })}
+    </div>
+);
+
+const YearGrid: React.FC<{
+    year: number; todayIso: string; selected: string; dayData: DayDataFn;
+    onSelect: (d: string, toDay?: boolean) => void; onMonth: (m: number) => void;
+}> = ({year, todayIso, selected, dayData, onSelect, onMonth}) => (
+    <div className="tp-year-wrap">
+        <div className="tp-year">
+            {MONTHS.map((name, m) => {
+                const offset = weekdayIndex(new Date(year, m, 1));
+                const len = new Date(year, m + 1, 0).getDate();
+                let reports = 0, defects = 0, warns = 0, tasks = 0;
+                const cells = Array.from({length: len}, (_, n) => {
+                    const day = new Date(year, m, n + 1);
+                    const k = iso(day);
+                    const d = dayData(k);
+                    const w = warningCount(d) + d.defects.length;
+                    reports += d.reports.length;
+                    defects += d.defects.length;
+                    warns += warningCount(d);
+                    tasks += d.tasks.length;
+                    // Vergangenheit: grün = Bericht, orange/rot = Probleme • Zukunft: blau nach Menge geplanter Arbeit
+                    let bg = '';
+                    if (k <= todayIso) {
+                        if (w > 1) bg = '#dc2626';
+                        else if (w === 1) bg = '#f59e0b';
+                        else if (d.reports.length > 0) bg = '#22c55e';
+                    } else {
+                        const load = d.tasks.length + d.appts.length;
+                        if (load >= 4) bg = '#1d4ed8';
+                        else if (load >= 2) bg = '#60a5fa';
+                        else if (load === 1) bg = '#bfdbfe';
+                    }
+                    return (
+                        <button
+                            key={k}
+                            className={`tp-year-day ${bg ? 'filled' : ''} ${k === todayIso ? 'today' : ''} ${k === selected ? 'selected' : ''}`}
+                            style={{background: bg || undefined, gridColumnStart: n === 0 ? offset + 1 : undefined}}
+                            onClick={() => onSelect(k)}
+                            onDoubleClick={() => onSelect(k, true)}
+                            title={`${fmt(day, {weekday: 'short', day: '2-digit', month: '2-digit'})}: ${d.reports.length} Bericht(e), ${d.defects.length} Mängel, ${d.tasks.length} Vorgänge, ${d.appts.length} Termine`}
+                        >
+                            {n + 1}
+                        </button>
+                    );
+                });
+                return (
+                    <div key={name} className="tp-year-month">
+                        <div className="tp-year-month-head">
+                            <button className="tp-year-title" onClick={() => onMonth(m)}>{name}</button>
+                            <div className="tp-year-stats">
+                                <span title="Berichte"><FileText size={10}/>{reports}</span>
+                                <span title="Mängel"><Wrench size={10}/>{defects}</span>
+                                <span title="Warnungen"><AlertTriangle size={10}/>{warns}</span>
+                                <span title="geplante Vorgangs-Tage"><ClipboardList size={10}/>{tasks}</span>
+                            </div>
+                        </div>
+                        <div className="tp-year-grid">
+                            {WEEKDAYS.map((w) => <span key={w} className="tp-year-wd">{w[0]}</span>)}
+                            {cells}
+                        </div>
+                    </div>
+                );
+            })}
+        </div>
+        <div className="tp-legend">
+            <span><i style={{background: '#22c55e'}}/>Bericht</span>
+            <span><i style={{background: '#f59e0b'}}/>1 Problem</span>
+            <span><i style={{background: '#dc2626'}}/>mehrere Probleme</span>
+            <span><i style={{background: '#bfdbfe'}}/>wenig geplant</span>
+            <span><i style={{background: '#1d4ed8'}}/>viel geplant</span>
+        </div>
+    </div>
+);
+
+/** Gesamt: Balkenplan aller Vorgänge über die Projektlaufzeit + Aktivität je Monat */
+const ProjectGantt: React.FC<{
+    from: Date; to: Date; today: Date;
+    tasksByDay: Record<string, DayTask[]>; itemsByDay: Record<string, TimelineItem[]>;
+    showTasks: boolean; matches: (s: string) => boolean; onSelect: (d: string) => void;
+}> = ({from, to, today, tasksByDay, itemsByDay, showTasks, matches, onSelect}) => {
+    const total = Math.max(1, daysBetween(from, to) + 1);
+    const frac = (d: Date) => Math.min(Math.max(daysBetween(from, d), 0), total) / total;
+    const pct = (d: Date) => `${frac(d) * 100}%`;
+
+    const bars = useMemo(() => {
+        const map = new Map<number, { t: DayTask; start: string; end: string; last: DayTask }>();
+        Object.entries(tasksByDay).forEach(([date, tasks]) => {
+            tasks.forEach((tk) => {
+                const cur = map.get(tk.taskId);
+                if (!cur) map.set(tk.taskId, {t: tk, start: date, end: date, last: tk});
+                else {
+                    if (date < cur.start) cur.start = date;
+                    if (date > cur.end) {
+                        cur.end = date;
+                        cur.last = tk;
+                    }
+                }
+            });
+        });
+        return Array.from(map.values())
+            .filter((b) => matches(`${b.t.title} ${b.t.trade ?? ''} ${b.t.company ?? ''}`))
+            .sort((a, b) => a.start.localeCompare(b.start));
+    }, [tasksByDay, matches]);
+
+    const months: Date[] = [];
+    for (let m = new Date(from.getFullYear(), from.getMonth(), 1); m <= to; m = new Date(m.getFullYear(), m.getMonth() + 1, 1)) months.push(m);
+
+    const activity = months.map((m) => {
+        let reports = 0, problems = 0;
+        const end = new Date(m.getFullYear(), m.getMonth() + 1, 0);
+        for (let d = m; d <= end; d = addDays(d, 1)) {
+            (itemsByDay[iso(d)] ?? []).forEach((it) => {
+                if (it.type === 'report') reports++;
+                if (it.type === 'alert' || isDefect(it)) problems++;
+            });
+        }
+        return {reports, problems};
+    });
+    const maxAct = Math.max(1, ...activity.map((a) => Math.max(a.reports, a.problems)));
+    const todayFrac = frac(today);
+
+    return (
+        <div className="tp-gantt">
+            <div className="tp-gantt-row scale">
+                <div className="tp-gantt-label"/>
+                <div className="tp-gantt-track">
+                    {months.map((m) => (
+                        <span key={m.toISOString()} className="tp-gantt-month" style={{left: pct(m)}}>{fmt(m, {month: 'short', year: '2-digit'})}</span>
+                    ))}
+                    <div className="tp-gantt-today" style={{left: `${todayFrac * 100}%`}} title="Heute"/>
+                </div>
+            </div>
+
+            <div className="tp-gantt-row activity">
+                <div className="tp-gantt-label"><strong>Aktivität</strong><span>Berichte / Probleme je Monat</span></div>
+                <div className="tp-gantt-track">
+                    {months.map((m, idx) => {
+                        const next = new Date(m.getFullYear(), m.getMonth() + 1, 1);
+                        const end = next < to ? next : addDays(to, 1);
+                        const a = activity[idx];
+                        return (
+                            <div key={m.toISOString()} className="tp-act" style={{left: pct(m), width: `${(frac(end) - frac(m)) * 100}%`}}
+                                 title={`${fmt(m, {month: 'long', year: 'numeric'})}: ${a.reports} Berichte, ${a.problems} Warnungen/Mängel`}>
+                                <div className="tp-act-bar report" style={{height: `${(a.reports / maxAct) * 100}%`}}/>
+                                <div className="tp-act-bar problem" style={{height: `${(a.problems / maxAct) * 100}%`}}/>
+                            </div>
+                        );
+                    })}
+                    <div className="tp-gantt-today" style={{left: `${todayFrac * 100}%`}}/>
+                </div>
+            </div>
+
+            {showTasks && bars.length === 0 && (
+                <div className="tp-empty">Keine Vorgänge im Bauzeitenplan (Stammdaten → Bauzeitenpläne).</div>
+            )}
+            {showTasks && bars.map((b) => {
+                const s = parseIso(b.start);
+                const e = addDays(parseIso(b.end), 1);
+                return (
+                    <div key={b.t.taskId} className="tp-gantt-row">
+                        <div className="tp-gantt-label" title={b.t.title}>
+                            <strong>{b.t.code ? `${b.t.code} ` : ''}{b.t.title}</strong>
+                            <span>{b.last.company || b.t.trade || ''}</span>
+                        </div>
+                        <div className="tp-gantt-track">
+                            <button
+                                className={`tp-gantt-bar ${b.last.isOverdue ? 'overdue' : b.last.status}`}
+                                style={{left: pct(s), width: `max(4px, ${(frac(e) - frac(s)) * 100}%)`}}
+                                onClick={() => onSelect(b.start)}
+                                title={`${b.t.title}: ${fmt(s, {day: '2-digit', month: '2-digit'})} – ${fmt(parseIso(b.end), {day: '2-digit', month: '2-digit', year: 'numeric'})} • Ist ${b.last.actualPercent} %`}
+                            >
+                                <span className="tp-gantt-fill" style={{width: `${Math.min(100, b.last.actualPercent)}%`}}/>
+                            </button>
+                            <div className="tp-gantt-today" style={{left: `${todayFrac * 100}%`}}/>
+                        </div>
+                    </div>
+                );
+            })}
+            <div className="tp-legend">
+                <span><i style={{background: '#3b82f6'}}/>im Plan</span>
+                <span><i style={{background: '#f59e0b'}}/>Achtung</span>
+                <span><i style={{background: '#dc2626'}}/>Verzug / Restarbeiten</span>
+                <span><i style={{background: '#0f172a', width: '2px'}}/>Heute</span>
+                <span>Dunkle Füllung = Ist-Fortschritt</span>
+            </div>
+        </div>
+    );
+};
+
+const TYPE_ICON: Record<TimelineItem['type'], React.ReactNode> = {
+    report: <FileText size={12}/>,
+    note: <StickyNote size={12}/>,
+    notice: <Mail size={12}/>,
+    progress: <TrendingUp size={12}/>,
+    alert: <AlertTriangle size={12}/>
+};
+
+const TimelineRow: React.FC<{ it: TimelineItem; navigate: ReturnType<typeof useNavigate> }> = ({it, navigate}) => (
+    <div className={`tp-tl ${it.severity ?? 'info'}`}>
+        <div className="tp-tl-top">
+            <span className="tp-tl-title">{TYPE_ICON[it.type]} {it.title}</span>
+            {it.time && <span className="tp-tl-time">{it.time}</span>}
+        </div>
+        <div className="tp-tl-sum">{it.summary}</div>
+        <div className="tp-tl-foot">
+            <span>🔍 {it.source}</span>
+            {it.type === 'notice' && it.refId != null && (
+                <button className="tp-link" onClick={() => navigate('/drafts', {state: {noticeId: it.refId}})}>Brief öffnen</button>
+            )}
+            {it.type === 'alert' && (
+                <button className="tp-link danger" onClick={() => navigate('/drafts', {state: {type: 'delay', keywords: `${it.title}. ${it.summary} (Quelle: ${it.source})`}})}>
+                    <Mail size={11}/> Brief
+                </button>
+            )}
+        </div>
+    </div>
+);
+
+/** Rechte Spalte bzw. Tagesansicht: alles zu einem Tag */
+const DayDetail: React.FC<{
+    date: string;
+    rel: 'past' | 'today' | 'future';
+    data: DayInfo;
+    navigate: ReturnType<typeof useNavigate>;
+    onExport: (date: string, f: 'pdf' | 'docx') => void;
+    onAdd: () => void;
+    onDeleteLocal: (id: string) => void;
+    onOpenDay?: () => void;
+    large?: boolean;
+}> = ({date, rel, data, navigate, onExport, onAdd, onDeleteLocal, onOpenDay, large}) => {
+    const d = parseIso(date);
+    const report = data.reports[0];
+    const events = [...data.notes, ...data.notices, ...data.progress, ...data.alerts].sort((a, b) => (b.time ?? '').localeCompare(a.time ?? ''));
+    const weekend = weekdayIndex(d) >= 5;
+    const dateDe = fmt(d, {day: '2-digit', month: '2-digit', year: 'numeric'});
+
+    const past = (
+        <section className="tp-section">
+            <h3><CheckCircle2 size={14}/> Was passiert ist</h3>
+
+            <div className="tp-block">
+                <div className="tp-block-head">
+                    <span><FileText size={13}/> Bautagesbericht</span>
+                    {report ? (
+                        <div className="tp-block-actions">
+                            <button className="tp-link" onClick={() => navigate('/reports', {state: {date}})}>Öffnen</button>
+                            <button className="tp-link" onClick={() => onExport(date, 'pdf')}>PDF</button>
+                            <button className="tp-link" onClick={() => onExport(date, 'docx')}>Word</button>
+                        </div>
+                    ) : (
+                        !weekend && <button className="tp-link" onClick={() => navigate('/reports', {state: {date}})}>Bericht anlegen</button>
+                    )}
+                </div>
+                {report ? (
+                    <p className="tp-text">{report.summary}</p>
+                ) : (
+                    <p className="tp-muted">{weekend ? 'Wochenende – kein Bericht.' : 'Kein Bericht für diesen Tag.'}</p>
+                )}
+            </div>
+
+            <div className="tp-block">
+                <div className="tp-block-head">
+                    <span><Camera size={13}/> Fotos</span>
+                    <ComingSoonBadge/>
+                </div>
+                <div className="tp-photo-placeholder">
+                    <button className="tp-btn" disabled title="Foto-Galerie je Tag – Backend folgt"><Camera size={13}/> Fotos anzeigen</button>
+                    <button className="tp-btn" onClick={() => navigate('/reports', {state: {date}})} title="Fotos im Tagesbericht hochladen">
+                        <Plus size={13}/> Foto hinzufügen
+                    </button>
+                </div>
+            </div>
+
+            <div className="tp-block">
+                <div className="tp-block-head"><span><Wrench size={13}/> Mängel ({data.defects.length})</span></div>
+                {data.defects.length === 0
+                    ? <p className="tp-muted">Keine Mängel erfasst.</p>
+                    : data.defects.map((it) => <TimelineRow key={it.id} it={it} navigate={navigate}/>)}
+            </div>
+
+            {events.length > 0 && (
+                <div className="tp-block">
+                    <div className="tp-block-head"><span><StickyNote size={13}/> Ereignisse ({events.length})</span></div>
+                    {events.map((it) => <TimelineRow key={it.id} it={it} navigate={navigate}/>)}
+                </div>
+            )}
+        </section>
+    );
+
+    const plan = (
+        <section className="tp-section">
+            <h3><ClipboardList size={14}/> {rel === 'past' ? 'Was geplant war' : 'Was zu tun ist'}</h3>
+            <div className="tp-block">
+                <div className="tp-block-head"><span><ClipboardList size={13}/> Arbeiten laut Bauzeitenplan ({data.tasks.length})</span></div>
+                {data.tasks.length === 0 ? <p className="tp-muted">Keine Vorgänge geplant.</p> : data.tasks.map((tk) => (
+                    <div key={tk.taskId} className={`tp-task ${tk.isOverdue ? 'overdue' : tk.status}`}>
+                        <div className="tp-task-top">
+                            <strong>{tk.code ? `${tk.code} ` : ''}{tk.title}</strong>
+                            <span className={`tp-status ${tk.isOverdue ? 'overdue' : tk.status}`}>
+                                {tk.isOverdue ? 'Restarbeiten' : tk.status === 'delayed' ? 'Verzug' : tk.status === 'warning' ? 'Achtung' : 'im Plan'}
+                            </span>
+                        </div>
+                        <div className="tp-task-meta">
+                            {tk.isStart && <span><PlayCircle size={11}/> Start</span>}
+                            {tk.isEnd && <span><Flag size={11}/> Soll-Ende</span>}
+                            {(tk.company || tk.trade) && <span>{tk.company || tk.trade}</span>}
+                            {tk.plannedWorkforce != null && <span><Users size={11}/> Soll {tk.plannedWorkforce} P.</span>}
+                        </div>
+                        <div className="tp-progress" title={`Ist ${tk.actualPercent} % • Soll ${tk.planPercent} %`}>
+                            <div className="tp-progress-fill" style={{width: `${Math.min(100, tk.actualPercent)}%`}}/>
+                            <div className="tp-progress-plan" style={{left: `${Math.min(100, tk.planPercent)}%`}}/>
+                        </div>
+                        <div className="tp-task-foot">
+                            <span>Ist {tk.actualPercent} % • Soll {tk.planPercent} %</span>
+                            {(tk.status === 'delayed' || tk.isOverdue) && (
+                                <button
+                                    className="tp-link danger"
+                                    onClick={() => navigate('/drafts', {
+                                        state: {type: 'delay', keywords: `${tk.title}: Soll ${tk.planPercent} %, Ist ${tk.actualPercent} % am ${dateDe}. Quelle: ${tk.source}`}
+                                    })}
+                                >
+                                    <Mail size={11}/> Behinderung
+                                </button>
+                            )}
+                        </div>
+                    </div>
+                ))}
+            </div>
+
+            <div className="tp-block">
+                <div className="tp-block-head">
+                    <span><CalendarIcon size={13}/> Termine ({data.appts.length})</span>
+                    <button className="tp-link" onClick={onAdd}><Plus size={11}/> Termin</button>
+                </div>
+                {data.appts.length === 0 ? <p className="tp-muted">Keine Termine.</p> : data.appts.map((a) => (
+                    <div key={a.id} className="tp-appt" style={{'--c': CATEGORY[a.category]?.color} as React.CSSProperties}>
+                        <div className="tp-appt-top">
+                            <strong>{a.time ? `${a.time.slice(0, 5)} • ` : ''}{a.title}</strong>
+                            {a.local && (
+                                <button className="tp-icon-btn small" title="Lokalen Termin löschen" onClick={() => onDeleteLocal(a.id)}>
+                                    <Trash2 size={11}/>
+                                </button>
+                            )}
+                        </div>
+                        <div className="tp-appt-meta">
+                            {CATEGORY[a.category]?.label}{a.trade ? ` • ${a.trade}` : ''}{a.isUrgent ? ' • dringend' : ''}{a.local ? ' • lokal' : ''}
+                        </div>
+                        {a.description && <div className="tp-appt-desc">{a.description}</div>}
+                        {a.vobReference && <div className="tp-appt-meta">⚖️ {a.vobReference}</div>}
+                        {a.category === 'deadline' && (
+                            <button className="tp-link danger" onClick={() => navigate('/drafts', {
+                                state: {type: 'delay', keywords: [a.title, a.description, `Frist: ${dateDe}`].filter(Boolean).join('. ')}
+                            })}>
+                                <Mail size={11}/> VOB-Brief
+                            </button>
+                        )}
+                    </div>
+                ))}
+            </div>
+        </section>
+    );
+
+    return (
+        <div className={`tp-detail ${large ? 'large' : ''}`}>
+            <div className="tp-detail-head">
+                <div>
+                    <div className="tp-detail-date">{fmt(d, {weekday: 'long', day: '2-digit', month: 'long', year: 'numeric'})}</div>
+                    <span className={`tp-rel ${rel}`}>{rel === 'past' ? 'Rückblick' : rel === 'today' ? 'Heute' : 'Planung'}</span>
+                </div>
+                {onOpenDay && <button className="tp-link" onClick={onOpenDay}>Tagesansicht →</button>}
+            </div>
+            <div className={large ? 'tp-detail-cols' : 'tp-detail-stack'}>
+                {rel === 'future' ? plan : past}
+                {rel !== 'future' && plan}
+            </div>
+        </div>
+    );
 };
 
 export default Termin;

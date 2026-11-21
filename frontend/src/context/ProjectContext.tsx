@@ -118,6 +118,21 @@ function normalizeProject(raw: any): Project {
     };
 }
 
+// Fehlermeldung des Backends lesbar machen (z. B. 422 "end_date liegt vor start_date")
+async function backendError(res: Response, prefix: string): Promise<Error> {
+    let detail = `HTTP ${res.status}`;
+    try {
+        const body = await res.json();
+        if (typeof body?.detail === 'string') detail = body.detail;
+        else if (Array.isArray(body?.detail)) {
+            detail = body.detail.map((d: any) => `${(d.loc ?? []).slice(1).join('.')}: ${d.msg}`).join('; ');
+        }
+    } catch {
+        // kein JSON
+    }
+    return new Error(`${prefix}: ${detail}`);
+}
+
 export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({children}) => {
     const [projects, setProjects] = useState<Project[]>(DEFAULT_PROJECTS);
     const [isLoading, setIsLoading] = useState<boolean>(true);
@@ -170,7 +185,7 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({childr
             body: JSON.stringify(projectData)
         });
         if (!res.ok) {
-            throw new Error(`Projekt konnte nicht angelegt werden (HTTP ${res.status})`);
+            throw await backendError(res, 'Projekt konnte nicht angelegt werden');
         }
         const created = normalizeProject(await res.json());
         setProjects((prev) => [created, ...prev]);
@@ -186,7 +201,7 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({childr
             body: JSON.stringify(changes)
         });
         if (!res.ok) {
-            throw new Error(`Projekt konnte nicht aktualisiert werden (HTTP ${res.status})`);
+            throw await backendError(res, 'Projekt konnte nicht gespeichert werden');
         }
         const updated = normalizeProject(await res.json());
         setProjects((prev) => prev.map((p) => (p.id === id ? updated : p)));

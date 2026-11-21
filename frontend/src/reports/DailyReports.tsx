@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import {
   FileText,
   Calendar,
@@ -47,6 +47,8 @@ import './DailyReports.css';
 
 export const DailyReports: React.FC = () => {
   const navigate = useNavigate();
+  // Aus dem Terminplaner: navigate('/reports', {state: {date: 'YYYY-MM-DD'}}) öffnet diesen Tag
+  const navDate = (useLocation().state as { date?: string } | null)?.date;
   const { t } = useLanguage();
   const { activeProject } = useProjects();
   const userName = localStorage.getItem('userName') || t('role_site_manager');
@@ -60,7 +62,13 @@ export const DailyReports: React.FC = () => {
 
   // New diary entry form state
   const [reportNumber, setReportNumber] = useState('143');
-  const [reportDate, setReportDate] = useState('21.11.2026');
+  const [reportDate, setReportDate] = useState(() => {
+    if (navDate && /^\d{4}-\d{2}-\d{2}$/.test(navDate)) {
+      const [y, m, d] = navDate.split('-');
+      return `${d}.${m}.${y}`;
+    }
+    return '21.11.2026';
+  });
   const [weather, setWeather] = useState('9°C, bedeckt, windstill');
   const [workforceCount, setWorkforceCount] = useState<number>(34);
   const [trades, setTrades] = useState<string[]>([
