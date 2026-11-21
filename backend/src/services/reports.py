@@ -1,7 +1,8 @@
 """Tagesberichte: lesen, speichern, per Diktat ergänzen (/fill) – inkl. Fortschritt je Vorgang.
 
 Mapping Formular ↔ Datenbank:
-- weather (Text)      ↔ DailyReport.weather als JSON {"condition": text}
+- weather + temperature_c ↔ DailyReport.weather als JSON {"condition": text, "temp_c": zahl}
+- attendance (Liste)  ↔ DailyReport.workforce als JSON-Liste [{company, trade, workers, hours}]
 - trades (Liste)      ↔ DailyReport.trades als JSON-Liste
 - progress (Liste)    ↔ Tabelle ReportProgress (ein Eintrag je Bericht + Vorgang)
 
@@ -20,12 +21,21 @@ from pydantic import BaseModel
 from sqlmodel import Session, select
 
 from src.models import ConstructionPlan, DailyReport, PlanTask, Project, ReportProgress, SiteNote
-from src.schemas.reports import FillRequest, FillResponse, ProgressOut, ReportIn, ReportOut
+from src.schemas.reports import AttendanceItem, FillRequest, FillResponse, ProgressOut, ReportIn, ReportOut
 from src.services import llm, offline_rules
+from src.services.workforce import attendance_of, contracts_with_target, match_contract, store_attendance, tokens
 
 # Schlüsselwörter für Vorkommnisse (Behinderung, Mehrkosten, Mangel) aus den Offline-Regeln.
 _INCIDENT_WORDS = [w for t in ("delay", "cost", "defect") for w in offline_rules.KEYWORDS[t]]
 _PERCENT_RE = re.compile(r"(\d{1,3})\s*(?:%|prozent|procent)", re.IGNORECASE)
+# Anwesenheit im Diktat, DE + PL: "Fa. Krause nur 3 Mann", "3 Leute von Krause", "firma Krause tylko 3 osoby".
+_CREW_WORDS = r"(?:Mann|Leute|Leuten|Arbeiter|Arbeitern|Arbeitskräfte|Personen|Monteure|osób|osoby|ludzi|pracowników|robotników)"
+_NAME = r"([A-ZÄÖÜŁŚŻŹĆ][\wäöüßąćęłńóśźż\-]+)"
+_CREW_RES = [
+    re.compile(rf"(?:Fa\.|Firma|firma|firmy)\s*{_NAME}\D{{0,25}}?(\d{{1,3}})\s*{_CREW_WORDS}"),
+    re.compile(rf"(\d{{1,3}})\s*{_CREW_WORDS}\s+(?:von|vom|der|z|od)?\s*(?:Fa\.|Firma|firmy)?\s*{_NAME}"),
+    re.compile(rf"{_NAME}\s+(?:mit|nur|hat|ma|tylko)\s+(?:nur\s+|tylko\s+)?(\d{{1,3}})\s*{_CREW_WORDS}"),
+]
 
 
 # ---------------------------------------------------------------- Hilfen
@@ -74,6 +84,22 @@ def weather_text(value: str | None) -> str | None:
     return value or None
 
 
+def weather_parts(value: str | None) -> tuple[str | None, float | None]:
+    """Wetter aus DB getrennt: (Beschreibung, Temperatur °C) – für das Formular."""
+    data = _json(value)
+    if isinstance(data, dict):
+        return (str(data["condition"]) if data.get("condition") else None), data.get("temp_c")
+    return value or None, None
+
+
+def _store_weather(report: DailyReport, condition: str | None, temp: float | None) -> None:
+    data = {k: v for k, v in (("condition", condition), ("temp_c", temp)) if v not in (None, "")}
+    old = _json(report.weather)
+    if isinstance(old, dict) and old.get("rain_mm") is not None and data:
+        data["rain_mm"] = old["rain_mm"]  # Niederschlag aus Seed/Import nicht verlieren
+    report.weather = json.dumps(data, ensure_ascii=False) if data else None
+
+
 def _workforce_count(report: DailyReport) -> int | None:
     """Personal gesamt: eigene Spalte, sonst Summe aus dem workforce-JSON (Seed/Altdaten)."""
     if report.workforce_count is not None:
@@ -88,6 +114,7 @@ def to_out(session: Session, project_id: int, date: dt.date, report: DailyReport
     """DB-Bericht (oder None = noch nicht gespeichert) → API-Form."""
     if report is None:
         return ReportOut(id=None, project_id=project_id, report_date=date, report_number=None, weather=None,
+                         temperature_c=None, site_manager=None,
                          workforce_count=None, trades=[], work_completed=None, deviations_incidents=None,
                          deliveries=None, summary=None, status="draft", progress=[])
     trades = _json(report.trades)
@@ -95,9 +122,11 @@ def to_out(session: Session, project_id: int, date: dt.date, report: DailyReport
         select(ReportProgress, PlanTask).join(PlanTask, ReportProgress.task_id == PlanTask.id)
         .where(ReportProgress.report_id == report.id).order_by(PlanTask.planned_start, PlanTask.id)
     ).all()
+    condition, temp = weather_parts(report.weather)
     return ReportOut(
         id=report.id, project_id=report.project_id, report_date=report.report_date,
-        report_number=report.report_number, weather=weather_text(report.weather),
+        report_number=report.report_number, weather=condition, temperature_c=temp,
+        site_manager=report.site_manager, attendance=attendance_of(report),
         workforce_count=_workforce_count(report), trades=trades if isinstance(trades, list) else [],
         work_completed=report.work_completed, deviations_incidents=report.deviations_incidents,
         deliveries=report.deliveries, summary=report.summary, status=report.status,
@@ -139,8 +168,13 @@ def upsert(session: Session, project: Project, date: dt.date, data: ReportIn) ->
 
     report = _get_or_create(session, project.id, date)
     report.report_number = data.report_number
-    report.weather = json.dumps({"condition": data.weather}, ensure_ascii=False) if data.weather else None
+    _store_weather(report, data.weather, data.temperature_c)
+    report.site_manager = data.site_manager
+    if data.attendance is not None:
+        store_attendance(report, data.attendance)
     report.workforce_count = data.workforce_count
+    if report.workforce_count is None and data.attendance:
+        report.workforce_count = sum(a.workers for a in data.attendance)
     report.trades = json.dumps(data.trades, ensure_ascii=False) if data.trades else None
     report.work_completed = data.work_completed
     report.deviations_incidents = data.deviations_incidents
@@ -170,13 +204,21 @@ class _LLMProgress(BaseModel):
     percent: int
 
 
+class _LLMAttendance(BaseModel):
+    company: str
+    trade: str
+    workers: int
+
+
 class _LLMFill(BaseModel):
     work_completed: str
     deviations_incidents: str
     deliveries: str
     weather: str
+    temperature_c: str
     workforce_count: str
     trades: list[str]
+    attendance: list[_LLMAttendance]
     progress: list[_LLMProgress]
 
 
@@ -188,8 +230,12 @@ Felder (unbekannt = leerer String bzw. leere Liste, NIE etwas erfinden):
   (z. B. "Aushub Achse B zu 80 % fertiggestellt."). Gewerke/Firmen gehören NICHT hierher, sondern in trades.
 - deviations_incidents: Behinderungen, Stillstand, Verzug, Mängel, Unfälle, Mehrkosten.
 - deliveries: Lieferungen, Abnahmen, Prüfungen.
-- weather: Wetter, nur wenn genannt.
-- workforce_count: Anzahl Personen auf der Baustelle als Ziffern, nur wenn genannt.
+- weather: Wetter (ohne Temperatur), nur wenn genannt.
+- temperature_c: Temperatur in °C als Zahl (z. B. "6"), nur wenn genannt.
+- workforce_count: Anzahl Personen auf der Baustelle GESAMT als Ziffern, nur wenn genannt.
+- attendance: Anwesenheit je Firma/Gewerk, nur wenn eine Anzahl genannt ist
+  (z. B. "Fa. Krause nur 3 Mann" → {"company": "Krause", "trade": "", "workers": 3}).
+  Firmen möglichst wie in der Firmenliste schreiben.
 - trades: genannte Gewerke/Firmen auf der Baustelle (z. B. ["Erdbau", "Rohbau"]).
 - progress: Fertigstellungsgrad in Prozent NUR für Vorgänge aus der Vorgangsliste, deren
   Prozentwert im Diktat ausdrücklich genannt wird ("fertig"/"abgeschlossen" = 100).
@@ -214,6 +260,16 @@ def _code(task: PlanTask) -> str:
     return (task.task_code or str(task.id)).strip()
 
 
+def _offline_attendance(text: str) -> list[dict]:
+    """Regeln ohne KI: "Fa. X nur 3 Mann" / "3 Leute von X" / "firma X tylko 3 osoby"."""
+    found: dict[str, dict] = {}
+    for i, rx in enumerate(_CREW_RES):
+        for m in rx.finditer(text):
+            name, number = (m.group(2), m.group(1)) if i == 1 else (m.group(1), m.group(2))
+            found.setdefault(name.lower(), {"company": name, "trade": "", "workers": int(number)})
+    return list(found.values())
+
+
 def _offline_fill(text: str, tasks: list[PlanTask]) -> dict:
     """Regeln ohne KI: Sätze mit Störungs-Wörtern → Vorkommnisse, Rest → Leistung, "Titel … NN %" → Fortschritt."""
     sentences = [s.strip() for s in re.split(r"(?<=[.!?;])\s+|\n+", text) if s.strip()]
@@ -229,7 +285,33 @@ def _offline_fill(text: str, tasks: list[PlanTask]) -> dict:
             if t.title.lower() in lower or (t.task_code and t.task_code.lower() in lower):
                 progress.append({"task_code": _code(t), "percent": int(m.group(1))})
     return {"work_completed": " ".join(work), "deviations_incidents": " ".join(incidents), "deliveries": "",
-            "weather": "", "workforce_count": "", "trades": [], "progress": progress}
+            "weather": "", "temperature_c": "", "workforce_count": "", "trades": [],
+            "attendance": _offline_attendance(text), "progress": progress}
+
+
+def _merge_attendance(report: DailyReport, new: list[dict], contracts) -> None:
+    """Diktierte Anwesenheit einpflegen: bekannte Firma → Vertragsname/Gewerk, gleiche Firma wird ersetzt."""
+    items = attendance_of(report)
+    for row in new:
+        try:
+            workers = int(row.get("workers"))
+        except (TypeError, ValueError):
+            continue
+        if not 0 <= workers <= 500:
+            continue  # Unsinn verwerfen (KI-Fehler)
+        item = AttendanceItem(company=(row.get("company") or "").strip() or None,
+                              trade=(row.get("trade") or "").strip() or None, workers=workers)
+        if item.company is None and item.trade is None:
+            continue
+        contract = match_contract(item, contracts)
+        if contract is not None:  # Schreibweise aus dem Vertrag übernehmen → spätere Zuordnung eindeutig
+            item = AttendanceItem(company=contract.contractor_name or item.company,
+                                  trade=contract.trade or item.trade, workers=workers)
+        key = tokens(item.company) or {(item.trade or "").lower()}
+        items = [i for i in items if not (key & (tokens(i.company) or {(i.trade or "").lower()}))]
+        items.append(item)
+    if new:
+        store_attendance(report, items)
 
 
 async def fill(session: Session, project: Project, date: dt.date, req: FillRequest) -> FillResponse:
@@ -237,7 +319,10 @@ async def fill(session: Session, project: Project, date: dt.date, req: FillReque
     tasks = project_tasks(session, project.id)
     by_code = {_code(t).lower(): t for t in tasks}
 
-    user = f"Vorgangsliste des Projektplans:\n{_task_list(tasks)}\n\nDiktat ({req.lang}):\n{req.text.strip()}"
+    contracts = contracts_with_target(session, project.id)
+    firms = "\n".join(f"- {c.contractor_name or '?'} ({c.trade or '?'})" for c in contracts) or "(keine)"
+    user = (f"Vorgangsliste des Projektplans:\n{_task_list(tasks)}\n\nFirmenliste:\n{firms}\n\n"
+            f"Diktat ({req.lang}):\n{req.text.strip()}")
     result = await llm.complete_json(FILL_PROMPT, user, _LLMFill, max_tokens=1200)
     mode: Literal["ai", "offline"] = "ai"
     if result is None:
@@ -249,11 +334,17 @@ async def fill(session: Session, project: Project, date: dt.date, req: FillReque
     report.work_completed = _append(report.work_completed, data["work_completed"])
     report.deviations_incidents = _append(report.deviations_incidents, data["deviations_incidents"])
     report.deliveries = _append(report.deliveries, data["deliveries"])
-    if data["weather"].strip() and not weather_text(report.weather):
-        report.weather = json.dumps({"condition": data["weather"].strip()}, ensure_ascii=False)
+    condition, temp = weather_parts(report.weather)
+    temp_digits = re.sub(r"[^\d.,-]", "", data["temperature_c"]).replace(",", ".")
+    new_temp = float(temp_digits) if re.fullmatch(r"-?\d{1,2}(\.\d)?", temp_digits) else None
+    if (data["weather"].strip() and not condition) or (new_temp is not None and temp is None):
+        _store_weather(report, condition or data["weather"].strip() or None, temp if temp is not None else new_temp)
+    _merge_attendance(report, data["attendance"], contracts)
     digits = re.sub(r"\D", "", data["workforce_count"])
     if digits:
         report.workforce_count = int(digits)
+    elif report.workforce_count is None and attendance_of(report):
+        report.workforce_count = sum(a.workers for a in attendance_of(report))
     if data["trades"]:
         current = _json(report.trades) or []
         merged = current + [t.strip() for t in data["trades"] if t.strip() and t.strip() not in current]

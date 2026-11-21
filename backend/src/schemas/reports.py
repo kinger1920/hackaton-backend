@@ -29,14 +29,26 @@ class ProgressOut(BaseModel):
     note: str | None = None
 
 
+class AttendanceItem(BaseModel):
+    """Anwesenheit einer Firma bzw. eines Gewerks an diesem Tag (gespeichert im workforce-JSON)."""
+
+    company: str | None = Field(default=None, description="Firma, z. B. 'Erdbau Krause GmbH'")
+    trade: str | None = Field(default=None, description="Gewerk, z. B. 'Erdbau'")
+    workers: int = Field(ge=0, description="Anzahl Arbeitskräfte vor Ort")
+    hours: float | None = Field(default=None, ge=0)
+
+
 class ReportIn(BaseModel):
     """Body für PUT: kompletter Formularstand (nicht gesendete Felder werden geleert).
 
-    `progress` = None lässt den Fortschritt unverändert; eine Liste ersetzt ihn komplett.
+    `progress` / `attendance` = None lassen den Stand unverändert; eine Liste ersetzt ihn komplett.
+    `workforce_count` leer + Anwesenheit angegeben → Summe der Anwesenheit.
     """
 
     report_number: int | None = None
-    weather: str | None = Field(default=None, description="Freitext, z. B. '9°C, bedeckt, windstill'")
+    weather: str | None = Field(default=None, description="Freitext, z. B. 'bedeckt, windstill'")
+    temperature_c: float | None = Field(default=None, ge=-40, le=50, description="Temperatur in °C")
+    site_manager: str | None = Field(default=None, description="Bauleitung des Tages")
     workforce_count: int | None = Field(default=None, ge=0)
     trades: list[str] = Field(default_factory=list)
     work_completed: str | None = None
@@ -45,6 +57,7 @@ class ReportIn(BaseModel):
     summary: str | None = None
     status: Literal["draft", "reviewed", "finalized"] = "draft"
     progress: list[ProgressIn] | None = None
+    attendance: list[AttendanceItem] | None = None
 
 
 class ReportOut(BaseModel):
@@ -55,6 +68,8 @@ class ReportOut(BaseModel):
     report_date: dt.date
     report_number: int | None
     weather: str | None
+    temperature_c: float | None = None
+    site_manager: str | None = None
     workforce_count: int | None
     trades: list[str]
     work_completed: str | None
@@ -63,6 +78,7 @@ class ReportOut(BaseModel):
     summary: str | None
     status: str
     progress: list[ProgressOut]
+    attendance: list[AttendanceItem] = Field(default_factory=list)
 
 
 class FillRequest(BaseModel):
