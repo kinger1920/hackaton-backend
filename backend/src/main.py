@@ -21,6 +21,7 @@ from src.routers.contracts import router as contracts_router
 from src.routers.contract_parse import router as contract_parse_router
 from src.routers.schedule import router as schedule_router
 from src.routers.plan_tasks import router as plan_tasks_router
+from src.routers.demo import router as demo_router
 from src.routers.ai import router as ai_router
 from src.routers.notices import router as notices_router
 from src.routers.summary import router as summary_router
@@ -65,6 +66,7 @@ app.include_router(contracts_router)
 app.include_router(contract_parse_router)
 app.include_router(schedule_router)
 app.include_router(plan_tasks_router)
+app.include_router(demo_router)
 app.include_router(ai_router)
 app.include_router(notices_router)
 app.include_router(summary_router)
