@@ -26,7 +26,8 @@ import {
     api,
     Company,
     Contract,
-    DailyReportOut
+    DailyReportOut,
+    WeatherResponse
 } from '../services/api';
 import {daysBetween, formatDe, parseIsoDate, startOfToday, todayIso} from '../utils/dates';
 
@@ -59,14 +60,19 @@ export const Dashboard: React.FC = () => {
     const [todayReport, setTodayReport] = useState<DailyReportOut | null>(null);
     const [contracts, setContracts] = useState<Contract[]>([]);
     const [clientCompany, setClientCompany] = useState<Company | null>(null);
+    // Live-Wetter am Projektort (GET /api/weather → Open-Meteo); null = nicht verfügbar
+    const [liveWeather, setLiveWeather] = useState<WeatherResponse | null>(null);
 
     const loadBackend = async () => {
-        const [rep, con, cli] = await Promise.allSettled([
+        setLiveWeather(null);
+        const [rep, con, cli, wea] = await Promise.allSettled([
             api.getReport(todayIso(), projectId),
             api.listContracts(projectId),
-            api.listCompanies({ company_type: 'client' })
+            api.listCompanies({ company_type: 'client' }),
+            api.getWeather(todayIso(), projectId)
         ]);
         setTodayReport(rep.status === 'fulfilled' && rep.value.id != null ? rep.value : null);
+        setLiveWeather(wea.status === 'fulfilled' ? wea.value : null);
         setContracts(con.status === 'fulfilled' ? con.value : []);
         setClientCompany(cli.status === 'fulfilled' && cli.value.length > 0 ? cli.value[0] : null);
     };
@@ -202,9 +208,27 @@ export const Dashboard: React.FC = () => {
         }
     };
 
-    // Wetter aus dem heutigen Bautagesbericht, falls eingetragen (automatisches Wetter: Idee #2)
+    // Reihenfolge: Live-Wetter am Projektort → Wetter aus dem heutigen Bautagesbericht → Beispielwerte
+    // (Beispielwerte nur, wenn Backend/Wetterdienst nicht erreichbar oder Projekt ohne Ort).
     const demoWeather = getWeatherData();
-    const weatherData = todayReport && (todayReport.weather || todayReport.temperature_c != null)
+    const lw = liveWeather;
+    const weatherData = lw
+        ? {
+              ...demoWeather,
+              temp: lw.temperature_c ?? demoWeather.temp,
+              condition: lw.condition,
+              wind: lw.wind_kmh != null
+                  ? `${lw.wind_kmh} km/h${lw.wind_gusts_kmh != null ? ` (Böen ${lw.wind_gusts_kmh} km/h)` : ''}`
+                  : '– km/h',
+              rainRisk: lw.precipitation_probability != null
+                  ? `${lw.precipitation_probability}% Niederschlag`
+                  : lw.precipitation_mm != null ? `${lw.precipitation_mm} mm Niederschlag` : '– Niederschlag',
+              craneStatus: lw.crane_status ?? demoWeather.craneStatus,
+              concreteStatus: lw.concrete_status ?? demoWeather.concreteStatus,
+              isWindWarning: lw.is_wind_warning ?? false,
+              source: lw.source
+          }
+        : todayReport && (todayReport.weather || todayReport.temperature_c != null)
         ? {
               ...demoWeather,
               temp: todayReport.temperature_c ?? demoWeather.temp,
@@ -399,7 +423,7 @@ export const Dashboard: React.FC = () => {
                 {/* 2. KACHEL: WETTER */}
                 <div
                     className="kpi-card"
-                    title={`Baustellenwetter für ${activeProject.name}`}
+                    title={`Baustellenwetter für ${activeProject.name}${'source' in weatherData ? ` – ${weatherData.source}` : ''}`}
                 >
                     <div style={{ flex: 1 }}>
                         <div className="kpi-label">Baustellenwetter</div>

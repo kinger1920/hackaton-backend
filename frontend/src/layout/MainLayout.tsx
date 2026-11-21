@@ -149,18 +149,31 @@ export const MainLayout: React.FC = () => {
     // Idee #6 (Offline/PWA): Netzstatus des Geräts – Details unter Profil → „Offline & App“
     const isOnline = useOnlineStatus();
 
-    // Wetter des Tages aus dem Bautagesbericht (Projektwechsel oder Seitenwechsel → neu laden)
-    const [todayWeather, setTodayWeather] = useState<{ temp: number | null; text: string | null } | null>(null);
+    // Wetter des Tages: zuerst live am Projektort (GET /api/weather → Open-Meteo),
+    // sonst aus dem heutigen Bautagesbericht (Projektwechsel oder Seitenwechsel → neu laden)
+    const [todayWeather, setTodayWeather] = useState<{ temp: number | null; text: string | null; source?: string } | null>(null);
     useEffect(() => {
         let cancelled = false;
-        api.getReport(todayIso(), Number(activeProject.id))
-            .then((r) => {
+        const projectId = Number(activeProject.id);
+        const fromReport = () =>
+            api.getReport(todayIso(), projectId)
+                .then((r) => {
+                    if (cancelled) return;
+                    setTodayWeather(r.id != null && (r.weather || r.temperature_c != null)
+                        ? {temp: r.temperature_c ?? null, text: r.weather, source: 'Bautagesbericht'}
+                        : null);
+                })
+                .catch(() => !cancelled && setTodayWeather(null));
+        api.getWeather(todayIso(), projectId)
+            .then((w) => {
                 if (cancelled) return;
-                setTodayWeather(r.id != null && (r.weather || r.temperature_c != null)
-                    ? {temp: r.temperature_c ?? null, text: r.weather}
-                    : null);
+                setTodayWeather({
+                    temp: w.temperature_c != null ? Math.round(w.temperature_c) : null,
+                    text: w.condition.replace(/\s*\(.*\)$/, ''),  // "(3 bis 9 °C)" passt nicht in die Kopfzeile
+                    source: w.source
+                });
             })
-            .catch(() => !cancelled && setTodayWeather(null));
+            .catch(fromReport);
         return () => {
             cancelled = true;
         };
@@ -320,13 +333,13 @@ export const MainLayout: React.FC = () => {
                             </div>
                         )}
 
-                        {/* Wetter aus dem heutigen Bautagesbericht (vorher fest "9°C • Trocken") */}
+                        {/* Wetter live am Projektort, sonst aus dem heutigen Bautagesbericht */}
                         <button
                             type="button"
                             className="hdr-chip hdr-chip-muted hdr-weather"
                             style={{cursor: 'pointer'}}
                             onClick={() => navigate('/reports')}
-                            title={t('hdr_weather_hint', 'Wetter aus dem heutigen Bautagesbericht')}
+                            title={todayWeather?.source ?? t('hdr_weather_hint', 'Wetter aus dem heutigen Bautagesbericht')}
                         >
                             <CloudSun size={16}/>
                             <span>
