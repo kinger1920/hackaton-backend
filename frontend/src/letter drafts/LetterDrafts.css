@@ -232,3 +232,38 @@
     background-color: #ffffff;
     border-color: var(--color-slate-300);
 }
+
+/* Briefdruck (Fallback ohne Server-PDF): nur das Schreiben drucken, nicht die ganze Seite.
+   Greift nur, solange <body> die Klasse print-letter-only trägt (printLetterOnly in LetterDrafts.tsx). */
+.letter-body-print {
+    display: none;
+}
+
+@media print {
+    /* Alles ausblenden, was das Schreiben weder ist, noch enthält, noch darin liegt. */
+    body.print-letter-only *:not(:has(.paper-content)):not(.paper-content):not(.paper-content *) {
+        display: none !important;
+    }
+    /* Container rund um das Schreiben: keine Scrollbereiche, Abstände oder Rahmen im Druck. */
+    body.print-letter-only *:has(.paper-content) {
+        overflow: visible !important;
+        height: auto !important;
+        max-height: none !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        border: none !important;
+        box-shadow: none !important;
+        background: #ffffff !important;
+    }
+    body.print-letter-only .paper-content {
+        padding: 0;
+        min-height: 0;
+    }
+    body.print-letter-only .letter-body-editable {
+        display: none !important;
+    }
+    body.print-letter-only .letter-body-print {
+        display: block;
+        white-space: pre-wrap;
+    }
+}
