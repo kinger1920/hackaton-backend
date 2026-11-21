@@ -6,12 +6,17 @@
 
 import datetime as dt
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import Response
 from sqlmodel import Session
 
 from src.database import get_session
 from src.schemas.reports import FillRequest, FillResponse, ReportIn, ReportOut
-from src.services import reports
+from src.services import report_documents, reports
+from src.services.documents import PdfUnavailable
+
+PDF_MEDIA_TYPE = "application/pdf"
+DOCX_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 
 router = APIRouter(prefix="/api/reports", tags=["Daily Reports"])
 
@@ -48,3 +53,41 @@ async def fill_report(report_date: dt.date, req: FillRequest,
     """
     project = reports.resolve_project(session, req.project_id)
     return await reports.fill(session, project, report_date, req)
+
+
+async def _export(report_date: dt.date, project_id: int | None, ext: str, session: Session) -> Response:
+    """Gemeinsamer Ablauf für PDF und Word: Bericht laden → Exportdaten bauen → rendern → Download."""
+    project = reports.resolve_project(session, project_id)
+    report = reports.find_report(session, project.id, report_date)
+    if report is None:
+        # Ein noch nicht gespeicherter (leerer) Tag wird nicht exportiert.
+        raise HTTPException(status_code=404, detail=f"Kein Tagesbericht für {report_date:%d.%m.%Y}")
+    doc = await report_documents.build(session, project, report)
+    try:
+        content = report_documents.render_pdf(doc) if ext == "pdf" else report_documents.render_docx(doc)
+    except PdfUnavailable as e:
+        # 503 = Server kann gerade nicht (Pango fehlt) – Word-Export geht trotzdem.
+        raise HTTPException(status_code=503, detail=str(e))
+    # Status bleibt unverändert: Ein Tagesbericht bleibt bearbeitbar (anders als ein freigegebener Brief).
+    headers = {"Content-Disposition": f'attachment; filename="{report_documents.report_filename(report, ext)}"'}
+    return Response(content=content, media_type=PDF_MEDIA_TYPE if ext == "pdf" else DOCX_MEDIA_TYPE, headers=headers)
+
+
+@router.get("/{report_date}/pdf", response_class=Response,
+            responses={200: {"content": {PDF_MEDIA_TYPE: {}}}})
+async def export_report_pdf(report_date: dt.date, project_id: int | None = None,
+                            session: Session = Depends(get_session)) -> Response:
+    """Bautagesbericht als PDF (Contract: GET /api/reports/{date}/pdf).
+
+    Nicht abgeschlossene Berichte tragen das Wasserzeichen "ENTWURF".
+    Fehler: 404 Projekt/Bericht unbekannt · 503 PDF-Bibliothek (Pango) fehlt.
+    """
+    return await _export(report_date, project_id, "pdf", session)
+
+
+@router.get("/{report_date}/docx", response_class=Response,
+            responses={200: {"content": {DOCX_MEDIA_TYPE: {}}}})
+async def export_report_docx(report_date: dt.date, project_id: int | None = None,
+                             session: Session = Depends(get_session)) -> Response:
+    """Bautagesbericht als Word-Datei (Contract: GET /api/reports/{date}/docx). Fehler: 404."""
+    return await _export(report_date, project_id, "docx", session)
