@@ -50,6 +50,9 @@ async def transcribe(audio: bytes, filename: str, lang: str | None) -> str | Non
     except openai.APIConnectionError:
         logger.warning("Keine Verbindung zu Groq (STT) – Fallback.")
         return None
+    except Exception as e:  # Unerwartetes darf nie zu 500 führen – Diktat fällt auf Browser-STT zurück.
+        logger.warning("Unerwarteter STT-Fehler (%s) – Fallback.", type(e).__name__)
+        return None
 
     logger.info("STT in %.2fs (%s)", time.perf_counter() - started, settings.stt_model)
     return result.text.strip()
