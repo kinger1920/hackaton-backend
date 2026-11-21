@@ -1,4 +1,5 @@
 import React, {useEffect, useState} from 'react';
+import {isMobileView} from '../utils/useIsMobile';
 import {useNavigate} from 'react-router-dom';
 import {HardHat, ArrowRight} from 'lucide-react';
 import { useLanguage } from '../context/LanguageContext';
@@ -40,7 +41,7 @@ export const Login: React.FC = () => {
         e.preventDefault();
         if (name.trim()) {
             localStorage.setItem('userName', name.trim());
-            navigate(normalizeStartTab(startTab));
+            navigate(isMobileView() ? '/mobile' : normalizeStartTab(startTab));
         }
     };
 

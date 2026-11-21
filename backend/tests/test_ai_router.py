@@ -47,3 +47,14 @@ def test_capture_without_any_project_still_returns_draft(client):
     assert r.status_code == 200
     assert r.json()["site_note_id"] is None
     assert r.json()["mode"] == "offline"
+
+
+def test_cors_allows_phone_in_local_network_only(client):
+    """Handy im WLAN (Frontend über die PC-Adresse) darf zugreifen, fremde Seiten nicht."""
+    ok = client.get("/health", headers={"Origin": "http://192.168.1.20:3000"})
+    assert ok.headers.get("access-control-allow-origin") == "http://192.168.1.20:3000"
+    assert client.get("/health", headers={"Origin": "http://localhost:3000"}).headers.get("access-control-allow-origin")
+    evil = client.get("/health", headers={"Origin": "https://evil.example.com"})
+    assert "access-control-allow-origin" not in evil.headers
+    tricky = client.get("/health", headers={"Origin": "http://192.168.1.20.evil.com"})
+    assert "access-control-allow-origin" not in tricky.headers

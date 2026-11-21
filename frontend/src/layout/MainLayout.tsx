@@ -20,7 +20,8 @@ import {
     Sun,
     Moon,
     PenLine,
-    ClipboardList
+    ClipboardList,
+    Smartphone
 } from 'lucide-react';
 import {useOnlineStatus} from '../components/useOnlineStatus';
 import {todayIso} from '../utils/dates';
@@ -29,6 +30,8 @@ import {useProjects} from '../context/ProjectContext';
 import {useLanguage} from '../context/LanguageContext';
 import LanguageSwitcher from '../components/LanguageSwitcher';
 import {useTheme} from '../theme/theme';
+import {setViewMode, useIsMobile} from '../utils/useIsMobile';
+import MobileShell from '../mobile/MobileShell';
 import '@frontend/src/index.css';
 // Dashboard.css still holds styles used by the dashboard page itself
 import '@frontend/src/dashboard/Dashboard.css';
@@ -148,6 +151,20 @@ export const MainLayout: React.FC = () => {
         localStorage.setItem(SIDEBAR_KEY, next);
     };
 
+    // Handy-Ansicht (≤ 768 px oder per „Mehr → Desktop-Ansicht“ umschaltbar)
+    const {isMobile, narrow, mode: viewMode} = useIsMobile();
+    useEffect(() => {
+        if (!isMobile || location.pathname !== '/dashboard') return;
+        try {
+            if (sessionStorage.getItem('mobileHomeShown')) return;
+            sessionStorage.setItem('mobileHomeShown', '1');
+        } catch {
+            // ignore
+        }
+        navigate('/mobile', {replace: true});
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [isMobile]);
+
     // Idee #6 (Offline/PWA): Netzstatus des Geräts – Details unter Profil → „Offline & App“
     const isOnline = useOnlineStatus();
 
@@ -211,6 +228,19 @@ export const MainLayout: React.FC = () => {
                     ? t('hdr_backend_ok_hint', 'Backend verbunden • PDF-Export verfügbar')
                     : t('hdr_backend_nopdf_hint', 'Backend verbunden • PDF-Export nicht verfügbar (Pango fehlt) – Word geht immer')
             };
+
+    if (isMobile) {
+        return (
+            <MobileShell
+                navGroups={NAV_GROUPS.map((g) => ({
+                    title: t(g.titleKey, g.fallback),
+                    items: g.items.map((i) => ({path: i.path, icon: i.icon, label: t(i.labelKey, i.fallback)}))
+                }))}
+                status={{...status, offline: !isOnline}}
+                onLogout={handleLogout}
+            />
+        );
+    }
 
     return (
         <div className={`app-shell ${sidebarMode === 'collapsed' ? 'collapsed' : ''} ${mobileMenuOpen ? 'mobile-open' : ''}`}>
@@ -351,6 +381,13 @@ export const MainLayout: React.FC = () => {
                                     : ` • ${t('hdr_weather_missing', 'Wetter noch nicht erfasst')}`}
                             </span>
                         </button>
+
+                        {narrow && viewMode === 'desktop' && (
+                            <button type="button" className="hdr-icon-btn" onClick={() => setViewMode('auto')}
+                                    title="Handy-Ansicht" aria-label="Handy-Ansicht">
+                                <Smartphone size={17}/>
+                            </button>
+                        )}
 
                         <LanguageSwitcher/>
 
