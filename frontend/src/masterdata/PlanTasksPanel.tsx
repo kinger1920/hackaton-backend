@@ -1,6 +1,7 @@
 import React, {useEffect, useState} from 'react';
 import {Plus, Trash2, Pencil, Check, X, UploadCloud, RefreshCw, FileText} from 'lucide-react';
 import {api, ImportedTask, ImportResult, PlanTask, PlanTaskIn} from '../services/api';
+import {formatDe} from '../utils/dates';
 
 /**
  * Vorgänge eines Bauzeitenplans (Backend: /api/plans/{id}/tasks, /import, /tasks/bulk).
@@ -15,7 +16,7 @@ const STATUS_LABELS: Record<string, string> = {
     completed: 'fertig'
 };
 
-const fmtDate = (v?: string | null) => (v ? new Date(`${v}T00:00:00`).toLocaleDateString('de-DE') : '–');
+const fmtDate = (v?: string | null) => formatDe(v);
 
 const EMPTY_TASK: PlanTaskIn = {task_code: '', title: '', trade: '', planned_start: '', planned_end: '', status: 'pending'};
 

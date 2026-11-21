@@ -4,6 +4,7 @@ import {AlarmClock, RefreshCw, Mail, CalendarDays, Layers, FileText} from 'lucid
 import {useProjects} from '../context/ProjectContext';
 import {api, NoticeOut, PlanAnalysis} from '../services/api';
 import {ComingSoonNote} from '../components/ComingSoon';
+import {parseAnyDate, startOfToday, todayIso} from '../utils/dates';
 import './Ideas.css';
 
 /**
@@ -32,19 +33,7 @@ const TYPE_LABEL: Record<string, string> = {
     concern: 'Bedenkenanmeldung'
 };
 
-function parseDate(value?: string | null): Date | null {
-    if (!value) return null;
-    const v = value.trim().replace(/^Prognose\s+/i, '');
-    const de = v.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})$/);
-    const d = de ? new Date(Number(de[3]), Number(de[2]) - 1, Number(de[1])) : new Date(v.length === 10 ? `${v}T00:00:00` : v);
-    return Number.isNaN(d.getTime()) ? null : d;
-}
-
-function startOfToday(): Date {
-    const d = new Date();
-    d.setHours(0, 0, 0, 0);
-    return d;
-}
+const parseDate = parseAnyDate;
 
 function daysUntil(d: Date): number {
     return Math.round((d.getTime() - startOfToday().getTime()) / 86400000);
@@ -132,7 +121,8 @@ function fromAppointments(projectId: number): DeadlineItem[] {
     }
 }
 
-export const DeadlineRadar: React.FC = () => {
+/** `embedded`: im Terminplaner (Ansicht „Fristen“) – ohne eigenen Seitenkopf */
+export const DeadlineRadar: React.FC<{ embedded?: boolean }> = ({embedded = false}) => {
     const navigate = useNavigate();
     const {activeProject} = useProjects();
     const projectId = Number(activeProject.id);
@@ -144,8 +134,7 @@ export const DeadlineRadar: React.FC = () => {
 
     const load = async () => {
         setLoading(true);
-        const t0 = new Date();
-        const from = `${t0.getFullYear()}-${String(t0.getMonth() + 1).padStart(2, '0')}-${String(t0.getDate()).padStart(2, '0')}`;
+        const from = todayIso();
         const [n, a, s] = await Promise.allSettled([
             api.listNotices(projectId),
             api.getAnalysis(projectId, 'all'),
@@ -188,7 +177,7 @@ export const DeadlineRadar: React.FC = () => {
 
     return (
         <div className="idea-page">
-            <div className="idea-header">
+            {!embedded && <div className="idea-header">
                 <div className="idea-title-group">
                     <div className="idea-icon"><AlarmClock size={22}/></div>
                     <div>
@@ -199,7 +188,7 @@ export const DeadlineRadar: React.FC = () => {
                 <button className="btn btn-secondary" onClick={load} disabled={loading}>
                     <RefreshCw size={14}/> <span>Aktualisieren</span>
                 </button>
-            </div>
+            </div>}
 
             <div className="idea-kpis">
                 <div className="idea-kpi danger"><span>{overdue}</span>überfällig</div>

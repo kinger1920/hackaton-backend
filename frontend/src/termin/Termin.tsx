@@ -1,5 +1,5 @@
 import React, {useEffect, useMemo, useRef, useState} from 'react';
-import {useNavigate} from 'react-router-dom';
+import {useLocation, useNavigate} from 'react-router-dom';
 import {
     Calendar as CalendarIcon,
     ChevronLeft,
@@ -29,6 +29,8 @@ import {useProjects} from '../context/ProjectContext';
 import {useLanguage} from '../context/LanguageContext';
 import {api, AppointmentCategory, DayTask, saveBlob, ScheduleAppointment, TimelineItem} from '../services/api';
 import {ComingSoonBadge} from '../components/ComingSoon';
+import DeadlineRadar from '../ideas/DeadlineRadar';
+import {addDays, daysBetween, formatDe, isoWeek, parseIsoDate, startOfToday, startOfWeek, toIsoDate, weekdayIndex} from '../utils/dates';
 import '@frontend/src/index.css';
 import './Termin.css';
 
@@ -56,7 +58,7 @@ export interface SiteAppointment {
     isUrgent?: boolean;
 }
 
-type View = 'day' | 'week' | 'month' | 'year' | 'all';
+type View = 'day' | 'week' | 'month' | 'year' | 'all' | 'deadlines';
 type Layer = 'tasks' | 'appointments' | 'report' | 'defect' | 'note' | 'notice' | 'progress' | 'alert' | 'photos';
 
 interface Appt extends ScheduleAppointment {
@@ -81,7 +83,8 @@ const VIEWS: { id: View; label: string }[] = [
     {id: 'week', label: 'Woche'},
     {id: 'month', label: 'Monat'},
     {id: 'year', label: 'Jahr'},
-    {id: 'all', label: 'Gesamt'}
+    {id: 'all', label: 'Gesamt'},
+    {id: 'deadlines', label: 'Fristen'}
 ];
 
 const LAYERS: { id: Layer; label: string; color: string; soon?: boolean }[] = [
@@ -107,39 +110,16 @@ const CATEGORY: Record<AppointmentCategory, { label: string; color: string }> = 
 const WEEKDAYS = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'];
 const MONTHS = ['Januar', 'Februar', 'März', 'April', 'Mai', 'Juni', 'Juli', 'August', 'September', 'Oktober', 'November', 'Dezember'];
 
-// ---------- Datums-Helfer (lokale Zeit, ISO YYYY-MM-DD) ----------
-const iso = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-const parseIso = (s: string) => {
-    const [y, m, d] = s.slice(0, 10).split('-').map(Number);
-    return new Date(y, m - 1, d);
-};
-const addDays = (d: Date, n: number) => {
-    const r = new Date(d);
-    r.setDate(r.getDate() + n);
-    return r;
-};
-const weekdayIndex = (d: Date) => (d.getDay() + 6) % 7; // Montag = 0
-const startOfWeek = (d: Date) => addDays(d, -weekdayIndex(d));
-const daysBetween = (a: Date, b: Date) => Math.round((b.getTime() - a.getTime()) / 86400000);
-const fmt = (d: Date, opts: Intl.DateTimeFormatOptions) => d.toLocaleDateString('de-DE', opts);
-const todayDate = () => {
-    const d = new Date();
-    d.setHours(0, 0, 0, 0);
-    return d;
-};
+// Datums-Helfer: gemeinsam in utils/dates.ts (Kurz-Aliasse für diese Datei)
+const iso = toIsoDate;
+const parseIso = parseIsoDate;
+const fmt = (d: Date, opts: Intl.DateTimeFormatOptions) => formatDe(d, opts);
+const todayDate = startOfToday;
 
 /** Ist ein Timeline-Eintrag ein Mangel? (Mängelrüge-Brief oder Diktat "Mangel") */
 const isDefect = (it: TimelineItem) => /m[äa]ngel/i.test(`${it.title} ${it.summary}`);
 const warningCount = (d: DayInfo) =>
     d.alerts.length + [...d.reports, ...d.notes].filter((it) => it.severity === 'warning' || it.severity === 'critical').length;
-
-function isoWeek(d: Date): number {
-    const date = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
-    const day = date.getUTCDay() || 7;
-    date.setUTCDate(date.getUTCDate() + 4 - day);
-    const yearStart = new Date(Date.UTC(date.getUTCFullYear(), 0, 1));
-    return Math.ceil(((date.getTime() - yearStart.getTime()) / 86400000 + 1) / 7);
-}
 
 function rangeFor(view: View, anchor: Date, projectStart: Date, projectEnd: Date): [Date, Date] {
     switch (view) {
@@ -158,6 +138,8 @@ function rangeFor(view: View, anchor: Date, projectStart: Date, projectEnd: Date
             return [new Date(anchor.getFullYear(), 0, 1), new Date(anchor.getFullYear(), 11, 31)];
         case 'all':
             return [projectStart, projectEnd];
+        case 'deadlines':
+            return [anchor, anchor]; // Fristen-Ansicht lädt ihre Daten selbst
     }
 }
 
@@ -181,7 +163,9 @@ export const Termin: React.FC = () => {
     const today = useMemo(todayDate, []);
     const todayIso = iso(today);
 
-    const [view, setView] = useState<View>('month');
+    // Startansicht: aus Navigation (z. B. /fristen → {view: 'deadlines'}), sonst Monat
+    const navView = (useLocation().state as { view?: View } | null)?.view;
+    const [view, setView] = useState<View>(navView && VIEWS.some((v) => v.id === navView) ? navView : 'month');
     const [anchor, setAnchor] = useState<Date>(today);
     const [selected, setSelected] = useState<string>(todayIso);
     const [layers, setLayers] = useState<Set<Layer>>(new Set(LAYERS.filter((l) => !l.soon).map((l) => l.id)));
@@ -395,7 +379,7 @@ export const Termin: React.FC = () => {
 
     const changeView = (v: View) => {
         setView(v);
-        if (v !== 'all') setAnchor(parseIso(selected));
+        if (v !== 'all' && v !== 'deadlines') setAnchor(parseIso(selected));
     };
 
     const rangeLabel = (() => {
@@ -408,6 +392,8 @@ export const Termin: React.FC = () => {
                 return `${MONTHS[anchor.getMonth()]} ${anchor.getFullYear()}`;
             case 'year':
                 return String(anchor.getFullYear());
+            case 'deadlines':
+                return 'Fristen aus Briefen, Bauzeitenplan und Terminen';
             case 'all':
                 return `Projektlaufzeit ${fmt(projectStart, {month: '2-digit', year: 'numeric'})} – ${fmt(projectEnd, {month: '2-digit', year: 'numeric'})}`;
         }
@@ -516,7 +502,7 @@ export const Termin: React.FC = () => {
                     ))}
                 </div>
                 <div className="tp-nav">
-                    {view !== 'all' && (
+                    {view !== 'all' && view !== 'deadlines' && (
                         <>
                             <button className="tp-icon-btn" onClick={() => shift(-1)} aria-label="Zurück"><ChevronLeft size={16}/></button>
                             <button className="tp-btn" onClick={goToday}>Heute</button>
@@ -532,6 +518,10 @@ export const Termin: React.FC = () => {
                 </div>
             </div>
 
+            {/* Fristen-Ansicht (früher eigene Seite „Fristen-Radar“) */}
+            {view === 'deadlines' && <DeadlineRadar embedded/>}
+
+            {view !== 'deadlines' && <>
             {/* Ebenen */}
             <div className="tp-layers">
                 {LAYERS.map((l) => (
@@ -600,6 +590,7 @@ export const Termin: React.FC = () => {
                 Quellen: Bautagesberichte, Diktate, Briefe und Bauzeitenplan aus dem Backend (Timeline & Terminplan).
                 Klick auf einen Tag zeigt Details, Doppelklick öffnet die Tagesansicht. Eigene Termine werden vorerst lokal gespeichert.
             </div>
+            </>}
 
             {/* Neuer Termin */}
             {showAdd && (

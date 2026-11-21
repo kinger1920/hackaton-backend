@@ -15,6 +15,7 @@ import {
     ListTree
 } from 'lucide-react';
 import PlanTasksPanel from './PlanTasksPanel';
+import {formatDe} from '../utils/dates';
 import {useProjects} from '../context/ProjectContext';
 import {useLanguage} from '../context/LanguageContext';
 import {
@@ -74,11 +75,7 @@ function cleanCompany(data: CompanyCreate): CompanyCreate {
     return out;
 }
 
-function formatDate(iso?: string | null): string {
-    if (!iso) return '–';
-    const d = new Date(iso.endsWith('Z') || iso.includes('+') ? iso : `${iso}Z`);
-    return Number.isNaN(d.getTime()) ? iso : d.toLocaleDateString('de-DE');
-}
+const formatDate = (v?: string | null) => formatDe(v);
 
 export const MasterData: React.FC = () => {
     const {t} = useLanguage();

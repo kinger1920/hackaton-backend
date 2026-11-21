@@ -109,20 +109,33 @@ export interface ConstructionPlanCreate {
   raw_data?: string | null;
 }
 
+/** Projekt wie vom Backend geliefert (/projects), inkl. Stammdaten und Nachunternehmer-Liste */
 export interface BackendProject {
   id: number;
   name: string;
-  number: string;
-  client: string;
-  location: string;
-  phase: string;
+  number?: string | null;
+  client?: string | null;
+  location?: string | null;
+  phase?: string | null;
   status: string;
-  description?: string;
-  start_date?: string;
-  end_date?: string;
+  description?: string | null;
+  construction_volume_eur?: number | null;
+  budget_eur?: number | null;
+  gross_floor_area_m2?: number | null;
+  gross_volume_m3?: number | null;
+  construction_type?: string | null;
+  start_date?: string | null;
+  end_date?: string | null;
+  contract_type?: string | null;
+  vob_b_agreed?: boolean | null;
+  vob_notes?: string | null;
+  contractors?: { name: string; trade: string; required_workers: number | null; phone: string }[];
   created_at?: string;
   updated_at?: string;
 }
+
+/** Schreib-Payload für POST/PATCH /projects (leere Strings erlaubt, Backend macht daraus null) */
+export type ProjectPayload = Partial<Record<keyof Omit<BackendProject, 'id' | 'created_at' | 'updated_at'>, unknown>>;
 
 // ---- Analysis Types ----
 export interface WorkPackage {
@@ -614,14 +627,23 @@ export interface FillResponse extends DailyReportOut {
 // API Helpers
 // ==========================================
 
+/** Fehlermeldung des Backends lesbar machen: `detail` als Text, FastAPI-Validierungsliste oder Objekt */
 async function errorDetail(res: Response): Promise<string> {
   try {
     const errJson = await res.json();
-    if (errJson && errJson.detail) {
-      return typeof errJson.detail === 'object' ? JSON.stringify(errJson.detail) : errJson.detail;
+    const detail = errJson?.detail;
+    if (typeof detail === 'string') return detail;
+    if (Array.isArray(detail)) {
+      return detail
+        .map((d: any) => {
+          const field = Array.isArray(d?.loc) ? d.loc.filter((x: unknown) => x !== 'body').join('.') : '';
+          return field ? `${field}: ${d?.msg}` : String(d?.msg ?? JSON.stringify(d));
+        })
+        .join('; ');
     }
+    if (detail) return JSON.stringify(detail);
   } catch {
-    // not JSON
+    // kein JSON
   }
   return `HTTP ${res.status}`;
 }
@@ -643,18 +665,7 @@ export function saveBlob(blob: Blob, fileName: string): void {
 }
 
 async function handleResponse<T>(res: Response, errorPrefix: string): Promise<T> {
-  if (!res.ok) {
-    let errorDetail = `HTTP ${res.status}`;
-    try {
-      const errJson = await res.json();
-      if (errJson && errJson.detail) {
-        errorDetail = typeof errJson.detail === 'object' ? JSON.stringify(errJson.detail) : errJson.detail;
-      }
-    } catch {
-      // not JSON
-    }
-    throw new Error(`${errorPrefix}: ${errorDetail}`);
-  }
+  if (!res.ok) throw new Error(`${errorPrefix}: ${await errorDetail(res)}`);
   return res.json() as Promise<T>;
 }
 
@@ -741,12 +752,6 @@ export const api = {
   },
 
   // ---- Site Notes Endpoints ----
-  async listSiteNotes(projectId?: number): Promise<SiteNote[]> {
-    const url = projectId ? `${API_BASE_URL}/site-notes?project_id=${projectId}` : `${API_BASE_URL}/site-notes`;
-    const res = await fetch(url);
-    return handleResponse<SiteNote[]>(res, 'Fehler beim Abrufen der Notizen');
-  },
-
   async createSiteNote(note: SiteNoteCreate): Promise<SiteNote> {
     const res = await fetch(`${API_BASE_URL}/site-notes/create`, {
       method: 'POST',
@@ -805,22 +810,20 @@ export const api = {
     return handleResponse<BackendProject[]>(res, 'Fehler beim Laden der Projekte');
   },
 
-  async createProject(project: Omit<BackendProject, 'id'>): Promise<BackendProject> {
+  async createProject(project: ProjectPayload): Promise<BackendProject> {
     const res = await fetch(`${API_BASE_URL}/projects`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(project),
     });
-    return handleResponse<BackendProject>(res, 'Fehler beim Erstellen des Projekts');
+    return handleResponse<BackendProject>(res, 'Projekt konnte nicht angelegt werden');
   },
 
   async deleteProject(projectId: number): Promise<void> {
     const res = await fetch(`${API_BASE_URL}/projects/${projectId}`, {
       method: 'DELETE',
     });
-    if (!res.ok && res.status !== 404) {
-      throw new Error(`Fehler beim Löschen des Projekts: HTTP ${res.status}`);
-    }
+    await expectOk(res, 'Projekt konnte nicht gelöscht werden');
   },
 
   // ---- Analysis Endpoints ----
@@ -896,13 +899,13 @@ export const api = {
   },
 
   // ---- Projects (update) ----
-  async updateProject(projectId: number, changes: Partial<Omit<BackendProject, 'id'>>): Promise<BackendProject> {
+  async updateProject(projectId: number, changes: ProjectPayload): Promise<BackendProject> {
     const res = await fetch(`${API_BASE_URL}/projects/${projectId}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(changes),
     });
-    return handleResponse<BackendProject>(res, 'Fehler beim Aktualisieren des Projekts');
+    return handleResponse<BackendProject>(res, 'Projekt konnte nicht gespeichert werden');
   },
 
   // ---- Companies (/companies) ----

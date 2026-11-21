@@ -31,11 +31,8 @@ import {
     DraftNavState,
     PlanAnalysis
 } from '../services/api';
+import {daysBetween, formatDe, parseIsoDate, startOfToday, todayIso} from '../utils/dates';
 
-function todayIso(): string {
-    const d = new Date();
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-}
 
 interface WorkerPerson {
     id: string;
@@ -329,6 +326,17 @@ export const Dashboard: React.FC = () => {
           }
         : demoClient;
 
+    // Bauzeit-Fortschritt aus den Projekt-Stammdaten (start_date/end_date)
+    const buildTime = (() => {
+        if (!activeProject.start_date || !activeProject.end_date) return null;
+        const start = parseIsoDate(activeProject.start_date);
+        const end = parseIsoDate(activeProject.end_date);
+        const total = daysBetween(start, end);
+        if (total <= 0) return null;
+        const done = Math.min(Math.max(daysBetween(start, startOfToday()), 0), total);
+        return {percent: Math.round((done / total) * 100), remainingWeeks: Math.ceil((total - done) / 7)};
+    })();
+
     const kpis = dashboard?.kpis;
     const alerts = dashboard?.alerts ?? [];
 
@@ -356,9 +364,16 @@ export const Dashboard: React.FC = () => {
                     </p>
                 </div>
                 <div className="hero-stats">
-                    <div className="hero-stat-card">
-                        <div className="hero-stat-number">{staffData.presentCount} / {staffData.plannedCount}</div>
-                        <div className="hero-stat-label">Anwesende Fachkräfte</div>
+                    {/* Bauzeit statt Anwesenheit (die steht schon in der Mitarbeiter-Kachel darunter) */}
+                    <div className="hero-stat-card" title={buildTime ? `Bauzeit ${formatDe(activeProject.start_date)} – ${formatDe(activeProject.end_date)}` : 'Bauzeit unter Projekte eintragen'}>
+                        <div className="hero-stat-number">{buildTime ? `${buildTime.percent} %` : '–'}</div>
+                        <div className="hero-stat-label">
+                            {buildTime
+                                ? buildTime.remainingWeeks > 0
+                                    ? `Bauzeit • noch ${buildTime.remainingWeeks} Wo.`
+                                    : 'Bauzeit abgelaufen'
+                                : 'Bauzeit'}
+                        </div>
                     </div>
                     <div className="hero-stat-card">
                         <div className="hero-stat-number">{activeProject.status}</div>

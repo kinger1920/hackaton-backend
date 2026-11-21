@@ -22,6 +22,7 @@ import { useProjects } from '../context/ProjectContext';
 import { saveProjectDocument } from '../context/ProjectDocuments';
 import { useLanguage } from '../context/LanguageContext';
 import { api, NoticeDraft } from '../services/api';
+import { useAudioRecorder } from '../utils/useAudioRecorder';
 import '@frontend/src/index.css';
 import './VoiceOrText.css';
 
@@ -40,14 +41,11 @@ export const VoiceOrText: React.FC = () => {
   const userName = localStorage.getItem('userName') || t('role_site_manager');
 
   // Audio Recording States
-  const [isRecording, setIsRecording] = useState(false);
   const [recordingSeconds, setRecordingSeconds] = useState(0);
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
   const [isPlayingAudio, setIsPlayingAudio] = useState(false);
   const [audioTranscript, setAudioTranscript] = useState('');
   const timerRef = useRef<number | null>(null);
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-  const audioChunksRef = useRef<Blob[]>([]);
   const audioElementRef = useRef<HTMLAudioElement | null>(null);
 
   // General notes field (Sonstige Notizen)
@@ -80,6 +78,36 @@ export const VoiceOrText: React.FC = () => {
   const [lastDraft, setLastDraft] = useState<NoticeDraft | null>(null);
   const [aiQuestions, setAiQuestions] = useState<string[]>([]);
 
+  // Audio Playback Listener
+  useEffect(() => {
+    if (audioElementRef.current) {
+      audioElementRef.current.onended = () => setIsPlayingAudio(false);
+    }
+  }, [audioUrl]);
+
+  // Mikrofon-Aufnahme (gemeinsamer Hook) → Wiedergabe + Transkription (Whisper) → KI-Kategorisierung.
+  // Kein erfundener Ersatztext mehr, wenn Mikrofon oder Transkription fehlen: lieber Hinweis + selbst tippen.
+  const recorder = useAudioRecorder(async (audioBlob) => {
+    setAudioUrl(URL.createObjectURL(audioBlob));
+    setIsTranscribing(true);
+    try {
+      const res = await api.transcribeAudio(audioBlob);
+      if (res?.text?.trim()) {
+        setAudioTranscript(res.text);
+        setGeneralNotes((prev) => (prev ? prev + '\n' + res.text : res.text));
+        handleAutoCategorize(res.text);
+      } else {
+        setAudioTranscript('Transkription gerade nicht verfügbar (KI offline) – bitte Notiz unten eintippen.');
+      }
+    } catch (err) {
+      console.warn('Transkription fehlgeschlagen:', err);
+      setAudioTranscript('Transkription fehlgeschlagen (Backend nicht erreichbar) – bitte Notiz unten eintippen.');
+    } finally {
+      setIsTranscribing(false);
+    }
+  });
+  const isRecording = recorder.isRecording;
+
   // Recording timer
   useEffect(() => {
     if (isRecording) {
@@ -98,97 +126,17 @@ export const VoiceOrText: React.FC = () => {
     };
   }, [isRecording]);
 
-  // Audio Playback Listener
-  useEffect(() => {
-    if (audioElementRef.current) {
-      audioElementRef.current.onended = () => setIsPlayingAudio(false);
-    }
-  }, [audioUrl]);
 
-  // Real Browser Microphone Recording with MediaRecorder
   const handleStartRealRecording = async () => {
-    try {
-      if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        const mediaRecorder = new MediaRecorder(stream);
-        mediaRecorderRef.current = mediaRecorder;
-        audioChunksRef.current = [];
-
-        mediaRecorder.ondataavailable = (event) => {
-          if (event.data.size > 0) {
-            audioChunksRef.current.push(event.data);
-          }
-        };
-
-        mediaRecorder.onstop = async () => {
-          const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
-          const url = URL.createObjectURL(audioBlob);
-          setAudioUrl(url);
-
-          // Call backend transcription (Whisper via Groq)
-          setIsTranscribing(true);
-          try {
-            const res = await api.transcribeAudio(audioBlob);
-            if (res && res.text) {
-              setAudioTranscript(res.text);
-              setGeneralNotes((prev) => (prev ? prev + '\n' + res.text : res.text));
-              // Trigger AI categorization with the transcribed text
-              handleAutoCategorize(res.text);
-            }
-          } catch (err) {
-            console.warn('Backend Audio-Transkription nicht erreichbar, nutze Fallback:', err);
-            const fallbackTranscript =
-              'Sprachnotiz vom ' +
-              new Date().toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' }) +
-              ' Uhr: Bauabschnitt 2 im 1. OG geprüft. Betonage für Montag vorbereitet. TGA-Fachplaner bzgl. Schacht 3 erneut angerufen. 34 Mann auf der Baustelle anwesend.';
-            setAudioTranscript(fallbackTranscript);
-            setGeneralNotes((prev) => (prev ? prev + '\n' + fallbackTranscript : fallbackTranscript));
-          } finally {
-            setIsTranscribing(false);
-          }
-        };
-
-        mediaRecorder.start();
-        setIsRecording(true);
-      } else {
-        startSimulatedRecording();
-      }
-    } catch {
-      startSimulatedRecording();
+    if (!(await recorder.start())) {
+      alert('Mikrofon nicht verfügbar (Berechtigung fehlt oder kein HTTPS). Bitte die Notiz eintippen.');
     }
   };
 
-  const startSimulatedRecording = () => {
-    setIsRecording(true);
-    setTimeout(() => {
-      handleStopRecording();
-    }, 4000);
-  };
-
-  const handleStopRecording = () => {
-    if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
-      mediaRecorderRef.current.stop();
-      mediaRecorderRef.current.stream.getTracks().forEach((track) => track.stop());
-    } else {
-      const sampleText =
-        'Sprachnotiz Baustelle: Kettenbagger 24t Tiefbau wieder einsatzbereit. Schacht 3 Durchbrüche weiterhin blockiert da TGA-Freigabe fehlt. Bewehrung Decke 1. OG fast fertig.';
-      setAudioTranscript(sampleText);
-      setAudioUrl('simulated-audio');
-      setGeneralNotes((prev) => (prev ? prev + '\n' + sampleText : sampleText));
-    }
-    setIsRecording(false);
-  };
+  const handleStopRecording = () => recorder.stop();
 
   const handleTogglePlayback = () => {
     if (!audioUrl) return;
-    if (audioUrl === 'simulated-audio') {
-      setIsPlayingAudio(!isPlayingAudio);
-      if (!isPlayingAudio) {
-        setTimeout(() => setIsPlayingAudio(false), 3000);
-      }
-      return;
-    }
-
     if (audioElementRef.current) {
       if (isPlayingAudio) {
         audioElementRef.current.pause();
@@ -331,19 +279,7 @@ Kategorisierte Stichpunkte:
 - Mängel / Qualität: ${categories.defect.join('; ') || 'Keine'}
 - Lieferungen & Material: ${categories.delivery.join('; ') || 'Keine'}`.trim();
 
-    saveProjectDocument({
-      id: `doc-${activeProject.id}-quick-${Date.now()}`,
-      projectId: activeProject.id,
-      type: 'diary',
-      title: `Schnellerfassung: ${generalNotes.slice(0, 35)}...`,
-      date: today,
-      authorOrSender: userName,
-      content,
-      trades: categories.progress.slice(0, 3),
-      hindrance: categories.hindrance.join(', ')
-    });
-
-    // Also persist into backend SiteNote database
+    // Tagebucheintrag im Backend; nur wenn das scheitert, lokal sichern (vorher immer doppelt gespeichert)
     try {
       await api.createSiteNote({
         project_id: Number(activeProject.id),
@@ -352,7 +288,18 @@ Kategorisierte Stichpunkte:
         author: userName
       });
     } catch (err) {
-      console.warn('Backend createSiteNote Fallback:', err);
+      console.warn('Backend nicht erreichbar – Notiz lokal gesichert:', err);
+      saveProjectDocument({
+        id: `doc-${activeProject.id}-quick-${Date.now()}`,
+        projectId: activeProject.id,
+        type: 'diary',
+        title: `Schnellerfassung: ${generalNotes.slice(0, 35)}...`,
+        date: today,
+        authorOrSender: userName,
+        content,
+        trades: categories.progress.slice(0, 3),
+        hindrance: categories.hindrance.join(', ')
+      });
     }
 
     setSaveSuccessMsg(true);
@@ -368,7 +315,7 @@ Kategorisierte Stichpunkte:
   return (
     <div className="capture-container">
             {/* Hidden audio element for actual recording playback */}
-      {audioUrl && audioUrl !== 'simulated-audio' && (
+      {audioUrl && (
         <audio ref={audioElementRef} src={audioUrl} />
       )}
 

@@ -1,6 +1,6 @@
 import React, {createContext, useContext, useState, useEffect} from 'react';
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+import {api, ProjectPayload} from '../services/api';
 
 // Firma / Nachunternehmer auf der Baustelle (inkl. vertraglicher Sollstärke)
 export interface Contractor {
@@ -118,21 +118,6 @@ function normalizeProject(raw: any): Project {
     };
 }
 
-// Fehlermeldung des Backends lesbar machen (z. B. 422 "end_date liegt vor start_date")
-async function backendError(res: Response, prefix: string): Promise<Error> {
-    let detail = `HTTP ${res.status}`;
-    try {
-        const body = await res.json();
-        if (typeof body?.detail === 'string') detail = body.detail;
-        else if (Array.isArray(body?.detail)) {
-            detail = body.detail.map((d: any) => `${(d.loc ?? []).slice(1).join('.')}: ${d.msg}`).join('; ');
-        }
-    } catch {
-        // kein JSON
-    }
-    return new Error(`${prefix}: ${detail}`);
-}
-
 export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({children}) => {
     const [projects, setProjects] = useState<Project[]>(DEFAULT_PROJECTS);
     const [isLoading, setIsLoading] = useState<boolean>(true);
@@ -147,9 +132,7 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({childr
 
         const fetchProjects = async () => {
             try {
-                const res = await fetch(`${API_BASE_URL}/projects`);
-                if (!res.ok) throw new Error(`HTTP ${res.status}`);
-                const data = await res.json();
+                const data = await api.listProjects();
                 if (!cancelled && Array.isArray(data) && data.length > 0) {
                     const normalized = data.map(normalizeProject);
                     setProjects(normalized);
@@ -179,15 +162,7 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({childr
     const activeProject = projects.find((p) => p.id === activeProjectId) || projects[0] || DEFAULT_PROJECTS[0];
 
     const addProject = async (projectData: Omit<Project, 'id'>): Promise<Project> => {
-        const res = await fetch(`${API_BASE_URL}/projects`, {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify(projectData)
-        });
-        if (!res.ok) {
-            throw await backendError(res, 'Projekt konnte nicht angelegt werden');
-        }
-        const created = normalizeProject(await res.json());
+        const created = normalizeProject(await api.createProject(projectData as ProjectPayload));
         setProjects((prev) => [created, ...prev]);
         setActiveProjectId(created.id);
         return created;
@@ -195,15 +170,7 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({childr
 
     // PATCH /projects/{id} – nur geänderte Felder
     const updateProject = async (id: number, changes: Partial<Omit<Project, 'id'>>): Promise<Project> => {
-        const res = await fetch(`${API_BASE_URL}/projects/${id}`, {
-            method: 'PATCH',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify(changes)
-        });
-        if (!res.ok) {
-            throw await backendError(res, 'Projekt konnte nicht gespeichert werden');
-        }
-        const updated = normalizeProject(await res.json());
+        const updated = normalizeProject(await api.updateProject(id, changes as ProjectPayload));
         setProjects((prev) => prev.map((p) => (p.id === id ? updated : p)));
         return updated;
     };
@@ -213,12 +180,7 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({childr
             alert('Mindestens ein Bauprojekt muss im System verbleiben.');
             return;
         }
-        const res = await fetch(`${API_BASE_URL}/projects/${id}`, {
-            method: 'DELETE'
-        });
-        if (!res.ok && res.status !== 404) {
-            throw new Error(`Projekt konnte nicht gelöscht werden (HTTP ${res.status})`);
-        }
+        await api.deleteProject(id);
         const updated = projects.filter((p) => p.id !== id);
         setProjects(updated);
         if (activeProjectId === id && updated.length > 0) {

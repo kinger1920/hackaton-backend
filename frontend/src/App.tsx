@@ -10,7 +10,6 @@ import DailyReports from './reports/DailyReports';
 import VoiceOrText from './voice or text capture/VoiceOrText';
 import Termin from './termin/Termin';
 import MasterData from './masterdata/MasterData';
-import DeadlineRadar from './ideas/DeadlineRadar';
 import ProjectAssistant from './ideas/ProjectAssistant';
 import ProgressMap from './ideas/ProgressMap';
 import MainLayout from './layout/MainLayout';
@@ -39,7 +38,7 @@ export const App: React.FC = () => {
             <Route path="/projects" element={<Projects />} />
             <Route path="/stammdaten" element={<MasterData />} />
             <Route path="/fortschritt" element={<ProgressMap />} />
-            <Route path="/fristen" element={<DeadlineRadar />} />
+            <Route path="/fristen" element={<Navigate to="/termin" state={{view: 'deadlines'}} replace />} />
             <Route path="/assistent" element={<ProjectAssistant />} />
             <Route path="/drafts" element={<LetterDrafts />} />
             <Route path="/summary" element={<Summary />} />

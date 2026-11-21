@@ -14,11 +14,11 @@ import {
   TrendingUp,
   Calendar,
   Building2,
-  AlarmClock,
   MessageSquare,
   WifiOff
 } from 'lucide-react';
 import {useOnlineStatus} from '../components/useOnlineStatus';
+import {todayIso} from '../utils/dates';
 import {api, HealthStatus} from '../services/api';
 import {useProjects} from '../context/ProjectContext';
 import { useLanguage } from '../context/LanguageContext';
@@ -56,6 +56,23 @@ export const MainLayout: React.FC = () => {
 
     // Idee #6 (Offline/PWA): Netzstatus des Geräts – Details unter Profil → „Offline & App“
     const isOnline = useOnlineStatus();
+
+    // Wetter des Tages aus dem Bautagesbericht (Projektwechsel oder Seitenwechsel → neu laden)
+    const [todayWeather, setTodayWeather] = useState<{ temp: number | null; text: string | null } | null>(null);
+    useEffect(() => {
+        let cancelled = false;
+        api.getReport(todayIso(), Number(activeProject.id))
+            .then((r) => {
+                if (cancelled) return;
+                setTodayWeather(r.id != null && (r.weather || r.temperature_c != null)
+                    ? {temp: r.temperature_c ?? null, text: r.weather}
+                    : null);
+            })
+            .catch(() => !cancelled && setTodayWeather(null));
+        return () => {
+            cancelled = true;
+        };
+    }, [activeProject.id, location.pathname]);
 
     // Backend-Status (GET /health) – alle 30 s prüfen; zeigt auch, ob PDF-Export verfügbar ist
     const [health, setHealth] = useState<HealthStatus | null>(null);
@@ -131,15 +148,6 @@ export const MainLayout: React.FC = () => {
                     >
                         <TrendingUp size={18}/>
                         <span>{t('nav_progress_map', 'Baufortschritt')}</span>
-                    </button>
-
-                    {/* Idee #3: Fristen-Radar */}
-                    <button
-                        className={`nav-item ${isActive('/fristen') ? 'active' : ''}`}
-                        onClick={() => navigate('/fristen')}
-                    >
-                        <AlarmClock size={18}/>
-                        <span>{t('nav_deadlines', 'Fristen-Radar')}</span>
                     </button>
 
                     <button
@@ -278,9 +286,20 @@ export const MainLayout: React.FC = () => {
                                 <span>{health ? 'Backend online' : 'Backend offline'}</span>
                             </div>
                         )}
-                        <div className="header-info-tag">
+                        {/* Wetter aus dem heutigen Bautagesbericht (vorher fest "9°C • Trocken") */}
+                        <div
+                            className="header-info-tag"
+                            style={{cursor: 'pointer'}}
+                            onClick={() => navigate('/reports')}
+                            title="Wetter aus dem heutigen Bautagesbericht"
+                        >
                             <CloudSun size={16}/>
-                            <span>{siteLocation}: 9°C • {t('hdr_weather_dry')}</span>
+                            <span>
+                                {siteLocation}
+                                {todayWeather
+                                    ? `: ${todayWeather.temp != null ? `${todayWeather.temp}°C • ` : ''}${todayWeather.text || ''}`
+                                    : ' • Wetter noch nicht erfasst'}
+                            </span>
                         </div>
 
                         {/* Language Switcher Button in top right header */}
