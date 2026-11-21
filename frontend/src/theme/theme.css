@@ -1,0 +1,312 @@
+/* ==========================================================================
+   THEME – construction look: black + muted safety yellow, blue only for AI
+   Loaded after index.css and overrides its design tokens.
+   Light: :root / [data-theme="light"]   Dark: [data-theme="dark"]
+   Hard-coded colours in page CSS files and inline component styles are mapped
+   to these tokens in theme-overrides.generated.css
+   (see frontend/scripts/gen-theme-overrides.mjs).
+   ========================================================================== */
+
+:root,
+[data-theme="light"] {
+    /* Brand: muted safety yellow (easier on the eyes than pure #fbbf24).
+       Fills (buttons, active items) always carry black text. */
+    --color-primary: #a16207;          /* readable as text/icon on light backgrounds */
+    --color-primary-hover: #854d0e;
+    --color-primary-fill: #e3a72f;     /* yellow surface for buttons / active nav */
+    --color-primary-fill-hover: #cf9425;
+    --color-on-primary: #161412;
+    --color-primary-light: #fbf1d9;
+    --color-primary-border: #ecd398;
+
+    /* AI accent: blue, only on AI features (✨) */
+    --color-ai: #2563eb;
+    --color-ai-hover: #1d4ed8;
+    --color-ai-fill: #2563eb;
+    --color-ai-fill-hover: #1d4ed8;
+    --color-ai-light: #eaf1fe;
+    --color-ai-border: #bfd3fb;
+
+    /* Warnings move to red-orange so they don't look like the brand colour */
+    --color-warning: #ea580c;
+    --color-warning-dark: #c2410c;
+    --color-warning-light: #fff4ea;
+    --color-warning-border: #fed7aa;
+
+    /* Warm "stone" greys instead of cold blue-greys – less sterile white */
+    --color-slate-900: #1c1917;
+    --color-slate-800: #292524;
+    --color-slate-700: #44403c;
+    --color-slate-600: #57534e;
+    --color-slate-500: #78716c;
+    --color-slate-400: #a8a29e;
+    --color-slate-300: #d6d1c8;
+    --color-slate-200: #e7e2d8;
+    --color-slate-100: #f3efe7;
+    --color-slate-50: #f9f7f2;
+
+    /* Sidebar + top bar */
+    --chrome-bg: #fbf9f4;
+    --chrome-bg-raised: #f1ece1;
+    --chrome-border: #e4ddcf;
+    --chrome-text: #1c1917;
+    --chrome-text-muted: #78716c;
+    --chrome-accent: #a16207;          /* yellow that is readable as text on light */
+
+    /* Dark banners (welcome / profile hero) stay dark in both themes */
+    --banner-bg-from: #161412;
+    --banner-bg-to: #2a2622;
+
+    --bg-page: #efebe3;                /* warm concrete instead of plain white */
+    --bg-surface: #ffffff;
+    --bg-paper: #ffffff;               /* letters always stay white like real paper */
+    --text-on-paper: #111827;
+    --text-main: var(--color-slate-900);
+    --text-muted: var(--color-slate-500);
+    --border-light: #e4ddcf;
+
+    --stripe-h: 6px;                   /* hazard stripe across the top */
+
+    /* Variables some pages use but that were never defined (→ no spacing / no background) */
+    --spacing-sm: 8px;
+    --spacing-md: 12px;
+    --spacing-lg: 16px;
+    --spacing-xl: 20px;
+    --color-surface: var(--bg-surface);
+}
+
+[data-theme="dark"] {
+    --color-primary: #e9b44c;
+    --color-primary-hover: #e3a72f;
+    --color-primary-fill: #d99e2b;     /* toned down: less glare on dark backgrounds */
+    --color-primary-fill-hover: #c78f22;
+    --color-on-primary: #141210;
+    --color-primary-light: rgba(217, 158, 43, 0.13);
+    --color-primary-border: rgba(217, 158, 43, 0.38);
+
+    --color-ai: #7aa8f7;
+    --color-ai-hover: #9cc0fa;
+    --color-ai-fill: #3b74e0;
+    --color-ai-fill-hover: #2f63c8;
+    --color-ai-light: rgba(122, 168, 247, 0.13);
+    --color-ai-border: rgba(122, 168, 247, 0.38);
+
+    /* Neutral scale inverted: "900" stays the strongest text, "50" the faintest surface */
+    --color-slate-900: #f2f1ee;
+    --color-slate-800: #e2e0dc;
+    --color-slate-700: #cfccc6;
+    --color-slate-600: #a8a49d;
+    --color-slate-500: #8d8982;
+    --color-slate-400: #6f6b65;
+    --color-slate-300: #403d39;
+    --color-slate-200: #2f2d2a;
+    --color-slate-100: #252321;
+    --color-slate-50: #1d1c1a;
+
+    --color-danger: #f87171;
+    --color-danger-dark: #fca5a5;
+    --color-danger-light: rgba(248, 113, 113, 0.12);
+    --color-danger-border: rgba(248, 113, 113, 0.35);
+
+    --color-warning: #fb923c;
+    --color-warning-dark: #fdba74;
+    --color-warning-light: rgba(251, 146, 60, 0.12);
+    --color-warning-border: rgba(251, 146, 60, 0.35);
+
+    --color-success: #34d399;
+    --color-success-dark: #6ee7b7;
+    --color-success-light: rgba(52, 211, 153, 0.12);
+    --color-success-border: rgba(52, 211, 153, 0.35);
+
+    --color-info: #38bdf8;
+    --color-info-light: rgba(56, 189, 248, 0.12);
+
+    --chrome-bg: #0e0d0c;
+    --chrome-bg-raised: #1b1a18;
+    --chrome-border: #2a2826;
+    --chrome-text: #f2f1ee;
+    --chrome-text-muted: #a8a49d;
+    --chrome-accent: #e9b44c;
+
+    --banner-bg-from: #0e0d0c;
+    --banner-bg-to: #24221f;
+
+    --bg-page: #121110;
+    --bg-surface: #1a1917;
+    --color-surface: var(--bg-surface);
+    --text-main: #f2f1ee;
+    --text-muted: #a8a49d;
+    --border-light: #2d2b28;
+
+    --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.5);
+    --shadow-md: 0 4px 10px -2px rgba(0, 0, 0, 0.6);
+    --shadow-lg: 0 12px 24px -6px rgba(0, 0, 0, 0.7);
+}
+
+/* --------------------------------------------------------------------------
+   Shared components
+   -------------------------------------------------------------------------- */
+body {
+    background-color: var(--bg-page);
+    color: var(--text-main);
+}
+
+.btn-primary {
+    background-color: var(--color-primary-fill);
+    color: var(--color-on-primary);
+    border-color: transparent;
+}
+
+.btn-primary:hover:not(:disabled) {
+    background-color: var(--color-primary-fill-hover);
+    color: var(--color-on-primary);
+}
+
+.btn-primary:disabled {
+    background-color: var(--color-slate-300);
+    color: var(--color-slate-500);
+}
+
+.btn-secondary:hover:not(:disabled) {
+    border-color: var(--color-primary-border);
+}
+
+.form-input,
+.form-textarea,
+select.form-input {
+    background-color: var(--bg-surface);
+    color: var(--text-main);
+    border-color: var(--border-light);
+}
+
+.form-input::placeholder,
+.form-textarea::placeholder {
+    color: var(--color-slate-400);
+}
+
+.form-input:focus,
+.form-textarea:focus {
+    border-color: var(--color-primary-fill);
+    box-shadow: 0 0 0 3px var(--color-primary-light);
+}
+
+/* Things drawn on the yellow fill need dark text */
+.nav-item.active,
+.user-avatar,
+.sidebar-logo,
+.project-badge-active,
+.ld-step-num,
+.select-active-btn:hover {
+    color: var(--color-on-primary);
+}
+
+.project-badge-active,
+.ld-step-num {
+    background-color: var(--color-primary-fill);
+}
+
+/* Page titles get a short yellow underline – a bit more construction colour on every page */
+.app-content h1:not([style])::after {
+    content: '';
+    display: block;
+    width: 44px;
+    height: 4px;
+    margin-top: 8px;
+    border-radius: 2px;
+    background-color: var(--color-primary-fill);
+}
+
+/* Cards: warm border, yellow edge on hover */
+[data-theme="light"] .project-card:hover,
+[data-theme="light"] .generator-card:hover,
+[data-theme="light"] .ld-saved-card:hover {
+    border-color: var(--color-primary-border);
+}
+
+/* --------------------------------------------------------------------------
+   AI features → blue.
+   Every AI action in the app uses the ✨ Sparkles (or magic wand) icon,
+   so the icon marks the button – no page files need to change.
+   -------------------------------------------------------------------------- */
+svg.lucide-sparkles,
+svg.lucide-wand-sparkles {
+    stroke: var(--color-ai);
+}
+
+.btn-primary:has(> svg.lucide-sparkles),
+.btn-primary:has(> svg.lucide-wand-sparkles) {
+    background-color: var(--color-ai-fill);
+    color: #ffffff;
+}
+
+.btn-primary:has(> svg.lucide-sparkles):hover:not(:disabled),
+.btn-primary:has(> svg.lucide-wand-sparkles):hover:not(:disabled) {
+    background-color: var(--color-ai-fill-hover);
+    color: #ffffff;
+}
+
+.btn-primary:has(> svg.lucide-sparkles) svg,
+.btn-primary:has(> svg.lucide-wand-sparkles) svg {
+    stroke: currentColor;
+}
+
+.btn-secondary:has(> svg.lucide-sparkles),
+.btn-secondary:has(> svg.lucide-wand-sparkles),
+.doc-btn:has(> svg.lucide-sparkles),
+.idea-tab:has(svg.lucide-sparkles),
+.modal-tab-btn:has(> svg.lucide-sparkles),
+.ld-ai-btn {
+    color: var(--color-ai);
+    border-color: var(--color-ai-border);
+}
+
+.btn-secondary:has(> svg.lucide-sparkles):hover:not(:disabled),
+.btn-secondary:has(> svg.lucide-wand-sparkles):hover:not(:disabled),
+.doc-btn:has(> svg.lucide-sparkles):hover:not(:disabled),
+.idea-tab:has(svg.lucide-sparkles):hover:not(:disabled),
+.ld-ai-btn:hover:not(:disabled) {
+    background-color: var(--color-ai-light);
+    border-color: var(--color-ai);
+    color: var(--color-ai);
+}
+
+/* Language switcher (shared component) */
+.lang-switcher-btn:hover {
+    background-color: var(--bg-surface);
+}
+
+.lang-dropdown-menu {
+    background: var(--bg-surface);
+}
+
+/* --------------------------------------------------------------------------
+   Letters stay white paper in both themes
+   -------------------------------------------------------------------------- */
+.letter-paper-card {
+    background-color: var(--bg-surface);
+}
+
+.paper-content,
+.letter-sheet {
+    background-color: var(--bg-paper);
+    color: var(--text-on-paper);
+}
+
+.letter-sheet .letter-subject,
+.letter-sheet .letter-body-editable,
+.letter-sheet .ld-recipient-block {
+    color: var(--text-on-paper);
+}
+
+.letter-sheet .ld-sender-line,
+.letter-sheet .ld-meta-block {
+    color: #6b7280;
+}
+
+/* Smooth switch between themes */
+body,
+.app-sidebar,
+.app-header,
+.app-content {
+    transition: background-color 0.2s ease, color 0.2s ease;
+}

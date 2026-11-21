@@ -13,6 +13,7 @@ import {
     CheckSquare,
     Edit3,
     Sparkles,
+    PenLine,
     Wand2,
     Search,
     FolderOpen,
@@ -1504,7 +1505,7 @@ export const LetterDrafts: React.FC = () => {
                                 onClick={handleRegenerate}
                                 disabled={locked}
                             >
-                                {touched ? <RotateCcw size={18}/> : <Sparkles size={18}/>}
+                                {touched ? <RotateCcw size={18}/> : <PenLine size={18}/>}
                                 <span>{touched ? t('ld_btn_recreate') : t('ld_btn_create')}</span>
                             </button>
                             <button

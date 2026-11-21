@@ -6,31 +6,91 @@ import {
     Mic,
     FileText,
     Mail,
-  FolderKanban,
-  User,
-  LogOut,
-  CloudSun,
-  BookOpen,
-  TrendingUp,
-  Calendar,
-  Building2,
-  AlarmClock,
-  MessageSquare,
-  WifiOff
+    FolderKanban,
+    LogOut,
+    CloudSun,
+    BookOpen,
+    TrendingUp,
+    Calendar,
+    Building2,
+    AlarmClock,
+    MessageSquare,
+    WifiOff,
+    PanelLeftClose,
+    PanelLeftOpen,
+    Sun,
+    Moon
 } from 'lucide-react';
 import {useOnlineStatus} from '../components/useOnlineStatus';
 import {api, HealthStatus} from '../services/api';
 import {useProjects} from '../context/ProjectContext';
-import { useLanguage } from '../context/LanguageContext';
+import {useLanguage} from '../context/LanguageContext';
 import LanguageSwitcher from '../components/LanguageSwitcher';
+import {useTheme} from '../theme/theme';
 import '@frontend/src/index.css';
+// Dashboard.css still holds styles used by the dashboard page itself
 import '@frontend/src/dashboard/Dashboard.css';
+import './Layout.css';
+
+type SidebarMode = 'pinned' | 'collapsed';
+const SIDEBAR_KEY = 'sidebarMode';
+
+interface NavEntry {
+    path: string;
+    icon: React.ReactNode;
+    labelKey: string;
+    fallback?: string;
+}
+
+interface NavGroup {
+    titleKey: string;
+    fallback: string;
+    items: NavEntry[];
+}
+
+// Grouped navigation (order follows the site manager's day)
+const NAV_GROUPS: NavGroup[] = [
+    {
+        titleKey: 'nav_group_daily',
+        fallback: 'Tagesgeschäft',
+        items: [
+            {path: '/dashboard', icon: <LayoutDashboard size={19}/>, labelKey: 'nav_dashboard'},
+            {path: '/capture', icon: <Mic size={19}/>, labelKey: 'nav_capture'},
+            {path: '/reports', icon: <FileText size={19}/>, labelKey: 'nav_reports'},
+            {path: '/termin', icon: <Calendar size={19}/>, labelKey: 'nav_termin'}
+        ]
+    },
+    {
+        titleKey: 'nav_group_letters',
+        fallback: 'Schriftverkehr & Fristen',
+        items: [
+            {path: '/drafts', icon: <Mail size={19}/>, labelKey: 'nav_drafts'},
+            {path: '/summary', icon: <BookOpen size={19}/>, labelKey: 'nav_summary'},
+            // Idee #3: Fristen-Radar
+            {path: '/fristen', icon: <AlarmClock size={19}/>, labelKey: 'nav_deadlines', fallback: 'Fristen-Radar'}
+        ]
+    },
+    {
+        titleKey: 'nav_group_project',
+        fallback: 'Projekt',
+        items: [
+            // Idee #7: Live-Baufortschritt auf Grundriss mit Zeitregler
+            {path: '/fortschritt', icon: <TrendingUp size={19}/>, labelKey: 'nav_progress_map', fallback: 'Baufortschritt'},
+            // Idee #5: „Frag dein Projekt“-Chat mit Quellen
+            {path: '/assistent', icon: <MessageSquare size={19}/>, labelKey: 'nav_assistant', fallback: 'Projekt-Assistent'},
+            {path: '/projects', icon: <FolderKanban size={19}/>, labelKey: 'nav_projects'},
+            {path: '/stammdaten', icon: <Building2 size={19}/>, labelKey: 'nav_masterdata', fallback: 'Stammdaten'}
+        ]
+    }
+    // Soll/Ist-Analyse ist ins Dashboard integriert (/analysis leitet dorthin um).
+];
 
 export const MainLayout: React.FC = () => {
     const navigate = useNavigate();
     const location = useLocation();
     const {projects, activeProject, activeProjectId, setActiveProjectId} = useProjects();
-  const { t } = useLanguage();
+    const {t} = useLanguage();
+    const {theme, toggleTheme} = useTheme();
 
     const userName = localStorage.getItem('userName') || 'Bauleiter';
     const userProfile = (() => {
@@ -54,6 +114,16 @@ export const MainLayout: React.FC = () => {
 
     const isActive = (path: string) => location.pathname === path;
 
+    // Sidebar: pinned (icons + text) or collapsed (icons; slides open on hover). Remembered.
+    const [sidebarMode, setSidebarMode] = useState<SidebarMode>(
+        () => (localStorage.getItem(SIDEBAR_KEY) === 'collapsed' ? 'collapsed' : 'pinned')
+    );
+    const toggleSidebar = () => {
+        const next: SidebarMode = sidebarMode === 'pinned' ? 'collapsed' : 'pinned';
+        setSidebarMode(next);
+        localStorage.setItem(SIDEBAR_KEY, next);
+    };
+
     // Idee #6 (Offline/PWA): Netzstatus des Geräts – Details unter Profil → „Offline & App“
     const isOnline = useOnlineStatus();
 
@@ -75,226 +145,153 @@ export const MainLayout: React.FC = () => {
         };
     }, []);
 
+    // One status chip: device offline > backend offline > backend without PDF > all good
+    const status = !isOnline
+        ? {dot: 'off', text: t('hdr_device_offline', 'Offline'), title: t('hdr_device_offline_hint', 'Gerät ist offline – Offline-Modus folgt (Profil → Offline & App)')}
+        : !health
+            ? {dot: 'off', text: t('hdr_backend_offline', 'Backend offline'), title: t('hdr_backend_offline_hint', 'Backend nicht erreichbar – Seiten zeigen Beispieldaten')}
+            : {
+                dot: health.pdf_export ? '' : 'warn',
+                text: t('hdr_backend_online', 'Backend online'),
+                title: health.pdf_export
+                    ? t('hdr_backend_ok_hint', 'Backend verbunden • PDF-Export verfügbar')
+                    : t('hdr_backend_nopdf_hint', 'Backend verbunden • PDF-Export nicht verfügbar (Pango fehlt) – Word geht immer')
+            };
+
     return (
-        <div className="dashboard-layout">
-            {/* Persistent Left Sidebar */}
-            <aside className="dashboard-sidebar">
-                <div className="sidebar-header">
-                    <div className="sidebar-logo">
-                        <HardHat size={22}/>
+        <div className={`app-shell ${sidebarMode === 'collapsed' ? 'collapsed' : ''}`}>
+            {/* Space holder so the page sits next to the (fixed) sidebar */}
+            <div className="app-sidebar-slot" aria-hidden="true"/>
+
+            <aside className="app-sidebar" aria-label={t('nav_aria', 'Hauptnavigation')}>
+                <div className="app-sidebar-brand">
+                    <div className="app-logo">
+                        <HardHat size={20}/>
                     </div>
-                    <div>
-                        <div className="sidebar-title">SiteAI Assistant</div>
-                        <div className="sidebar-subtitle">Bauleitung & Dokumentation</div>
+                    <div className="app-brand-text">
+                        <div className="app-brand-title">Site<span>AI</span> Assistant</div>
+                        <div className="app-brand-sub">Bauleitung & Dokumentation</div>
                     </div>
                 </div>
 
-                <nav className="sidebar-nav">
-                    <button
-                        className={`nav-item ${isActive('/dashboard') ? 'active' : ''}`}
-                        onClick={() => navigate('/dashboard')}
-                    >
-                        <LayoutDashboard size={18}/>
-                        <span>{t('nav_dashboard')}</span>
-                    </button>
-
-                    <button
-                        className={`nav-item ${isActive('/capture') ? 'active' : ''}`}
-                        onClick={() => navigate('/capture')}
-                    >
-                        <Mic size={18}/>
-                        <span>{t('nav_capture')}</span>
-                    </button>
-
-                    <button
-                        className={`nav-item ${isActive('/reports') ? 'active' : ''}`}
-                        onClick={() => navigate('/reports')}
-                    >
-                        <FileText size={18}/>
-                        <span>{t('nav_reports')}</span>
-                    </button>
-
-                    <button
-                        className={`nav-item ${isActive('/termin') ? 'active' : ''}`}
-                        onClick={() => navigate('/termin')}
-                    >
-                        <Calendar size={18}/>
-                        <span>{t('nav_termin')}</span>
-                    </button>
-
-                    {/* Soll/Ist-Analyse ist ins Dashboard integriert (/analysis leitet dorthin um). */}
-
-                    {/* Idee #7: Live-Baufortschritt auf Grundriss mit Zeitregler */}
-                    <button
-                        className={`nav-item ${isActive('/fortschritt') ? 'active' : ''}`}
-                        onClick={() => navigate('/fortschritt')}
-                    >
-                        <TrendingUp size={18}/>
-                        <span>{t('nav_progress_map', 'Baufortschritt')}</span>
-                    </button>
-
-                    {/* Idee #3: Fristen-Radar */}
-                    <button
-                        className={`nav-item ${isActive('/fristen') ? 'active' : ''}`}
-                        onClick={() => navigate('/fristen')}
-                    >
-                        <AlarmClock size={18}/>
-                        <span>{t('nav_deadlines', 'Fristen-Radar')}</span>
-                    </button>
-
-                    <button
-                        className={`nav-item ${isActive('/drafts') ? 'active' : ''}`}
-                        onClick={() => navigate('/drafts')}
-                    >
-                        <Mail size={18}/>
-                        <span>{t('nav_drafts')}</span>
-          </button>
-
-          <button
-            className={`nav-item ${isActive('/summary') ? 'active' : ''}`}
-            onClick={() => navigate('/summary')}
-          >
-            <BookOpen size={18} />
-            <span>{t('nav_summary')}</span>
-                    </button>
-
-                    {/* Idee #5: „Frag dein Projekt“-Chat mit Quellen */}
-                    <button
-                        className={`nav-item ${isActive('/assistent') ? 'active' : ''}`}
-                        onClick={() => navigate('/assistent')}
-                    >
-                        <MessageSquare size={18}/>
-                        <span>{t('nav_assistant', 'Projekt-Assistent')}</span>
-                    </button>
-
-                    <button
-                        className={`nav-item ${isActive('/projects') ? 'active' : ''}`}
-                        onClick={() => navigate('/projects')}
-                    >
-                        <FolderKanban size={18}/>
-                        <span>{t('nav_projects')}</span>
-                    </button>
-
-                    <button
-                        className={`nav-item ${isActive('/stammdaten') ? 'active' : ''}`}
-                        onClick={() => navigate('/stammdaten')}
-                    >
-                        <Building2 size={18}/>
-                        <span>{t('nav_masterdata', 'Stammdaten')}</span>
-                    </button>
-
-                    <button
-                        className={`nav-item ${isActive('/profile') ? 'active' : ''}`}
-                        onClick={() => navigate('/profile')}
-                    >
-                        <User size={18}/>
-                        <span>{t('nav_profile')}</span>
-                    </button>
+                <nav className="app-nav">
+                    {NAV_GROUPS.map((group) => (
+                        <React.Fragment key={group.titleKey}>
+                            <div className="app-nav-group">{t(group.titleKey, group.fallback)}</div>
+                            {group.items.map((item) => {
+                                const label = t(item.labelKey, item.fallback);
+                                return (
+                                    <button
+                                        key={item.path}
+                                        type="button"
+                                        className={`app-nav-item ${isActive(item.path) ? 'active' : ''}`}
+                                        onClick={() => navigate(item.path)}
+                                        title={sidebarMode === 'collapsed' ? label : undefined}
+                                        aria-current={isActive(item.path) ? 'page' : undefined}
+                                    >
+                                        {item.icon}
+                                        <span className="app-nav-label">{label}</span>
+                                    </button>
+                                );
+                            })}
+                        </React.Fragment>
+                    ))}
                 </nav>
 
-                <div className="sidebar-footer">
-                    <div
-                        className="user-badge"
+                <div className="app-sidebar-footer">
+                    <button
+                        type="button"
+                        className={`app-user ${isActive('/profile') ? 'active' : ''}`}
                         onClick={() => navigate('/profile')}
-                        style={{cursor: 'pointer'}}
-                        title="Mein Profil bearbeiten"
+                        title={t('nav_profile')}
                     >
-                        <div className="user-avatar">{userName.charAt(0).toUpperCase()}</div>
-                        <div className="user-info">
-                            <span className="user-name">{userName}</span>
-                            <span className="user-role">{currentRole}</span>
+                        <div className="app-avatar">{userName.charAt(0).toUpperCase()}</div>
+                        <div className="app-user-info">
+                            <span className="app-user-name">{userName}</span>
+                            <span className="app-user-role">{currentRole} · {t('nav_profile')}</span>
                         </div>
-                    </div>
+                    </button>
                 </div>
             </aside>
 
-            {/* Main Content Area */}
-            <div className="dashboard-main">
-                {/* Persistent Top Header */}
-                <header className="dashboard-header">
-                    {/* Dropdown for selecting current construction project */}
-                    <div style={{display: 'flex', alignItems: 'center', gap: '10px'}}>
-                        <span className="status-dot"></span>
-                        <label
-                            htmlFor="globalProjectSelect"
-                            style={{fontSize: '13px', fontWeight: 600, color: 'var(--color-slate-600)'}}
+            <div className="app-main">
+                {/* Top bar: every element shares the same height and style */}
+                <header className="app-header">
+                    <div className="app-header-left">
+                        <button
+                            type="button"
+                            className="hdr-icon-btn"
+                            onClick={toggleSidebar}
+                            title={sidebarMode === 'pinned'
+                                ? t('hdr_sidebar_collapse', 'Seitenleiste einklappen')
+                                : t('hdr_sidebar_pin', 'Seitenleiste fest anzeigen')}
+                            aria-label={sidebarMode === 'pinned'
+                                ? t('hdr_sidebar_collapse', 'Seitenleiste einklappen')
+                                : t('hdr_sidebar_pin', 'Seitenleiste fest anzeigen')}
                         >
-                            {t('hdr_active_project')}
+                            {sidebarMode === 'pinned' ? <PanelLeftClose size={17}/> : <PanelLeftOpen size={17}/>}
+                        </button>
+
+                        <label className="hdr-chip hdr-project" htmlFor="globalProjectSelect">
+                            <span className="hdr-project-label">{t('hdr_active_project')}</span>
+                            <select
+                                id="globalProjectSelect"
+                                value={activeProjectId}
+                                onChange={(e) => setActiveProjectId(Number(e.target.value))}
+                            >
+                                {projects.map((proj) => (
+                                    <option key={proj.id} value={proj.id}>
+                                        {proj.name} ({proj.number})
+                                    </option>
+                                ))}
+                            </select>
                         </label>
-                        <select
-                            id="globalProjectSelect"
-                            className="form-input"
-                            value={activeProjectId}
-                            onChange={(e) => setActiveProjectId(Number(e.target.value))}
-                            style={{
-                                width: 'auto',
-                                maxWidth: '380px',
-                                padding: '6px 12px',
-                                fontSize: '13px',
-                                fontWeight: 600,
-                                backgroundColor: 'var(--color-slate-100)',
-                                borderColor: 'var(--border-light)',
-                                cursor: 'pointer'
-                            }}
-                        >
-                            {projects.map((proj) => (
-                                <option key={proj.id} value={proj.id}>
-                                    {proj.name} ({proj.number})
-                                </option>
-                            ))}
-                        </select>
                     </div>
 
-                    <div className="header-actions">
-                        {!isOnline && (
+                    <div className="app-header-right">
+                        {(healthChecked || !isOnline) && (
                             <div
-                                className="header-info-tag"
-                                style={{color: '#b91c1c', cursor: 'pointer'}}
-                                title="Gerät ist offline – Offline-Modus folgt (Profil → Offline & App)"
-                                onClick={() => navigate('/profile')}
+                                className="hdr-chip"
+                                title={status.title}
+                                onClick={!isOnline ? () => navigate('/profile') : undefined}
+                                style={!isOnline ? {cursor: 'pointer'} : undefined}
                             >
-                                <WifiOff size={14}/>
-                                <span>Offline</span>
+                                {!isOnline ? <WifiOff size={14}/> : <span className={`hdr-dot ${status.dot}`}/>}
+                                <span className="hdr-status-text">{status.text}</span>
                             </div>
                         )}
-                        {healthChecked && (
-                            <div
-                                className="header-info-tag"
-                                title={
-                                    health
-                                        ? `Backend verbunden • PDF-Export ${health.pdf_export ? 'verfügbar' : 'nicht verfügbar (Pango fehlt) – Word geht immer'}`
-                                        : 'Backend nicht erreichbar – Seiten zeigen Beispieldaten'
-                                }
-                            >
-                                <span
-                                    style={{
-                                        width: '8px',
-                                        height: '8px',
-                                        borderRadius: '50%',
-                                        display: 'inline-block',
-                                        backgroundColor: health ? (health.pdf_export ? '#16a34a' : '#f59e0b') : '#dc2626'
-                                    }}
-                                />
-                                <span>{health ? 'Backend online' : 'Backend offline'}</span>
-                            </div>
-                        )}
-                        <div className="header-info-tag">
+
+                        <div className="hdr-chip hdr-chip-muted hdr-weather">
                             <CloudSun size={16}/>
                             <span>{siteLocation}: 9°C • {t('hdr_weather_dry')}</span>
                         </div>
 
-                        {/* Language Switcher Button in top right header */}
-            <LanguageSwitcher />
+                        <LanguageSwitcher/>
 
-            <button className="btn btn-danger" onClick={handleLogout} title={t('nav_logout')}>
+                        <button
+                            type="button"
+                            className="hdr-icon-btn"
+                            onClick={toggleTheme}
+                            title={theme === 'dark' ? t('hdr_theme_light', 'Helles Design') : t('hdr_theme_dark', 'Dunkles Design')}
+                            aria-label={theme === 'dark' ? t('hdr_theme_light', 'Helles Design') : t('hdr_theme_dark', 'Dunkles Design')}
+                        >
+                            {theme === 'dark' ? <Sun size={17}/> : <Moon size={17}/>}
+                        </button>
+
+                        <button
+                            type="button"
+                            className="hdr-icon-btn danger"
+                            onClick={handleLogout}
+                            title={t('nav_logout')}
+                            aria-label={t('nav_logout')}
+                        >
                             <LogOut size={16}/>
-                            <span>{t('nav_logout')}</span>
                         </button>
                     </div>
                 </header>
 
                 {/* Dynamic Route Outlet */}
-                <main className="dashboard-content">
+                <main className="app-content">
                     <Outlet/>
                 </main>
             </div>

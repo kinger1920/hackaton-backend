@@ -38,3 +38,6 @@ Thumbs.db
 *.db-wal
 *.sqlite3
 uploads/
+
+# Frontend: generated theme overrides (built by vite.config.ts plugin)
+frontend/src/theme/theme-overrides.generated.css
