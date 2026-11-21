@@ -107,7 +107,7 @@ brew install pango
 export DYLD_FALLBACK_LIBRARY_PATH=/opt/homebrew/lib
 ```
 
-Without Pango the PDF endpoint returns `503` and the PDF test is skipped; Word export (`/docx`) works without system libraries. Linux/Docker: install `libpango-1.0-0 libpangoft2-1.0-0`.
+Daily reports export the same way: `GET /api/reports/{date}/pdf|docx` (404 if the day has no saved report; reports not `finalized` carry an "ENTWURF" watermark; contents incl. plan vs. actual table, rule-based day analysis and signature lines, no LLM call). Without Pango the PDF endpoints return `503` and the PDF test is skipped; Word export (`/docx`) works without system libraries. Linux/Docker: install `libpango-1.0-0 libpangoft2-1.0-0`.
 
 ### Demo Data for Summaries & Analysis
 
