@@ -139,6 +139,11 @@
     border-top: 1px solid var(--border-light);
 }
 
+.project-card-actions {
+    display: flex;
+    gap: 6px;
+}
+
 .select-active-btn {
     font-size: 13px;
     font-weight: 600;

@@ -10,6 +10,7 @@ import DailyReports from './reports/DailyReports';
 import VoiceOrText from './voice or text capture/VoiceOrText';
 import Analysis from './analysis/Analysis';
 import Termin from './termin/Termin';
+import MasterData from './masterdata/MasterData';
 import MainLayout from './layout/MainLayout';
 import {ProjectProvider} from './context/ProjectContext';
 import { LanguageProvider } from './context/LanguageContext';
@@ -34,6 +35,7 @@ export const App: React.FC = () => {
             <Route path="/alerts" element={<Analysis />} />
             <Route path="/profile" element={<Profile />} />
             <Route path="/projects" element={<Projects />} />
+            <Route path="/stammdaten" element={<MasterData />} />
             <Route path="/drafts" element={<LetterDrafts />} />
             <Route path="/summary" element={<Summary />} />
           </Route>

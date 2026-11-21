@@ -1,4 +1,5 @@
-import React, {useEffect, useMemo, useState} from 'react';
+import React, {useEffect, useMemo, useRef, useState} from 'react';
+import {useLocation, useNavigate} from 'react-router-dom';
 import {
     Clock,
     AlertTriangle,
@@ -9,8 +10,10 @@ import {
     Printer,
     Save,
     CheckCircle2,
+    CheckSquare,
     Edit3,
     Sparkles,
+    Wand2,
     Search,
     FolderOpen,
     Trash2,
@@ -20,10 +23,15 @@ import {
     ArrowUp,
     ArrowDown,
     ArrowUpDown,
+    RefreshCw,
+    Lock,
+    CloudOff,
+    Cloud,
     X
 } from 'lucide-react';
 import {useProjects, Project, Contractor} from '../context/ProjectContext';
 import {useLanguage} from '../context/LanguageContext';
+import {api, saveBlob, Company, Contract, DraftNavState, NoticeOut} from '../services/api';
 import '@frontend/src/index.css';
 import './LetterDrafts.css';
 
@@ -32,7 +40,8 @@ import './LetterDrafts.css';
    ========================================================================== */
 
 type LetterCategory = 'delay' | 'defect' | 'concern' | 'cost';
-type LetterStatus = 'Entwurf' | 'Geprüft';
+// Same statuses as the backend (FormalNotice.status)
+type LetterStatus = 'Entwurf' | 'Freigegeben' | 'Exportiert';
 type View = 'new' | 'saved';
 
 interface LetterTypeConfig {
@@ -72,6 +81,9 @@ const LETTER_TYPES: LetterTypeConfig[] = [
 
 const typeConfig = (id: LetterCategory) => LETTER_TYPES.find((lt) => lt.id === id) ?? LETTER_TYPES[0];
 
+const isLetterCategory = (v: unknown): v is LetterCategory =>
+    v === 'delay' || v === 'defect' || v === 'concern' || v === 'cost';
+
 interface Details {
     contractorIdx: string;   // '' = keine Firma
     presentWorkers: string;
@@ -84,7 +96,9 @@ interface Details {
 }
 
 interface SavedLetter {
-    id: string;
+    id: string;              // "notice-<id>" for server letters, "draft-<ts>" for local ones
+    source: 'server' | 'local';
+    noticeId?: number;
     type: LetterCategory;
     subject: string;
     body: string;
@@ -92,7 +106,7 @@ interface SavedLetter {
     projectNumber: string;
     date: string;
     updatedAt: string;
-    createdIso: string;   // ISO timestamp, used for sorting & filtering
+    createdIso: string;      // ISO timestamp, used for sorting & filtering
     updatedIso: string;
     recipientKey: string;
     recipientName: string;
@@ -135,6 +149,11 @@ const fmtDateTime = (iso: string) => {
     return `${d.toLocaleDateString('de-DE')}, ${pad(d.getHours())}:${pad(d.getMinutes())} Uhr`;
 };
 
+const fmtTime = (iso: string) => {
+    const d = new Date(iso);
+    return Number.isNaN(d.getTime()) ? '' : `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+};
+
 const shorten = (text: string, max = 55) => {
     const s = text.trim().replace(/\s+/g, ' ');
     return s.length > max ? `${s.slice(0, max).trimEnd()} …` : s;
@@ -154,6 +173,9 @@ const emptyDetails = (): Details => ({
 const escapeHtml = (s: string) =>
     s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
+const sameName = (a?: string | null, b?: string | null) =>
+    !!a && !!b && a.trim().toLowerCase() === b.trim().toLowerCase();
+
 // "21.11.2026" → ISO (for drafts saved before timestamps existed)
 const parseDeDate = (s: unknown): string | null => {
     const m = typeof s === 'string' ? s.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})$/) : null;
@@ -168,44 +190,65 @@ const isoFromId = (id: unknown): string | null => {
     return Number.isFinite(ts) && ts > 1e12 ? new Date(ts).toISOString() : null;
 };
 
-const fmtTime = (iso: string) => {
-    const d = new Date(iso);
-    return Number.isNaN(d.getTime()) ? '' : `${pad(d.getHours())}:${pad(d.getMinutes())}`;
-};
+const toStatus = (s: unknown): LetterStatus =>
+    s === 'Freigegeben' || s === 'Geprüft' ? 'Freigegeben' : s === 'Exportiert' ? 'Exportiert' : 'Entwurf';
 
-const loadSaved = (): SavedLetter[] => {
+const loadLocal = (): SavedLetter[] => {
     try {
         const raw = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
         if (!Array.isArray(raw)) return [];
-        return raw.map((d: any) => {
-            const createdIso: string =
-                d.createdIso ?? isoFromId(d.id) ?? parseDeDate(d.date) ?? new Date().toISOString();
-            const updatedIso: string = d.updatedIso ?? parseDeDate(d.updatedAt) ?? createdIso;
-            return {
-            createdIso,
-            updatedIso,
-            id: String(d.id ?? `draft-${Date.now()}`),
-            // older drafts used the same ids
-            type: (['delay', 'defect', 'concern', 'cost'].includes(d.type) ? d.type : 'delay') as LetterCategory,
-            subject: d.subject ?? '',
-            body: d.body ?? '',
-            project: d.project ?? '',
-            projectNumber: d.projectNumber ?? '',
-            date: d.date ?? '',
-            updatedAt: d.updatedAt ?? d.date ?? '',
-            recipientKey: d.recipientKey ?? 'other',
-            recipientName: d.recipientName ?? '',
-            recipientAddress: d.recipientAddress ?? '',
-            status: (d.status === 'Geprüft' ? 'Geprüft' : 'Entwurf') as LetterStatus,
-            details: d.details
-            };
-        });
+        return raw
+            // older versions mirrored server letters into localStorage – those now come from the server
+            .filter((d: any) => !String(d?.id ?? '').startsWith('notice-'))
+            .map((d: any): SavedLetter => {
+                const createdIso: string =
+                    d.createdIso ?? isoFromId(d.id) ?? parseDeDate(d.date) ?? new Date().toISOString();
+                const updatedIso: string = d.updatedIso ?? parseDeDate(d.updatedAt) ?? createdIso;
+                return {
+                    id: String(d.id ?? `draft-${Date.now()}`),
+                    source: 'local',
+                    type: isLetterCategory(d.type) ? d.type : 'delay',
+                    subject: d.subject ?? '',
+                    body: d.body ?? '',
+                    project: d.project ?? '',
+                    projectNumber: d.projectNumber ?? '',
+                    date: d.date ?? '',
+                    updatedAt: d.updatedAt ?? d.date ?? '',
+                    createdIso,
+                    updatedIso,
+                    recipientKey: d.recipientKey ?? 'other',
+                    recipientName: d.recipientName ?? '',
+                    recipientAddress: d.recipientAddress ?? '',
+                    status: toStatus(d.status),
+                    details: d.details
+                };
+            });
     } catch {
         return [];
     }
 };
 
-const persistSaved = (letters: SavedLetter[]) => localStorage.setItem(STORAGE_KEY, JSON.stringify(letters));
+const persistLocal = (letters: SavedLetter[]) =>
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(letters.filter((l) => l.source === 'local')));
+
+const fromNotice = (n: NoticeOut, project: Project): SavedLetter => ({
+    id: `notice-${n.id}`,
+    source: 'server',
+    noticeId: n.id,
+    type: isLetterCategory(n.type) ? n.type : 'delay',
+    subject: n.subject ?? n.title ?? '',
+    body: n.body ?? '',
+    project: project.name,
+    projectNumber: project.number,
+    date: fmtDate(n.created_at),
+    updatedAt: fmtDate(n.updated_at),
+    createdIso: n.created_at,
+    updatedIso: n.updated_at || n.created_at,
+    recipientKey: 'other',
+    recipientName: n.recipient ?? '',
+    recipientAddress: '',
+    status: toStatus(n.status)
+});
 
 /* ==========================================================================
    Letter text builder (fixed standard format)
@@ -222,6 +265,19 @@ interface BuildContext {
     companyName: string;
 }
 
+const staffingSentence = (contractor: Contractor, d: Details) => {
+    const trade = contractor.trade ? ` (Gewerk ${contractor.trade})` : '';
+    const since = d.since ? `Seit dem ${fmtDateTime(d.since)}` : 'Derzeit';
+    const present = d.presentWorkers.trim();
+    let s = `${since} ist die Firma ${contractor.name}${trade} nicht in der vertraglich vereinbarten Stärke auf der Baustelle erschienen.`;
+    if (contractor.required_workers != null && present !== '') {
+        s += Number(present) === 0
+            ? ` Statt der vereinbarten ${contractor.required_workers} Arbeitskräfte ist niemand erschienen.`
+            : ` Statt der vereinbarten ${contractor.required_workers} Arbeitskräfte waren lediglich ${present} vor Ort.`;
+    }
+    return s;
+};
+
 const buildLetter = (ctx: BuildContext): {subject: string; body: string} => {
     const {type, project, details: d, contractor, recipientIsContractor} = ctx;
     const today = new Date().toLocaleDateString('de-DE');
@@ -234,16 +290,7 @@ const buildLetter = (ctx: BuildContext): {subject: string; body: string} => {
     if (type === 'delay') {
         const lines: string[] = [];
         if (contractor) {
-            const trade = contractor.trade ? ` (Gewerk ${contractor.trade})` : '';
-            const since = d.since ? `Seit dem ${fmtDateTime(d.since)}` : 'Derzeit';
-            const present = d.presentWorkers.trim();
-            let staffing = `${since} ist die Firma ${contractor.name}${trade} nicht in der vertraglich vereinbarten Stärke auf der Baustelle erschienen.`;
-            if (contractor.required_workers != null && present !== '') {
-                staffing += Number(present) === 0
-                    ? ` Statt der vereinbarten ${contractor.required_workers} Arbeitskräfte ist niemand erschienen.`
-                    : ` Statt der vereinbarten ${contractor.required_workers} Arbeitskräfte waren lediglich ${present} vor Ort.`;
-            }
-            lines.push(staffing);
+            lines.push(staffingSentence(contractor, d));
         } else if (d.since) {
             lines.push(`Seit dem ${fmtDateTime(d.since)} liegt auf der Baustelle folgende Behinderung vor.`);
         }
@@ -377,8 +424,42 @@ ${signature}`
     };
 };
 
+/**
+ * Our form fields → the backend's notice fields (see backend REQUIRED_FIELDS).
+ * Sent with every save so the server's "Freigabe" check sees complete data.
+ */
+const toNoticeFields = (
+    type: LetterCategory,
+    d: Details,
+    contractor: Contractor | null,
+    recipientName: string
+): Record<string, string> => {
+    const desc = d.description.trim();
+    const staffing = type === 'delay' && contractor ? staffingSentence(contractor, d) : '';
+    const facts = [staffing, desc].filter(Boolean).join(' ');
+
+    let cause = desc;
+    if (type === 'delay' && contractor) cause = `Firma ${contractor.name} nicht in vertraglicher Sollstärke erschienen`;
+    if (type === 'concern') cause = d.concernSource.trim() || desc;
+    if (type === 'defect' && contractor) cause = `Ausführung durch ${contractor.name}`;
+
+    const fields: Record<string, string> = {
+        recipient: recipientName.trim(),
+        facts,
+        cause,
+        location: d.area.trim(),
+        affected_work: contractor?.trade ?? ''
+    };
+    if (type === 'delay' && d.since) {
+        fields.start_date = d.since.slice(0, 10);
+        fields.start_time = d.since.slice(11, 16);
+    }
+    if (type === 'defect' && d.deadline) fields.deadline = d.deadline;
+    return fields;
+};
+
 /* ==========================================================================
-   Word export (HTML-based .doc in fixed standard format)
+   Word export (client-side fallback, HTML-based .doc in fixed standard format)
    ========================================================================== */
 
 interface ExportData {
@@ -395,7 +476,7 @@ interface ExportData {
     type: LetterCategory;
 }
 
-const exportWord = (data: ExportData) => {
+const exportWordLocal = (data: ExportData) => {
     const content = `<!DOCTYPE html>
 <html>
 <head>
@@ -421,13 +502,10 @@ h1 { font-size: 12pt; margin: 0 0 14pt 0; }
 </body>
 </html>`;
 
-    const blob = new Blob([content], {type: 'application/msword;charset=utf-8'});
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `${data.type}_${data.projectNumber || 'projekt'}_${new Date().toISOString().slice(0, 10)}.doc`;
-    link.click();
-    URL.revokeObjectURL(url);
+    saveBlob(
+        new Blob([content], {type: 'application/msword;charset=utf-8'}),
+        `${data.type}_${data.projectNumber || 'projekt'}_${new Date().toISOString().slice(0, 10)}.doc`
+    );
 };
 
 /* ==========================================================================
@@ -437,6 +515,11 @@ h1 { font-size: 12pt; margin: 0 0 14pt 0; }
 export const LetterDrafts: React.FC = () => {
     const {t} = useLanguage();
     const {activeProject} = useProjects();
+
+    // Context from other pages ("Entwurf erstellen" in Analyse, Dashboard, Tagesbericht, …)
+    const location = useLocation();
+    const navigate = useNavigate();
+    const navState = (location.state as DraftNavState | null) ?? null;
 
     const senderName = localStorage.getItem('userName') || 'Max Mustermann';
     const userProfile = (() => {
@@ -449,11 +532,44 @@ export const LetterDrafts: React.FC = () => {
     const companyName: string = userProfile?.company || 'Baupartner AG & Co. KG';
     const senderRole: string = userProfile?.role || t('role_site_manager');
 
-    const contractors = activeProject.contractors ?? [];
+    // --- master data from the backend (Stammdaten) ---
+    const [companies, setCompanies] = useState<Company[]>([]);
+    const [contracts, setContracts] = useState<Contract[]>([]);
+
+    // Companies on site: project list + contracts (Sollstärke) from Stammdaten, without duplicates
+    const contractors: Contractor[] = useMemo(() => {
+        const list: Contractor[] = (activeProject.contractors ?? []).map((c) => ({...c}));
+        for (const c of contracts) {
+            if (!c.contractor_name) continue;
+            const existing = list.find((x) => sameName(x.name, c.contractor_name));
+            if (existing) {
+                if (existing.required_workers == null && c.planned_workforce != null) {
+                    existing.required_workers = c.planned_workforce;
+                }
+                continue;
+            }
+            const company = companies.find((co) => sameName(co.name, c.contractor_name));
+            list.push({
+                name: c.contractor_name,
+                trade: c.trade ?? company?.trade ?? '',
+                required_workers: c.planned_workforce ?? null,
+                phone: company?.phone ?? ''
+            });
+        }
+        return list;
+    }, [activeProject.contractors, contracts, companies]);
+
+    // Stammdaten companies not already listed as project companies
+    const otherCompanies = companies.filter(
+        (co) => co.company_type !== 'own' && !contractors.some((c) => sameName(c.name, co.name))
+    );
 
     // --- view & list ---
     const [view, setView] = useState<View>('new');
-    const [savedLetters, setSavedLetters] = useState<SavedLetter[]>(loadSaved);
+    const [localLetters, setLocalLetters] = useState<SavedLetter[]>(loadLocal);
+    const [serverNotices, setServerNotices] = useState<NoticeOut[]>([]);
+    const [serverOnline, setServerOnline] = useState<boolean | null>(null);
+    const [isLoadingNotices, setIsLoadingNotices] = useState(false);
     const [search, setSearch] = useState('');
     const [typeFilter, setTypeFilter] = useState<'all' | LetterCategory>('all');
     const [statusFilter, setStatusFilter] = useState<'all' | LetterStatus>('all');
@@ -466,18 +582,32 @@ export const LetterDrafts: React.FC = () => {
 
     // --- editor ---
     const [editingId, setEditingId] = useState<string | null>(null);
-    const [selectedType, setSelectedType] = useState<LetterCategory>('delay');
+    const [noticeId, setNoticeId] = useState<number | null>(null); // set when the letter lives on the server
+    // async flows (approve → export) need the id before React re-renders
+    const noticeIdRef = useRef<number | null>(null);
+    noticeIdRef.current = noticeId;
+    const [selectedType, setSelectedType] = useState<LetterCategory>(
+        isLetterCategory(navState?.type) ? navState.type : 'delay'
+    );
     const [recipientKey, setRecipientKey] = useState<string>('client');
     const [otherRecipientName, setOtherRecipientName] = useState('');
     const [recipientAddress, setRecipientAddress] = useState('');
-    const [details, setDetails] = useState<Details>(emptyDetails);
+    const [details, setDetails] = useState<Details>(() => ({
+        ...emptyDetails(),
+        description: navState?.keywords ?? ''
+    }));
     const [status, setStatus] = useState<LetterStatus>('Entwurf');
     const [subject, setSubject] = useState('');
     const [letterBody, setLetterBody] = useState('');
     const [touched, setTouched] = useState(false); // letter edited by hand → stop live updates
 
+    const [busy, setBusy] = useState<null | 'save' | 'ai' | 'approve' | 'review' | 'export'>(null);
+    const [errorMessage, setErrorMessage] = useState<string | null>(null);
+    const [reviewHints, setReviewHints] = useState<string[]>([]);
     const [copySuccess, setCopySuccess] = useState(false);
     const [toast, setToast] = useState<string | null>(null);
+
+    const locked = status !== 'Entwurf';
 
     const selectedContractor: Contractor | null =
         details.contractorIdx !== '' ? contractors[Number(details.contractorIdx)] ?? null : null;
@@ -487,7 +617,9 @@ export const LetterDrafts: React.FC = () => {
             ? activeProject.client || ''
             : recipientKey.startsWith('c:')
                 ? contractors[Number(recipientKey.slice(2))]?.name ?? ''
-                : otherRecipientName;
+                : recipientKey.startsWith('co:')
+                    ? companies.find((co) => co.id === Number(recipientKey.slice(3)))?.name ?? ''
+                    : otherRecipientName;
 
     const recipientIsContractor =
         selectedContractor !== null && recipientKey === `c:${details.contractorIdx}`;
@@ -514,25 +646,104 @@ export const LetterDrafts: React.FC = () => {
         setLetterBody(generated.body);
     }, [generated, touched]);
 
+    /* ---------------- small helpers ---------------- */
+
     const showToast = (msg: string) => {
         setToast(msg);
-        setTimeout(() => setToast(null), 2500);
+        setTimeout(() => setToast(null), 2800);
     };
 
     const setDetail = <K extends keyof Details>(key: K, value: Details[K]) =>
         setDetails((prev) => ({...prev, [key]: value}));
 
-    const confirmDiscardEdits = () => !touched || window.confirm(t('ld_confirm_overwrite'));
+    const confirmDiscardEdits = () => !touched || locked || window.confirm(t('ld_confirm_overwrite'));
+
+    /* ---------------- loading ---------------- */
+
+    const loadNotices = async (): Promise<NoticeOut[] | null> => {
+        setIsLoadingNotices(true);
+        try {
+            const notices = await api.listNotices(Number(activeProject.id));
+            setServerNotices(notices);
+            setServerOnline(true);
+            return notices;
+        } catch (err) {
+            console.warn('Briefe konnten nicht vom Server geladen werden:', err);
+            setServerOnline(false);
+            return null;
+        } finally {
+            setIsLoadingNotices(false);
+        }
+    };
+
+    const openLetter = (letter: SavedLetter, notice?: NoticeOut) => {
+        setEditingId(letter.id);
+        noticeIdRef.current = letter.noticeId ?? null;
+        setNoticeId(letter.noticeId ?? null);
+        setSelectedType(letter.type);
+        setRecipientKey(
+            letter.recipientKey === 'client' || letter.recipientKey.startsWith('c:') || letter.recipientKey.startsWith('co:')
+                ? letter.recipientKey
+                : 'other'
+        );
+        setOtherRecipientName(letter.recipientName);
+        setRecipientAddress(letter.recipientAddress);
+        setDetails(
+            letter.details ?? {
+                ...emptyDetails(),
+                description: notice?.fields?.facts?.value ?? '',
+                area: notice?.fields?.location?.value ?? '',
+                deadline: notice?.fields?.deadline?.value || inDays(7)
+            }
+        );
+        setStatus(letter.status);
+        setSubject(letter.subject);
+        setLetterBody(letter.body);
+        setTouched(true); // keep the saved text exactly as it was
+        setErrorMessage(null);
+        setReviewHints([]);
+        setView('new');
+    };
+
+    useEffect(() => {
+        loadNotices().then(async (notices) => {
+            // open a specific server letter if another page asked for it
+            if (navState?.noticeId) {
+                const n = notices?.find((x) => x.id === navState.noticeId)
+                    ?? await api.getNotice(navState.noticeId).catch(() => undefined);
+                if (n) openLetter(fromNotice(n, activeProject), n);
+            }
+        });
+        api.listCompanies().then(setCompanies).catch(() => setCompanies([]));
+        api.listContracts(Number(activeProject.id)).then(setContracts).catch(() => setContracts([]));
+        // apply navigation context only once (not again after reload / project switch)
+        if (navState) navigate(location.pathname, {replace: true, state: null});
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [activeProject.id]);
+
+    /* ---------------- form handlers ---------------- */
+
+    const handleRecipientChange = (key: string) => {
+        setRecipientKey(key);
+        // fill the address from Stammdaten if we know the company
+        const name =
+            key === 'client' ? activeProject.client
+                : key.startsWith('c:') ? contractors[Number(key.slice(2))]?.name
+                    : key.startsWith('co:') ? companies.find((co) => co.id === Number(key.slice(3)))?.name
+                        : '';
+        const company = companies.find((co) => sameName(co.name, name));
+        if (company?.address) setRecipientAddress(company.address);
+    };
 
     const handleTypeChange = (type: LetterCategory) => {
-        if (type === selectedType) return;
+        if (type === selectedType || locked) return;
         if (!confirmDiscardEdits()) return;
         setSelectedType(type);
         setTouched(false);
     };
 
     const handleRegenerate = () => {
-        if (!confirmDiscardEdits()) return;
+        if (locked || !confirmDiscardEdits()) return;
         setTouched(false);
         setSubject(generated.subject);
         setLetterBody(generated.body);
@@ -540,6 +751,8 @@ export const LetterDrafts: React.FC = () => {
 
     const resetEditor = () => {
         setEditingId(null);
+        noticeIdRef.current = null;
+        setNoticeId(null);
         setSelectedType('delay');
         setRecipientKey('client');
         setOtherRecipientName('');
@@ -547,6 +760,8 @@ export const LetterDrafts: React.FC = () => {
         setDetails(emptyDetails());
         setStatus('Entwurf');
         setTouched(false);
+        setErrorMessage(null);
+        setReviewHints([]);
     };
 
     const handleNewLetter = () => {
@@ -561,58 +776,201 @@ export const LetterDrafts: React.FC = () => {
         setTimeout(() => setCopySuccess(false), 2500);
     };
 
-    const handleSave = () => {
-        const now = new Date().toLocaleDateString('de-DE');
-        const nowIso = new Date().toISOString();
-        const existing = editingId ? savedLetters.find((l) => l.id === editingId) : undefined;
+    const handleOpen = (letter: SavedLetter) => {
+        if (!confirmDiscardEdits()) return;
+        openLetter(letter, serverNotices.find((n) => n.id === letter.noticeId));
+    };
+
+    /* ---------------- save ---------------- */
+
+    const saveLocal = (statusOverride?: LetterStatus): SavedLetter => {
+        const now = new Date();
+        const existing = editingId ? localLetters.find((l) => l.id === editingId) : undefined;
         const letter: SavedLetter = {
-            id: editingId ?? `draft-${Date.now()}`,
-            createdIso: existing?.createdIso ?? nowIso,
-            updatedIso: nowIso,
+            id: existing?.id ?? `draft-${now.getTime()}`,
+            source: 'local',
             type: selectedType,
             subject,
             body: letterBody,
             project: activeProject.name,
             projectNumber: activeProject.number,
-            date: existing?.date ?? now,
-            updatedAt: now,
+            date: existing?.date ?? now.toLocaleDateString('de-DE'),
+            updatedAt: now.toLocaleDateString('de-DE'),
+            createdIso: existing?.createdIso ?? now.toISOString(),
+            updatedIso: now.toISOString(),
             recipientKey,
             recipientName,
             recipientAddress,
-            status,
+            status: statusOverride ?? status,
             details
         };
         const updated = existing
-            ? savedLetters.map((l) => (l.id === letter.id ? letter : l))
-            : [letter, ...savedLetters];
-        setSavedLetters(updated);
-        persistSaved(updated);
+            ? localLetters.map((l) => (l.id === letter.id ? letter : l))
+            : [letter, ...localLetters];
+        setLocalLetters(updated);
+        persistLocal(updated);
         setEditingId(letter.id);
-        showToast(t('ld_toast_saved'));
+        return letter;
     };
 
-    const handleOpen = (letter: SavedLetter) => {
-        if (!confirmDiscardEdits()) return;
-        setEditingId(letter.id);
-        setSelectedType(letter.type);
-        setRecipientKey(letter.recipientKey === 'client' || letter.recipientKey.startsWith('c:') ? letter.recipientKey : 'other');
-        setOtherRecipientName(letter.recipientName);
-        setRecipientAddress(letter.recipientAddress);
-        setDetails(letter.details ?? emptyDetails());
+    /** Saves to the server (creates the notice if needed). Returns the notice, or null if no notice could be created. */
+    const saveToServer = async (): Promise<NoticeOut | null> => {
+        const fields = toNoticeFields(selectedType, details, selectedContractor, recipientName);
+        let id = noticeIdRef.current;
+        if (id == null) {
+            const draft = await api.captureText({
+                text: [fields.facts, fields.location && `Ort: ${fields.location}`].filter(Boolean).join('. ')
+                    || t(typeConfig(selectedType).labelKey),
+                project_id: Number(activeProject.id),
+                force_type: selectedType,
+                ref_date: fields.start_date,
+                ref_time: fields.start_time
+            });
+            if (!draft.notice_id) return null;
+            id = draft.notice_id;
+        }
+        // fields first (server re-renders its template), then our own subject/body take precedence
+        const saved = await api.patchNotice(id, {fields, recipient: recipientName, subject, body: letterBody});
+        noticeIdRef.current = saved.id;
+        setNoticeId(saved.id);
+        setEditingId(`notice-${saved.id}`);
+        // a letter that was only local before now lives on the server → drop the local copy
+        if (editingId && editingId.startsWith('draft-')) {
+            const updated = localLetters.filter((l) => l.id !== editingId);
+            setLocalLetters(updated);
+            persistLocal(updated);
+        }
+        await loadNotices();
+        return saved;
+    };
+
+    const handleSave = async () => {
+        if (locked) return;
+        setBusy('save');
+        setErrorMessage(null);
+        try {
+            const saved = await saveToServer();
+            if (saved) {
+                showToast(t('ld_toast_saved'));
+                return;
+            }
+            saveLocal();
+            showToast(t('ld_toast_saved_local'));
+        } catch (err) {
+            console.warn('Speichern auf dem Server fehlgeschlagen, speichere lokal:', err);
+            if (noticeIdRef.current != null) {
+                // the letter lives on the server – don't silently fork a local copy
+                setErrorMessage(`${t('ld_save_failed')} ${(err as Error)?.message ?? ''}`.trim());
+                return;
+            }
+            saveLocal();
+            showToast(t('ld_toast_saved_local'));
+        } finally {
+            setBusy(null);
+        }
+    };
+
+    /* ---------------- AI, review, approval ---------------- */
+
+    const handleAiDraft = async () => {
+        if (locked || !confirmDiscardEdits()) return;
+        const fields = toNoticeFields(selectedType, details, selectedContractor, recipientName);
+        const text = [fields.facts, fields.location && `Ort: ${fields.location}`, details.extra.trim()]
+            .filter(Boolean)
+            .join('. ');
+        if (!text) {
+            setErrorMessage(t('ld_ai_need_text'));
+            return;
+        }
+        setBusy('ai');
+        setErrorMessage(null);
+        try {
+            const draft = await api.captureText({
+                text,
+                project_id: Number(activeProject.id),
+                force_type: selectedType,
+                ref_date: fields.start_date,
+                ref_time: fields.start_time
+            });
+            if (!draft.notice_id) throw new Error('Kein Entwurf erhalten');
+            // keep our recipient; the server renders the letter from the fields it extracted
+            const notice = recipientName.trim()
+                ? await api.patchNotice(draft.notice_id, {fields: {recipient: recipientName}})
+                : await api.getNotice(draft.notice_id);
+            noticeIdRef.current = notice.id;
+            setNoticeId(notice.id);
+            setEditingId(`notice-${notice.id}`);
+            setSubject(notice.subject ?? '');
+            setLetterBody(notice.body ?? '');
+            setTouched(true);
+            if (notice.questions?.length) setReviewHints(notice.questions);
+            await loadNotices();
+            showToast(t('ld_toast_ai'));
+        } catch (err: any) {
+            console.warn('KI-Entwurf fehlgeschlagen:', err);
+            setErrorMessage(`${t('ld_ai_failed')} ${err?.message ?? ''}`.trim());
+        } finally {
+            setBusy(null);
+        }
+    };
+
+    const handleReview = async () => {
+        setBusy('review');
+        setReviewHints([]);
+        setErrorMessage(null);
+        try {
+            const id = locked && noticeId != null ? noticeId : (await saveToServer())?.id;
+            if (id == null) throw new Error(t('ld_server_offline'));
+            const rev = await api.reviewNotice(id);
+            setReviewHints(rev.hints?.length ? rev.hints : [t('ld_review_ok')]);
+        } catch (err: any) {
+            setErrorMessage(`${t('ld_review_failed')} ${err?.message ?? ''}`.trim());
+        } finally {
+            setBusy(null);
+        }
+    };
+
+    /** Formal approval. Server letters go through /approve (checks required fields); without server they're marked locally. */
+    const approve = async (): Promise<boolean> => {
+        setErrorMessage(null);
+        try {
+            const saved = await saveToServer();
+            if (saved) {
+                const approved = await api.approveNotice(saved.id);
+                setStatus(toStatus(approved.status));
+                await loadNotices();
+                return true;
+            }
+        } catch (err: any) {
+            const msg: string = err?.message ?? '';
+            // the server answered (e.g. 409 = required fields missing) → show it, don't fall back
+            if (noticeIdRef.current != null || /missing_fields|Pflicht|409/i.test(msg)) {
+                setErrorMessage(`${t('ld_approve_failed')} ${msg.replace(/^.*?:\s*/, '')}`.trim());
+                return false;
+            }
+            console.warn('Server nicht erreichbar, Freigabe nur lokal:', err);
+        }
+        saveLocal('Freigegeben');
+        setStatus('Freigegeben');
+        return true;
+    };
+
+    const handleApprove = async () => {
+        if (locked) return;
+        if (!window.confirm(t('ld_confirm_approve'))) return;
+        setBusy('approve');
+        const ok = await approve();
+        setBusy(null);
+        if (ok) showToast(t('ld_toast_approved'));
+    };
+
+    const handleUnlockLocal = () => {
+        // only for letters that live in this browser – the server keeps approved letters locked
+        const letter = saveLocal('Entwurf');
         setStatus(letter.status);
-        setSubject(letter.subject);
-        setLetterBody(letter.body);
-        setTouched(true); // keep the saved text exactly as it was
-        setView('new');
     };
 
-    const handleDelete = (letter: SavedLetter) => {
-        if (!window.confirm(t('ld_confirm_delete'))) return;
-        const updated = savedLetters.filter((l) => l.id !== letter.id);
-        setSavedLetters(updated);
-        persistSaved(updated);
-        if (editingId === letter.id) setEditingId(null);
-    };
+    /* ---------------- export ---------------- */
 
     const currentExportData = (): ExportData => ({
         companyName,
@@ -628,7 +986,107 @@ export const LetterDrafts: React.FC = () => {
         type: selectedType
     });
 
-    // Unique recipients for the "An" filter
+    // Prints only the letter sheet. The class on <body> enables the print rules in
+    // LetterDrafts.css just for this print (other pages print normally).
+    const printLetter = () => {
+        document.body.classList.add('print-letter-only');
+        const cleanup = () => {
+            document.body.classList.remove('print-letter-only');
+            window.removeEventListener('afterprint', cleanup);
+        };
+        window.addEventListener('afterprint', cleanup);
+        window.print();
+    };
+
+    /**
+     * Server export needs an approved letter ("nichts ohne Freigabe").
+     * Returns true when handled (downloaded, cancelled or error shown), false to fall back to the local export.
+     */
+    const exportFromServer = async (format: 'pdf' | 'docx'): Promise<boolean> => {
+        if (serverOnline === false) return false;
+        if (status === 'Entwurf') {
+            if (!window.confirm(t('ld_confirm_approve_export'))) return true;
+            if (!(await approve())) return true;
+        }
+        // read the id after approve(), which may just have created the server letter
+        const id = noticeIdRef.current;
+        if (id == null) return false;
+        const blob = await api.downloadExport(id, format);
+        saveBlob(blob, `VOB_${selectedType}_${activeProject.number}.${format}`);
+        setStatus('Exportiert');
+        await loadNotices();
+        return true;
+    };
+
+    const handleWord = async () => {
+        setBusy('export');
+        try {
+            if (await exportFromServer('docx')) return;
+        } catch (err) {
+            console.warn('Word-Export vom Server fehlgeschlagen, nutze lokalen Export:', err);
+        } finally {
+            setBusy(null);
+        }
+        exportWordLocal(currentExportData());
+    };
+
+    const handlePdf = async () => {
+        setBusy('export');
+        try {
+            if (await exportFromServer('pdf')) return;
+        } catch (err: any) {
+            // e.g. 503 "Pango fehlt" → offer printing instead
+            if (window.confirm(`${t('ld_pdf_failed')}\n${err?.message ?? ''}\n\n${t('ld_pdf_print_instead')}`)) {
+                printLetter();
+            }
+            return;
+        } finally {
+            setBusy(null);
+        }
+        printLetter();
+    };
+
+    const exportListLetter = async (l: SavedLetter) => {
+        if (l.source === 'server' && l.noticeId != null && l.status !== 'Entwurf') {
+            try {
+                saveBlob(await api.downloadExport(l.noticeId, 'docx'), `VOB_${l.type}_${l.projectNumber}.docx`);
+                await loadNotices();
+                return;
+            } catch (err) {
+                console.warn('Word-Export vom Server fehlgeschlagen, nutze lokalen Export:', err);
+            }
+        }
+        exportWordLocal({
+            companyName,
+            senderName,
+            senderRole,
+            recipientName: l.recipientName,
+            recipientAddress: l.recipientAddress,
+            projectName: l.project,
+            projectNumber: l.projectNumber,
+            date: fmtDate(l.updatedIso),
+            subject: l.subject,
+            body: l.body,
+            type: l.type
+        });
+    };
+
+    const handleDelete = (letter: SavedLetter) => {
+        if (letter.source !== 'local') return;
+        if (!window.confirm(t('ld_confirm_delete'))) return;
+        const updated = localLetters.filter((l) => l.id !== letter.id);
+        setLocalLetters(updated);
+        persistLocal(updated);
+        if (editingId === letter.id) setEditingId(null);
+    };
+
+    /* ---------------- list: merge, filter, sort ---------------- */
+
+    const savedLetters: SavedLetter[] = [
+        ...serverNotices.map((n) => fromNotice(n, activeProject)),
+        ...localLetters
+    ];
+
     const recipientOptions = Array.from(
         new Set(savedLetters.map((l) => l.recipientName.trim()).filter(Boolean))
     ).sort((a, b) => a.localeCompare(b, 'de'));
@@ -715,7 +1173,20 @@ export const LetterDrafts: React.FC = () => {
         );
     };
 
-    const vobNotes = activeProject.vob_notes?.trim();
+    const statusLabel = (s: LetterStatus) =>
+        s === 'Freigegeben' ? t('ld_status_approved') : s === 'Exportiert' ? t('ld_status_exported') : t('ld_status_draft');
+
+    const statusClass = (s: LetterStatus) => (s === 'Freigegeben' ? 'approved' : s === 'Exportiert' ? 'exported' : '');
+
+    // VOB reminders: project rules + rules of the recipient / affected company from Stammdaten
+    const vobNotes: string[] = [];
+    if (activeProject.vob_notes?.trim()) vobNotes.push(activeProject.vob_notes.trim());
+    for (const name of new Set([recipientName, selectedContractor?.name].filter(Boolean) as string[])) {
+        const company = companies.find((co) => sameName(co.name, name));
+        if (company?.vob_rules?.trim()) vobNotes.push(`${company.name}: ${company.vob_rules.trim()}`);
+        const contract = contracts.find((c) => sameName(c.contractor_name, name));
+        if (contract?.vob_notes?.trim()) vobNotes.push(`${t('ld_vob_contract')} ${contract.title}: ${contract.vob_notes.trim()}`);
+    }
 
     /* ---------------------------------------------------------------------- */
 
@@ -755,7 +1226,10 @@ export const LetterDrafts: React.FC = () => {
                         role="tab"
                         aria-selected={view === 'saved'}
                         className={`ld-toggle-btn ${view === 'saved' ? 'active' : ''}`}
-                        onClick={() => setView('saved')}
+                        onClick={() => {
+                            setView('saved');
+                            loadNotices();
+                        }}
                     >
                         <FolderOpen size={15}/>
                         <span>{t('ld_tab_saved')}</span>
@@ -778,210 +1252,237 @@ export const LetterDrafts: React.FC = () => {
                             </div>
                         )}
 
-                        {/* Step 1 */}
-                        <section className="ld-step">
-                            <h2 className="ld-step-title"><span className="ld-step-num">1</span>{t('ld_step_type')}</h2>
-                            <div className="type-selector-grid">
-                                {LETTER_TYPES.map((lt) => (
-                                    <button
-                                        key={lt.id}
-                                        type="button"
-                                        className={`type-btn ${selectedType === lt.id ? 'active' : ''}`}
-                                        onClick={() => handleTypeChange(lt.id)}
-                                    >
-                                        <span className="type-btn-title">
-                                            {lt.icon(17)}
-                                            <span>{t(lt.labelKey)}</span>
-                                        </span>
-                                        <span className="type-btn-sub">{lt.paragraph}</span>
+                        {locked && (
+                            <div className="ld-locked-banner">
+                                <Lock size={15}/>
+                                <span>{t('ld_locked')}</span>
+                                {noticeId == null && (
+                                    <button type="button" className="ld-link-btn" onClick={handleUnlockLocal}>
+                                        {t('ld_unlock')}
                                     </button>
-                                ))}
+                                )}
                             </div>
-                        </section>
+                        )}
 
-                        {/* Step 2 */}
-                        <section className="ld-step">
-                            <h2 className="ld-step-title"><span className="ld-step-num">2</span>{t('ld_step_recipient')}</h2>
-                            <div className="form-group">
-                                <select
-                                    className="form-input"
-                                    aria-label={t('ld_step_recipient')}
-                                    value={recipientKey}
-                                    onChange={(e) => setRecipientKey(e.target.value)}
-                                >
-                                    <option value="client">
-                                        {t('ld_r_client')}: {activeProject.client || '–'}
-                                    </option>
-                                    {contractors.map((c, i) => (
-                                        <option key={i} value={`c:${i}`}>
-                                            {c.name}{c.trade ? ` (${c.trade})` : ''}
-                                        </option>
+                        <fieldset className="ld-fieldset" disabled={locked}>
+                            {/* Step 1 */}
+                            <section className="ld-step">
+                                <h2 className="ld-step-title"><span className="ld-step-num">1</span>{t('ld_step_type')}</h2>
+                                <div className="type-selector-grid">
+                                    {LETTER_TYPES.map((lt) => (
+                                        <button
+                                            key={lt.id}
+                                            type="button"
+                                            className={`type-btn ${selectedType === lt.id ? 'active' : ''}`}
+                                            onClick={() => handleTypeChange(lt.id)}
+                                        >
+                                            <span className="type-btn-title">
+                                                {lt.icon(17)}
+                                                <span>{t(lt.labelKey)}</span>
+                                            </span>
+                                            <span className="type-btn-sub">{lt.paragraph}</span>
+                                        </button>
                                     ))}
-                                    <option value="other">{t('ld_r_other')}</option>
-                                </select>
-                            </div>
-                            {recipientKey === 'other' && (
-                                <div className="form-group">
-                                    <label className="form-label" htmlFor="ldOtherName">{t('ld_r_name')}</label>
-                                    <input
-                                        id="ldOtherName"
-                                        className="form-input"
-                                        type="text"
-                                        placeholder={t('ld_r_name_ph')}
-                                        value={otherRecipientName}
-                                        onChange={(e) => setOtherRecipientName(e.target.value)}
-                                    />
                                 </div>
-                            )}
-                            <div className="form-group">
-                                <label className="form-label" htmlFor="ldAddress">{t('ld_r_address')}</label>
-                                <textarea
-                                    id="ldAddress"
-                                    className="form-textarea"
-                                    rows={2}
-                                    placeholder={t('ld_r_address_ph')}
-                                    value={recipientAddress}
-                                    onChange={(e) => setRecipientAddress(e.target.value)}
-                                />
-                            </div>
-                        </section>
+                            </section>
 
-                        {/* Step 3 */}
-                        <section className="ld-step">
-                            <h2 className="ld-step-title"><span className="ld-step-num">3</span>{t('ld_step_details')}</h2>
-
-                            {(selectedType === 'delay' || selectedType === 'defect') && (
+                            {/* Step 2 */}
+                            <section className="ld-step">
+                                <h2 className="ld-step-title"><span className="ld-step-num">2</span>{t('ld_step_recipient')}</h2>
                                 <div className="form-group">
-                                    <label className="form-label" htmlFor="ldCompany">
-                                        {selectedType === 'delay' ? t('ld_f_company') : t('ld_f_defect_company')}
-                                    </label>
                                     <select
-                                        id="ldCompany"
                                         className="form-input"
-                                        value={details.contractorIdx}
-                                        onChange={(e) => setDetail('contractorIdx', e.target.value)}
+                                        aria-label={t('ld_step_recipient')}
+                                        value={recipientKey}
+                                        onChange={(e) => handleRecipientChange(e.target.value)}
                                     >
-                                        <option value="">{t('ld_f_company_none')}</option>
-                                        {contractors.map((c, i) => (
-                                            <option key={i} value={String(i)}>
-                                                {c.name}{c.trade ? ` (${c.trade})` : ''}
-                                            </option>
-                                        ))}
+                                        <option value="client">
+                                            {t('ld_r_client')}: {activeProject.client || '–'}
+                                        </option>
+                                        {contractors.length > 0 && (
+                                            <optgroup label={t('ld_r_group_project')}>
+                                                {contractors.map((c, i) => (
+                                                    <option key={i} value={`c:${i}`}>
+                                                        {c.name}{c.trade ? ` (${c.trade})` : ''}
+                                                    </option>
+                                                ))}
+                                            </optgroup>
+                                        )}
+                                        {otherCompanies.length > 0 && (
+                                            <optgroup label={t('ld_r_group_masterdata')}>
+                                                {otherCompanies.map((co) => (
+                                                    <option key={co.id} value={`co:${co.id}`}>
+                                                        {co.name}{co.trade ? ` (${co.trade})` : ''}
+                                                    </option>
+                                                ))}
+                                            </optgroup>
+                                        )}
+                                        <option value="other">{t('ld_r_other')}</option>
                                     </select>
-                                    {contractors.length === 0 && (
-                                        <span className="ld-field-hint">{t('ld_f_no_contractors')}</span>
-                                    )}
                                 </div>
-                            )}
-
-                            {selectedType === 'delay' && selectedContractor && (
-                                <div className="ld-staffing">
-                                    <div className="ld-staffing-item">
-                                        <span className="ld-staffing-label">{t('ld_f_required')}</span>
-                                        <span className="ld-staffing-value">
-                                            {selectedContractor.required_workers ?? '–'}
-                                        </span>
-                                    </div>
-                                    <div className="ld-staffing-item">
-                                        <label className="ld-staffing-label" htmlFor="ldPresent">{t('ld_f_present')}</label>
-                                        <input
-                                            id="ldPresent"
-                                            className="form-input ld-staffing-input"
-                                            type="number"
-                                            min={0}
-                                            placeholder="0"
-                                            value={details.presentWorkers}
-                                            onChange={(e) => setDetail('presentWorkers', e.target.value)}
-                                        />
-                                    </div>
-                                    {selectedContractor.phone && (
-                                        <a className="ld-call-btn" href={`tel:${selectedContractor.phone.replace(/\s/g, '')}`}>
-                                            {t('ld_f_call')} {selectedContractor.phone}
-                                        </a>
-                                    )}
-                                </div>
-                            )}
-
-                            <div className="ld-fields-grid">
-                                {selectedType === 'delay' && (
+                                {recipientKey === 'other' && (
                                     <div className="form-group">
-                                        <label className="form-label" htmlFor="ldSince">{t('ld_f_since')}</label>
+                                        <label className="form-label" htmlFor="ldOtherName">{t('ld_r_name')}</label>
                                         <input
-                                            id="ldSince"
-                                            className="form-input"
-                                            type="datetime-local"
-                                            value={details.since}
-                                            onChange={(e) => setDetail('since', e.target.value)}
-                                        />
-                                    </div>
-                                )}
-
-                                <div className="form-group">
-                                    <label className="form-label" htmlFor="ldArea">
-                                        {selectedType === 'defect' ? t('ld_f_room') : t('ld_f_area')}
-                                    </label>
-                                    <input
-                                        id="ldArea"
-                                        className="form-input"
-                                        type="text"
-                                        placeholder={selectedType === 'defect' ? t('ld_f_room_ph') : t('ld_f_area_ph')}
-                                        value={details.area}
-                                        onChange={(e) => setDetail('area', e.target.value)}
-                                    />
-                                </div>
-
-                                {selectedType === 'defect' && (
-                                    <div className="form-group">
-                                        <label className="form-label" htmlFor="ldDeadline">{t('ld_f_deadline')}</label>
-                                        <input
-                                            id="ldDeadline"
-                                            className="form-input"
-                                            type="date"
-                                            value={details.deadline}
-                                            onChange={(e) => setDetail('deadline', e.target.value)}
-                                        />
-                                    </div>
-                                )}
-
-                                {selectedType === 'concern' && (
-                                    <div className="form-group">
-                                        <label className="form-label" htmlFor="ldSource">{t('ld_f_concern_source')}</label>
-                                        <input
-                                            id="ldSource"
+                                            id="ldOtherName"
                                             className="form-input"
                                             type="text"
-                                            placeholder={t('ld_f_concern_source_ph')}
-                                            value={details.concernSource}
-                                            onChange={(e) => setDetail('concernSource', e.target.value)}
+                                            placeholder={t('ld_r_name_ph')}
+                                            value={otherRecipientName}
+                                            onChange={(e) => setOtherRecipientName(e.target.value)}
                                         />
                                     </div>
                                 )}
-                            </div>
+                                <div className="form-group">
+                                    <label className="form-label" htmlFor="ldAddress">{t('ld_r_address')}</label>
+                                    <textarea
+                                        id="ldAddress"
+                                        className="form-textarea"
+                                        rows={2}
+                                        placeholder={t('ld_r_address_ph')}
+                                        value={recipientAddress}
+                                        onChange={(e) => setRecipientAddress(e.target.value)}
+                                    />
+                                </div>
+                            </section>
 
-                            <div className="form-group">
-                                <label className="form-label" htmlFor="ldDesc">{t(`ld_f_desc_${selectedType}`)}</label>
-                                <textarea
-                                    id="ldDesc"
-                                    className="form-textarea"
-                                    rows={3}
-                                    placeholder={t(`ld_f_desc_${selectedType}_ph`)}
-                                    value={details.description}
-                                    onChange={(e) => setDetail('description', e.target.value)}
-                                />
-                            </div>
+                            {/* Step 3 */}
+                            <section className="ld-step">
+                                <h2 className="ld-step-title"><span className="ld-step-num">3</span>{t('ld_step_details')}</h2>
 
-                            <div className="form-group">
-                                <label className="form-label" htmlFor="ldExtra">{t('ld_f_extra')}</label>
-                                <textarea
-                                    id="ldExtra"
-                                    className="form-textarea"
-                                    rows={2}
-                                    placeholder={t('ld_f_extra_ph')}
-                                    value={details.extra}
-                                    onChange={(e) => setDetail('extra', e.target.value)}
-                                />
-                            </div>
-                        </section>
+                                {(selectedType === 'delay' || selectedType === 'defect') && (
+                                    <div className="form-group">
+                                        <label className="form-label" htmlFor="ldCompany">
+                                            {selectedType === 'delay' ? t('ld_f_company') : t('ld_f_defect_company')}
+                                        </label>
+                                        <select
+                                            id="ldCompany"
+                                            className="form-input"
+                                            value={details.contractorIdx}
+                                            onChange={(e) => setDetail('contractorIdx', e.target.value)}
+                                        >
+                                            <option value="">{t('ld_f_company_none')}</option>
+                                            {contractors.map((c, i) => (
+                                                <option key={i} value={String(i)}>
+                                                    {c.name}{c.trade ? ` (${c.trade})` : ''}
+                                                </option>
+                                            ))}
+                                        </select>
+                                        {contractors.length === 0 && (
+                                            <span className="ld-field-hint">{t('ld_f_no_contractors')}</span>
+                                        )}
+                                    </div>
+                                )}
+
+                                {selectedType === 'delay' && selectedContractor && (
+                                    <div className="ld-staffing">
+                                        <div className="ld-staffing-item">
+                                            <span className="ld-staffing-label">{t('ld_f_required')}</span>
+                                            <span className="ld-staffing-value">
+                                                {selectedContractor.required_workers ?? '–'}
+                                            </span>
+                                        </div>
+                                        <div className="ld-staffing-item">
+                                            <label className="ld-staffing-label" htmlFor="ldPresent">{t('ld_f_present')}</label>
+                                            <input
+                                                id="ldPresent"
+                                                className="form-input ld-staffing-input"
+                                                type="number"
+                                                min={0}
+                                                placeholder="0"
+                                                value={details.presentWorkers}
+                                                onChange={(e) => setDetail('presentWorkers', e.target.value)}
+                                            />
+                                        </div>
+                                        {selectedContractor.phone && (
+                                            <a className="ld-call-btn" href={`tel:${selectedContractor.phone.replace(/\s/g, '')}`}>
+                                                {t('ld_f_call')} {selectedContractor.phone}
+                                            </a>
+                                        )}
+                                    </div>
+                                )}
+
+                                <div className="ld-fields-grid">
+                                    {selectedType === 'delay' && (
+                                        <div className="form-group">
+                                            <label className="form-label" htmlFor="ldSince">{t('ld_f_since')}</label>
+                                            <input
+                                                id="ldSince"
+                                                className="form-input"
+                                                type="datetime-local"
+                                                value={details.since}
+                                                onChange={(e) => setDetail('since', e.target.value)}
+                                            />
+                                        </div>
+                                    )}
+
+                                    <div className="form-group">
+                                        <label className="form-label" htmlFor="ldArea">
+                                            {selectedType === 'defect' ? t('ld_f_room') : t('ld_f_area')}
+                                        </label>
+                                        <input
+                                            id="ldArea"
+                                            className="form-input"
+                                            type="text"
+                                            placeholder={selectedType === 'defect' ? t('ld_f_room_ph') : t('ld_f_area_ph')}
+                                            value={details.area}
+                                            onChange={(e) => setDetail('area', e.target.value)}
+                                        />
+                                    </div>
+
+                                    {selectedType === 'defect' && (
+                                        <div className="form-group">
+                                            <label className="form-label" htmlFor="ldDeadline">{t('ld_f_deadline')}</label>
+                                            <input
+                                                id="ldDeadline"
+                                                className="form-input"
+                                                type="date"
+                                                value={details.deadline}
+                                                onChange={(e) => setDetail('deadline', e.target.value)}
+                                            />
+                                        </div>
+                                    )}
+
+                                    {selectedType === 'concern' && (
+                                        <div className="form-group">
+                                            <label className="form-label" htmlFor="ldSource">{t('ld_f_concern_source')}</label>
+                                            <input
+                                                id="ldSource"
+                                                className="form-input"
+                                                type="text"
+                                                placeholder={t('ld_f_concern_source_ph')}
+                                                value={details.concernSource}
+                                                onChange={(e) => setDetail('concernSource', e.target.value)}
+                                            />
+                                        </div>
+                                    )}
+                                </div>
+
+                                <div className="form-group">
+                                    <label className="form-label" htmlFor="ldDesc">{t(`ld_f_desc_${selectedType}`)}</label>
+                                    <textarea
+                                        id="ldDesc"
+                                        className="form-textarea"
+                                        rows={3}
+                                        placeholder={t(`ld_f_desc_${selectedType}_ph`)}
+                                        value={details.description}
+                                        onChange={(e) => setDetail('description', e.target.value)}
+                                    />
+                                </div>
+
+                                <div className="form-group">
+                                    <label className="form-label" htmlFor="ldExtra">{t('ld_f_extra')}</label>
+                                    <textarea
+                                        id="ldExtra"
+                                        className="form-textarea"
+                                        rows={2}
+                                        placeholder={t('ld_f_extra_ph')}
+                                        value={details.extra}
+                                        onChange={(e) => setDetail('extra', e.target.value)}
+                                    />
+                                </div>
+                            </section>
+                        </fieldset>
 
                         {/* VOB reminder */}
                         <div className={`ld-vob-box ${activeProject.vob_b_agreed === false ? 'warn' : ''}`}>
@@ -989,20 +1490,35 @@ export const LetterDrafts: React.FC = () => {
                             <div>
                                 <strong>{t('ld_vob_title')}</strong>
                                 {activeProject.vob_b_agreed === false && <p>{t('ld_vob_not_agreed')}</p>}
-                                <p>{vobNotes || t('ld_vob_none')}</p>
+                                {vobNotes.length > 0
+                                    ? vobNotes.map((n, i) => <p key={i}>{n}</p>)
+                                    : <p>{t('ld_vob_none')}</p>}
                             </div>
                         </div>
 
-                        <button
-                            type="button"
-                            className="btn btn-primary ld-generate-btn"
-                            onClick={handleRegenerate}
-                        >
-                            {touched ? <RotateCcw size={18}/> : <Sparkles size={18}/>}
-                            <span>{touched ? t('ld_btn_recreate') : t('ld_btn_create')}</span>
-                        </button>
+                        <div className="ld-generate-row">
+                            <button
+                                type="button"
+                                className="btn btn-primary ld-generate-btn"
+                                onClick={handleRegenerate}
+                                disabled={locked}
+                            >
+                                {touched ? <RotateCcw size={18}/> : <Sparkles size={18}/>}
+                                <span>{touched ? t('ld_btn_recreate') : t('ld_btn_create')}</span>
+                            </button>
+                            <button
+                                type="button"
+                                className="btn btn-secondary ld-ai-btn"
+                                onClick={handleAiDraft}
+                                disabled={locked || busy !== null || serverOnline === false}
+                                title={serverOnline === false ? t('ld_server_offline') : t('ld_btn_ai_hint')}
+                            >
+                                <Wand2 size={16}/>
+                                <span>{busy === 'ai' ? t('ld_busy') : t('ld_btn_ai')}</span>
+                            </button>
+                        </div>
                         <span className="ld-field-hint ld-center">
-                            {touched ? t('ld_hint_touched') : t('ld_hint_live')}
+                            {locked ? t('ld_locked_short') : touched ? t('ld_hint_touched') : t('ld_hint_live')}
                         </span>
                     </div>
 
@@ -1012,19 +1528,59 @@ export const LetterDrafts: React.FC = () => {
                             <div className="ld-toolbar-title">
                                 <Edit3 size={16} color="var(--color-primary)"/>
                                 <span>{t('ld_preview')}</span>
+                                <span className={`ld-status-pill ${statusClass(status)}`}>{statusLabel(status)}</span>
                             </div>
-                            <label className={`ld-status-toggle ${status === 'Geprüft' ? 'checked' : ''}`}>
-                                <input
-                                    type="checkbox"
-                                    checked={status === 'Geprüft'}
-                                    onChange={(e) => setStatus(e.target.checked ? 'Geprüft' : 'Entwurf')}
-                                />
-                                <span>{t('ld_mark_checked')}</span>
-                            </label>
+                            <div className="ld-toolbar-right">
+                                {serverOnline === false && (
+                                    <span className="ld-offline" title={t('ld_server_offline')}>
+                                        <CloudOff size={14}/>
+                                        <span>{t('ld_offline_short')}</span>
+                                    </span>
+                                )}
+                                <button
+                                    type="button"
+                                    className="doc-btn"
+                                    onClick={handleReview}
+                                    disabled={busy !== null || serverOnline === false}
+                                    title={serverOnline === false ? t('ld_server_offline') : t('ld_btn_review_hint')}
+                                >
+                                    <Sparkles size={14}/>
+                                    <span>{busy === 'review' ? t('ld_busy') : t('ld_btn_review')}</span>
+                                </button>
+                            </div>
                         </div>
 
+                        {errorMessage && (
+                            <div className="ld-message error">
+                                <AlertTriangle size={15}/>
+                                <span>{errorMessage}</span>
+                                <button type="button" className="ld-message-close" aria-label="Schließen"
+                                        onClick={() => setErrorMessage(null)}>
+                                    <X size={14}/>
+                                </button>
+                            </div>
+                        )}
+
+                        {reviewHints.length > 0 && (
+                            <div className="ld-message review">
+                                <Sparkles size={15}/>
+                                <div>
+                                    <strong>{t('ld_review_title')}</strong>
+                                    <ul>
+                                        {reviewHints.map((h, i) => <li key={i}>{h}</li>)}
+                                    </ul>
+                                </div>
+                                <button type="button" className="ld-message-close" aria-label="Schließen"
+                                        onClick={() => setReviewHints([])}>
+                                    <X size={14}/>
+                                </button>
+                            </div>
+                        )}
+
                         <div className="paper-content letter-sheet">
-                            <span className="ld-draft-stamp">{t('ld_stamp')}</span>
+                            <span className="ld-draft-stamp">
+                                {status === 'Entwurf' ? t('ld_stamp') : statusLabel(status).toUpperCase()}
+                            </span>
 
                             <div className="ld-sender-line">
                                 {companyName} · {senderName}, {senderRole}
@@ -1047,6 +1603,7 @@ export const LetterDrafts: React.FC = () => {
                                 className="letter-subject"
                                 aria-label={t('ld_subject')}
                                 value={subject}
+                                readOnly={locked}
                                 onChange={(e) => {
                                     setSubject(e.target.value);
                                     setTouched(true);
@@ -1057,6 +1614,7 @@ export const LetterDrafts: React.FC = () => {
                                 className="letter-body-editable"
                                 aria-label={t('ld_preview')}
                                 value={letterBody}
+                                readOnly={locked}
                                 onChange={(e) => {
                                     setLetterBody(e.target.value);
                                     setTouched(true);
@@ -1072,20 +1630,38 @@ export const LetterDrafts: React.FC = () => {
                                     <Copy size={14}/>
                                     <span>{copySuccess ? t('btn_copied') : t('btn_copy')}</span>
                                 </button>
-                                <button className="doc-btn" onClick={() => exportWord(currentExportData())}
+                                <button className="doc-btn" onClick={handleWord} disabled={busy !== null}
                                         title={t('btn_word_export')}>
                                     <Download size={14}/>
-                                    <span>{t('btn_word_export')}</span>
+                                    <span>Word</span>
                                 </button>
-                                <button className="doc-btn" onClick={() => window.print()} title={t('btn_print')}>
+                                <button className="doc-btn" onClick={handlePdf} disabled={busy !== null}
+                                        title={t('ld_btn_pdf_hint')}>
                                     <Printer size={14}/>
-                                    <span>{t('btn_print')}</span>
+                                    <span>PDF</span>
                                 </button>
                             </div>
-                            <button className="btn btn-primary ld-save-btn" onClick={handleSave}>
-                                <Save size={15}/>
-                                <span>{t('btn_save')}</span>
-                            </button>
+                            <div className="ld-actions-right">
+                                {!locked && (
+                                    <button
+                                        className="btn btn-secondary ld-approve-btn"
+                                        onClick={handleApprove}
+                                        disabled={busy !== null}
+                                        title={t('ld_btn_approve_hint')}
+                                    >
+                                        <CheckSquare size={15}/>
+                                        <span>{busy === 'approve' ? t('ld_busy') : t('ld_btn_approve')}</span>
+                                    </button>
+                                )}
+                                <button
+                                    className="btn btn-primary ld-save-btn"
+                                    onClick={handleSave}
+                                    disabled={locked || busy !== null}
+                                >
+                                    <Save size={15}/>
+                                    <span>{busy === 'save' ? t('ld_busy') : t('btn_save')}</span>
+                                </button>
+                            </div>
                         </div>
 
                         <div className="legal-notice-banner">
@@ -1127,7 +1703,8 @@ export const LetterDrafts: React.FC = () => {
                         >
                             <option value="all">{t('ld_filter_all_status')}</option>
                             <option value="Entwurf">{t('ld_status_draft')}</option>
-                            <option value="Geprüft">{t('ld_status_checked')}</option>
+                            <option value="Freigegeben">{t('ld_status_approved')}</option>
+                            <option value="Exportiert">{t('ld_status_exported')}</option>
                         </select>
                         <select
                             className="form-input ld-filter-select"
@@ -1171,12 +1748,28 @@ export const LetterDrafts: React.FC = () => {
                                 />
                             </div>
                         )}
+                        <button
+                            type="button"
+                            className="ld-icon-btn"
+                            title={t('ld_refresh')}
+                            aria-label={t('ld_refresh')}
+                            onClick={() => loadNotices()}
+                            disabled={isLoadingNotices}
+                        >
+                            <RefreshCw size={14} className={isLoadingNotices ? 'ld-spin' : ''}/>
+                        </button>
                     </div>
 
-                    {savedLetters.length > 0 && (
+                    {(savedLetters.length > 0 || serverOnline === false) && (
                         <div className="ld-result-bar">
-                            <span>
+                            <span className="ld-result-count">
                                 {filteredLetters.length} {t('ld_of')} {savedLetters.length} {t('ld_letters')}
+                                {serverOnline === false && (
+                                    <span className="ld-offline">
+                                        <CloudOff size={13}/>
+                                        <span>{t('ld_list_offline')}</span>
+                                    </span>
+                                )}
                             </span>
                             {filtersActive && (
                                 <button type="button" className="ld-link-btn ld-reset" onClick={resetFilters}>
@@ -1244,7 +1837,12 @@ export const LetterDrafts: React.FC = () => {
                                         </td>
                                         <td className="ld-subject-cell" title={l.subject}>
                                             <span className="ld-subject-text">{l.subject}</span>
-                                            <span className="ld-subject-project ld-ellipsis">{l.project}</span>
+                                            <span className="ld-subject-project ld-ellipsis">
+                                                {l.source === 'server'
+                                                    ? <Cloud size={11} className="ld-source-icon"/>
+                                                    : <CloudOff size={11} className="ld-source-icon"/>}
+                                                {l.project}
+                                            </span>
                                         </td>
                                         <td title={l.recipientName}>
                                             <span className="ld-ellipsis">{l.recipientName || '–'}</span>
@@ -1254,8 +1852,8 @@ export const LetterDrafts: React.FC = () => {
                                             <span className="ld-date-time">{fmtTime(l.updatedIso)}</span>
                                         </td>
                                         <td>
-                                            <span className={`ld-status-pill ${l.status === 'Geprüft' ? 'checked' : ''}`}>
-                                                {l.status === 'Geprüft' ? t('ld_status_checked') : t('ld_status_draft')}
+                                            <span className={`ld-status-pill ${statusClass(l.status)}`}>
+                                                {statusLabel(l.status)}
                                             </span>
                                         </td>
                                         <td className="ld-actions-cell">
@@ -1266,34 +1864,24 @@ export const LetterDrafts: React.FC = () => {
                                                     aria-label={t('btn_word_export')}
                                                     onClick={(e) => {
                                                         e.stopPropagation();
-                                                        exportWord({
-                                                            companyName,
-                                                            senderName,
-                                                            senderRole,
-                                                            recipientName: l.recipientName,
-                                                            recipientAddress: l.recipientAddress,
-                                                            projectName: l.project,
-                                                            projectNumber: l.projectNumber,
-                                                            date: fmtDate(l.updatedIso),
-                                                            subject: l.subject,
-                                                            body: l.body,
-                                                            type: l.type
-                                                        });
+                                                        exportListLetter(l);
                                                     }}
                                                 >
                                                     <Download size={14}/>
                                                 </button>
-                                                <button
-                                                    className="ld-icon-btn danger"
-                                                    title={t('ld_delete')}
-                                                    aria-label={t('ld_delete')}
-                                                    onClick={(e) => {
-                                                        e.stopPropagation();
-                                                        handleDelete(l);
-                                                    }}
-                                                >
-                                                    <Trash2 size={14}/>
-                                                </button>
+                                                {l.source === 'local' && (
+                                                    <button
+                                                        className="ld-icon-btn danger"
+                                                        title={t('ld_delete')}
+                                                        aria-label={t('ld_delete')}
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            handleDelete(l);
+                                                        }}
+                                                    >
+                                                        <Trash2 size={14}/>
+                                                    </button>
+                                                )}
                                             </div>
                                         </td>
                                     </tr>

@@ -17,7 +17,8 @@ import {
     Phone,
     X,
     ShieldCheck,
-    ShieldOff
+    ShieldOff,
+    Pencil
 } from 'lucide-react';
 import {useProjects, Project, Contractor} from '@/context/ProjectContext';
 import {useLanguage} from '../context/LanguageContext';
@@ -125,9 +126,11 @@ const formatDate = (iso?: string) => {
 
 export const Projects: React.FC = () => {
     const {t} = useLanguage();
-    const {projects, activeProjectId, setActiveProjectId, addProject, deleteProject} = useProjects();
+    const {projects, activeProjectId, setActiveProjectId, addProject, updateProject, deleteProject} = useProjects();
 
     const [showCreateForm, setShowCreateForm] = useState(false);
+    // null = neues Projekt anlegen, sonst ID des Projekts, das bearbeitet wird (PATCH)
+    const [editingId, setEditingId] = useState<number | null>(null);
     const [formData, setFormData] = useState<ProjectForm>(EMPTY_FORM);
 
     const set = <K extends keyof ProjectForm>(key: K, value: ProjectForm[K]) =>
@@ -147,7 +150,41 @@ export const Projects: React.FC = () => {
 
     const closeForm = () => {
         setFormData(EMPTY_FORM);
+        setEditingId(null);
         setShowCreateForm(false);
+    };
+
+    const numToField = (n?: number | null) => (n == null ? '' : String(n));
+
+    const startEdit = (proj: Project) => {
+        setFormData({
+            name: proj.name,
+            number: proj.number ?? '',
+            client: proj.client ?? '',
+            location: proj.location ?? '',
+            phase: proj.phase || 'Rohbau',
+            status: proj.status,
+            description: proj.description ?? '',
+            construction_volume_eur: numToField(proj.construction_volume_eur),
+            budget_eur: numToField(proj.budget_eur),
+            gross_floor_area_m2: numToField(proj.gross_floor_area_m2),
+            gross_volume_m3: numToField(proj.gross_volume_m3),
+            construction_type: proj.construction_type ?? '',
+            start_date: proj.start_date ?? '',
+            end_date: proj.end_date ?? '',
+            contract_type: proj.contract_type || 'Einheitspreisvertrag',
+            vob_b_agreed: proj.vob_b_agreed ?? true,
+            vob_notes: proj.vob_notes ?? '',
+            contractors: (proj.contractors ?? []).map((c) => ({
+                name: c.name,
+                trade: c.trade,
+                required_workers: numToField(c.required_workers),
+                phone: c.phone
+            }))
+        });
+        setEditingId(proj.id);
+        setShowCreateForm(true);
+        window.scrollTo({top: 0, behavior: 'smooth'});
     };
 
     const handleCreate = async (e: React.FormEvent) => {
@@ -164,7 +201,7 @@ export const Projects: React.FC = () => {
             }));
 
         try {
-            await addProject({
+            const payload: Omit<Project, 'id'> = {
                 name: formData.name.trim(),
                 number:
                     formData.number.trim() ||
@@ -185,7 +222,12 @@ export const Projects: React.FC = () => {
                 vob_b_agreed: formData.vob_b_agreed,
                 vob_notes: formData.vob_notes.trim(),
                 contractors
-            });
+            };
+            if (editingId !== null) {
+                await updateProject(editingId, payload);
+            } else {
+                await addProject(payload);
+            }
             closeForm();
         } catch (err) {
             console.error(err);
@@ -217,7 +259,7 @@ export const Projects: React.FC = () => {
                     <div className="create-project-header">
                         <h2 className="create-project-title">
                             <Building2 size={20} color="var(--color-primary)"/>
-                            <span>{t('proj_btn_create')}</span>
+                            <span>{editingId !== null ? t('proj_btn_edit_title') : t('proj_btn_create')}</span>
                         </h2>
                     </div>
 
@@ -696,6 +738,16 @@ export const Projects: React.FC = () => {
                                     </button>
                                 )}
 
+                                <div className="project-card-actions">
+                                <button
+                                    className="btn btn-secondary"
+                                    style={{padding: '6px 10px', fontSize: '12px'}}
+                                    title={t('proj_btn_edit')}
+                                    aria-label={t('proj_btn_edit')}
+                                    onClick={() => startEdit(proj)}
+                                >
+                                    <Pencil size={14}/>
+                                </button>
                                 <button
                                     className="btn btn-danger"
                                     style={{padding: '6px 10px', fontSize: '12px'}}
@@ -713,6 +765,7 @@ export const Projects: React.FC = () => {
                                 >
                                     <Trash2 size={14}/>
                                 </button>
+                                </div>
                             </div>
                         </div>
                     );

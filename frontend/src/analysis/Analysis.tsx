@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   TrendingUp,
@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import { useProjects } from '../context/ProjectContext';
 import { useLanguage } from '../context/LanguageContext';
+import { api, PlanAnalysis } from '../services/api';
 import '@frontend/src/index.css';
 import './Analysis.css';
 
@@ -51,6 +52,7 @@ export const Analysis: React.FC = () => {
   const { activeProject } = useProjects();
   const [selectedPeriod, setSelectedPeriod] = useState<'kw47' | 'kw46' | 'all'>('kw47');
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [backendAnalysis, setBackendAnalysis] = useState<PlanAnalysis | null>(null);
 
   // Data dynamically configured per active project
   const getProjectAnalysisData = () => {
@@ -327,13 +329,33 @@ export const Analysis: React.FC = () => {
     }
   };
 
-  const analysisData = getProjectAnalysisData();
+  const fetchAnalysis = async () => {
+    setIsRefreshing(true);
+    try {
+      const periodParam = selectedPeriod === 'all' ? 'all' : 'week';
+      const data = await api.getAnalysis(Number(activeProject.id), periodParam);
+      if (data && data.workPackages && data.workPackages.length > 0) {
+        setBackendAnalysis(data);
+      } else {
+        setBackendAnalysis(null);
+      }
+    } catch (err) {
+      console.warn('Backend /api/analysis Fallback:', err);
+      setBackendAnalysis(null);
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchAnalysis();
+  }, [activeProject.id, selectedPeriod]);
+
+  const fallbackData = getProjectAnalysisData();
+  const analysisData = backendAnalysis || fallbackData;
 
   const handleRefreshAnalysis = () => {
-    setIsRefreshing(true);
-    setTimeout(() => {
-      setIsRefreshing(false);
-    }, 900);
+    fetchAnalysis();
   };
 
   const handleExportDoc = () => {
@@ -573,7 +595,7 @@ ${analysisData.deviations.map((d) => `<div><h3>${d.title} (${d.sourceReport}, ${
                     type="button"
                     className="btn btn-primary"
                     style={{ fontSize: '12px', padding: '6px 12px', backgroundColor: dev.severity === 'critical' ? '#dc2626' : '#b45309', whiteSpace: 'nowrap' }}
-                    onClick={() => navigate('/drafts')}
+                    onClick={() => navigate('/drafts', { state: { type: dev.draftType, keywords: `${dev.title}. Ursache: ${dev.cause}. Auswirkung: ${dev.impact} (Quelle: ${dev.sourceReport})` } })}
                     title={t('drafts_btn_generate')}
                   >
                     <Mail size={13} />

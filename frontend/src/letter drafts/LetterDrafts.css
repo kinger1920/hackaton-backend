@@ -916,54 +916,179 @@
     font-size: 14px;
 }
 
+
 /* --------------------------------------------------------------------------
-   Print: only the letter sheet
+   Backend integration: lock, messages, AI / approval buttons
+   -------------------------------------------------------------------------- */
+.ld-fieldset {
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+    min-width: 0;
+    margin: 0;
+    padding: 0;
+    border: none;
+}
+
+.ld-fieldset:disabled {
+    opacity: 0.65;
+}
+
+.ld-locked-banner {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 9px 12px;
+    border-radius: var(--radius-md);
+    background-color: var(--color-success-light);
+    border: 1px solid var(--color-success-border);
+    color: var(--color-success-dark);
+    font-size: 13px;
+    font-weight: 600;
+}
+
+.ld-generate-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
+    gap: 10px;
+}
+
+.ld-ai-btn {
+    padding: 13px 10px;
+    font-size: 14px;
+}
+
+.ld-toolbar-right,
+.ld-actions-right {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.ld-approve-btn {
+    padding: 8px 14px;
+    font-size: 14px;
+    color: var(--color-success-dark);
+    border-color: var(--color-success-border);
+}
+
+.ld-approve-btn:hover:not(:disabled) {
+    background-color: var(--color-success-light);
+}
+
+.drafts-container .doc-btn:disabled,
+.ld-icon-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.ld-offline {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    margin-left: 8px;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--color-warning-dark);
+}
+
+.ld-message {
+    position: relative;
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    margin: 12px 18px 0;
+    padding: 10px 36px 10px 12px;
+    border-radius: var(--radius-md);
+    font-size: 13px;
+    line-height: 1.5;
+}
+
+.ld-message svg {
+    flex-shrink: 0;
+    margin-top: 2px;
+}
+
+.ld-message.error {
+    background-color: var(--color-danger-light);
+    border: 1px solid var(--color-danger-border);
+    color: #991b1b;
+}
+
+.ld-message.review {
+    background-color: #eef2ff;
+    border: 1px solid #c7d2fe;
+    color: #3730a3;
+}
+
+.ld-message ul {
+    margin: 4px 0 0 16px;
+    padding: 0;
+}
+
+.ld-message-close {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    display: inline-flex;
+    padding: 2px;
+    border: none;
+    background: none;
+    color: inherit;
+    opacity: 0.6;
+    cursor: pointer;
+}
+
+.ld-message-close:hover {
+    opacity: 1;
+}
+
+/* Status pills: Entwurf (orange), Freigegeben (green), Exportiert (blue) */
+.ld-status-pill.approved {
+    background-color: var(--color-success-light);
+    color: var(--color-success-dark);
+}
+
+.ld-status-pill.exported {
+    background-color: var(--color-primary-light);
+    color: var(--color-primary);
+}
+
+.ld-result-count {
+    display: inline-flex;
+    align-items: center;
+}
+
+.ld-source-icon {
+    display: inline-block;
+    margin-right: 4px;
+    vertical-align: -1px;
+    color: var(--color-slate-400);
+}
+
+.ld-spin {
+    animation: ld-spin 1s linear infinite;
+}
+
+@keyframes ld-spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+/* --------------------------------------------------------------------------
+   Print: only the letter sheet.
+   Active while <body> carries "print-letter-only" (set by printLetter in LetterDrafts.tsx),
+   so printing other pages is unaffected. Hides everything that neither is, contains
+   nor sits inside the letter sheet – no blank extra pages.
    -------------------------------------------------------------------------- */
 @media print {
-    body * {
-        visibility: hidden;
-    }
-
-    .letter-sheet,
-    .letter-sheet * {
-        visibility: visible;
-    }
-
-    .letter-sheet {
-        position: absolute;
-        top: 0;
-        left: 0;
-        width: 100%;
-        padding: 20mm 20mm 15mm 25mm;
-    }
-
-    .letter-body-editable {
-        display: none;
-    }
-
-    .ld-print-body {
-        display: block;
-    }
-
-    .letter-subject {
-        border: none;
-        padding: 0;
-    }
-}
-
-/* Briefdruck (Fallback ohne Server-PDF): nur das Schreiben drucken, nicht die ganze Seite.
-   Greift nur, solange <body> die Klasse print-letter-only trägt (printLetterOnly in LetterDrafts.tsx). */
-.letter-body-print {
-    display: none;
-}
-
-@media print {
-    /* Alles ausblenden, was das Schreiben weder ist, noch enthält, noch darin liegt. */
-    body.print-letter-only *:not(:has(.paper-content)):not(.paper-content):not(.paper-content *) {
+    body.print-letter-only *:not(:has(.letter-sheet)):not(.letter-sheet):not(.letter-sheet *) {
         display: none !important;
     }
-    /* Container rund um das Schreiben: keine Scrollbereiche, Abstände oder Rahmen im Druck. */
-    body.print-letter-only *:has(.paper-content) {
+
+    body.print-letter-only *:has(.letter-sheet) {
         overflow: visible !important;
         height: auto !important;
         max-height: none !important;
@@ -972,16 +1097,23 @@
         border: none !important;
         box-shadow: none !important;
         background: #ffffff !important;
+        position: static !important;
     }
-    body.print-letter-only .paper-content {
+
+    body.print-letter-only .letter-sheet {
         padding: 0;
-        min-height: 0;
     }
+
     body.print-letter-only .letter-body-editable {
         display: none !important;
     }
-    body.print-letter-only .letter-body-print {
+
+    body.print-letter-only .ld-print-body {
         display: block;
-        white-space: pre-wrap;
+    }
+
+    body.print-letter-only .letter-subject {
+        border: none;
+        padding: 0;
     }
 }
