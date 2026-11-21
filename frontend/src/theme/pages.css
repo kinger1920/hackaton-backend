@@ -63,8 +63,7 @@
    -------------------------------------------------------------------------- */
 :root .reports-header-card,
 :root .capture-hero,
-:root .welcome-hero,
-:root .profile-hero-card {
+:root .welcome-hero {
     padding: 0 0 4px 0;
     margin-bottom: 0;
     background: transparent;
@@ -202,10 +201,6 @@
     stroke: var(--color-primary);
 }
 
-:root .section-desc {
-    font-size: 13px;
-    color: var(--text-muted);
-}
 
 /* --------------------------------------------------------------------------
    6. Small section labels (like the uppercase form-section titles)
@@ -294,8 +289,7 @@
    8. Banners (Dashboard "Hallo …", Profile) → plain page headers like Briefentwürfe
       (the box itself is removed in section 2; here only the text inside)
    -------------------------------------------------------------------------- */
-:root .welcome-title,
-:root .profile-hero-name {
+:root .welcome-title {
     margin: 0 0 4px 0;
     font-size: 24px;
     font-weight: 800;
@@ -304,27 +298,15 @@
     color: var(--text-main);
 }
 
-:root .profile-hero-name::after {
-    content: '';
-    display: block;
-    width: 44px;
-    height: 4px;
-    margin-top: 8px;
-    border-radius: 2px;
-    background-color: var(--color-primary-fill);
-}
 
-:root .welcome-desc,
-:root .profile-hero-role {
+:root .welcome-desc {
     margin-top: 6px;
     font-size: 14px;
     color: var(--text-muted);
 }
 
 /* no icon in the profile subtitle */
-:root .profile-hero-role svg {
-    display: none;
-}
+
 
 /* the small numbers next to "Hallo …" stay as compact boxes, like the KPI tiles */
 :root .hero-stat-card {
@@ -343,22 +325,7 @@
     color: var(--text-muted);
 }
 
-:root .profile-hero-tag {
-    background: var(--color-slate-100);
-    color: var(--color-slate-700);
-    border: 1px solid var(--border-light);
-    backdrop-filter: none;
-}
 
-:root .profile-hero-tag svg {
-    display: none;
-}
-
-:root .profile-avatar-large {
-    background-color: var(--color-primary-fill);
-    color: var(--color-on-primary);
-    border: 3px solid var(--color-primary-light);
-}
 
 /* --------------------------------------------------------------------------
    9. Terminplaner (tp-…) – same look as the other pages

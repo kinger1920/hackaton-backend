@@ -22,7 +22,7 @@ const srcDir = join(root, 'src');
 const outFile = join(srcDir, 'theme', 'theme-overrides.generated.css');
 
 // Selectors that must keep their colours (letters are white paper in both themes)
-const SKIP_SELECTOR = /paper|letter-sheet|letter-body|letter-subject|ld-draft-stamp|ld-print|legal-notice|print/i;
+const SKIP_SELECTOR = /paper|letter-sheet|letter-body|letter-subject|ld-draft-stamp|ld-print|print/i;
 const SKIP_FILES = new Set(['index.css', 'theme.css', 'theme-overrides.generated.css']);
 
 const norm = (v) => v.trim().toLowerCase().replace(/\s+/g, ' ').replace(/\s*!important$/, '');
@@ -51,7 +51,10 @@ const BG = {
     '#fffbeb': 'var(--color-warning-light)', '#fef3c7': 'var(--color-warning-light)', '#fff7ed': 'var(--color-warning-light)',
     '#fef2f2': 'var(--color-danger-light)', '#fee2e2': 'var(--color-danger-light)',
     '#f0fdf4': 'var(--color-success-light)', '#dcfce7': 'var(--color-success-light)', '#ecfdf5': 'var(--color-success-light)',
-    '#e0f2fe': 'var(--color-info-light)', '#f0f9ff': 'var(--color-info-light)'
+    '#e0f2fe': 'var(--color-info-light)', '#f0f9ff': 'var(--color-info-light)',
+    // stronger pastel fills (e.g. Gantt bars) → the matching tinted border colour, still visible on dark
+    '#bfdbfe': 'var(--color-primary-border)', '#fde68a': 'var(--color-warning-border)',
+    '#fecaca': 'var(--color-danger-border)', '#bbf7d0': 'var(--color-success-border)'
 };
 const TEXT = {
     '#000': 'var(--text-main)', '#000000': 'var(--text-main)', '#111': 'var(--text-main)', '#111111': 'var(--text-main)',
@@ -212,6 +215,15 @@ for (const file of cssFiles(srcDir)) {
         for (const [k, raw] of d) {
             const v = norm(raw);
             if (k === 'background' || k === 'background-color') {
+                // color-mix(in srgb, var(--c) 7%, white) → mix with the dark surface instead
+                // (and a bit more colour, otherwise the tint is invisible on dark)
+                if (/color-mix\(/.test(v) && /\bwhite\b|#fff(fff)?\b/.test(v)) {
+                    const mixed = v
+                        .replace(/\bwhite\b|#ffffff\b|#fff\b/g, 'var(--bg-surface)')
+                        .replace(/(\d+(?:\.\d+)?)%/g, (_, p) => `${Math.min(35, Math.round(Number(p) * 2.5))}%`);
+                    dk.push(`background: ${mixed}`);
+                    continue;
+                }
                 if (/gradient/.test(v)) {
                     // dark navy / brand-blue hero banners → black construction banner (white text stays)
                     if (/#1e3a8a|#2563eb|#1d4ed8|#3b82f6|--color-primary\)/.test(v) && !/90deg/.test(v)) {
