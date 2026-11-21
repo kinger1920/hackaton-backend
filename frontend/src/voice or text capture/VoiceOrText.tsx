@@ -661,7 +661,7 @@ Kategorisierte Stichpunkte:
                   type="button"
                   className="btn btn-primary"
                   style={{ fontSize: '11px', padding: '4px 8px' }}
-                  onClick={() => navigate('/drafts')}
+                  onClick={() => navigate('/drafts', { state: { noticeId: lastDraft.notice_id } })}
                 >
                   Zum Entwurf →
                 </button>
@@ -769,7 +769,7 @@ Kategorisierte Stichpunkte:
                 <button
                   type="button"
                   style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '11px', color: '#b91c1c', fontWeight: 600 }}
-                  onClick={() => navigate('/drafts')}
+                  onClick={() => navigate('/drafts', { state: { type: 'delay', keywords: categories.hindrance.join('. ') } })}
                 >
                   → {t('btn_generate')}
                 </button>
@@ -963,7 +963,13 @@ Kategorisierte Stichpunkte:
             type="button"
             className="btn btn-secondary"
             style={{ color: '#b45309' }}
-            onClick={() => navigate('/drafts')}
+            onClick={() =>
+              navigate('/drafts', {
+                state: lastDraft?.notice_id
+                  ? { noticeId: lastDraft.notice_id }
+                  : { type: 'delay', keywords: categories.hindrance.join('. ') }
+              })
+            }
             title={t('cap_btn_gen_vob')}
           >
             <Mail size={16} />

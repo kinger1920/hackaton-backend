@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import {
     Sparkles,
     Clock,
@@ -17,7 +18,7 @@ import {
 } from 'lucide-react';
 import { useProjects } from '../context/ProjectContext';
 import { useLanguage } from '../context/LanguageContext';
-import { api, NoticeOut } from '../services/api';
+import { api, DraftNavState, NoticeOut } from '../services/api';
 import '@frontend/src/index.css';
 import './LetterDrafts.css';
 
@@ -88,6 +89,10 @@ const PRESETS: Record<LetterCategory, string[]> = {
 export const LetterDrafts: React.FC = () => {
     const { t } = useLanguage();
   const { activeProject } = useProjects();
+  // Kontext von anderen Seiten ("Entwurf erstellen" in Analyse, Dashboard, Zusammenfassung, ...)
+  const location = useLocation();
+  const navigate = useNavigate();
+  const navState = (location.state as DraftNavState | null) ?? null;
   const userName = localStorage.getItem('userName') || 'Max Mustermann';
   const userProfile = (() => {
     try {
@@ -98,9 +103,9 @@ export const LetterDrafts: React.FC = () => {
   })();
   const companyName = userProfile?.company || 'Baupartner AG & Co. KG';
 
-    const [selectedType, setSelectedType] = useState<LetterCategory>('delay');
+    const [selectedType, setSelectedType] = useState<LetterCategory>(navState?.type ?? 'delay');
     const [recipient, setRecipient] = useState(activeProject.client || 'Städtisches Hochbauamt');
-    const [keywords, setKeywords] = useState('');
+    const [keywords, setKeywords] = useState(navState?.keywords ?? '');
     const [isGenerating, setIsGenerating] = useState(false);
     const [copySuccess, setCopySuccess] = useState(false);
     const [saveSuccess, setSaveSuccess] = useState(false);
@@ -137,18 +142,28 @@ ${userName}
 ${userProfile?.role || 'Bauleiter'} • ${companyName}`);
 
     // Load backend notices for current project
-    const loadNotices = async () => {
+    // autoSelect: beim ersten Laden einen Entwurf öffnen – den gewünschten (preferId) oder den neuesten.
+    const loadNotices = async (opts?: { preferId?: number; autoSelect?: boolean }) => {
         setIsLoadingNotices(true);
         try {
             const notices = await api.listNotices(Number(activeProject.id));
             setBackendNotices(notices);
-            if (notices.length > 0 && !currentNotice) {
-                const first = notices[0];
-                setCurrentNotice(first);
-                setSelectedType(first.type);
-                setSubject(first.subject || '');
-                setLetterBody(first.body || '');
-                if (first.recipient) setRecipient(first.recipient);
+            let pick = opts?.preferId ? notices.find((n) => n.id === opts.preferId) : undefined;
+            if (!pick && opts?.preferId) {
+                // Entwurf gehört evtl. zu einem anderen Projekt → direkt laden
+                try {
+                    pick = await api.getNotice(opts.preferId);
+                } catch {
+                    pick = undefined;
+                }
+            }
+            if (!pick && opts?.autoSelect && notices.length > 0) pick = notices[0];
+            if (pick) {
+                setCurrentNotice(pick);
+                setSelectedType(pick.type);
+                setSubject(pick.subject || '');
+                setLetterBody(pick.body || '');
+                if (pick.recipient) setRecipient(pick.recipient);
             }
         } catch (err) {
             console.warn('Backend listNotices Fallback:', err);
@@ -158,7 +173,17 @@ ${userProfile?.role || 'Bauleiter'} • ${companyName}`);
     };
 
     useEffect(() => {
-        loadNotices();
+        if (navState?.noticeId) {
+            loadNotices({ preferId: navState.noticeId });
+        } else if (navState?.keywords || navState?.type) {
+            // Neuer Entwurf aus Kontext: Typ + Stichworte vorbefüllt, Nutzer startet die KI selbst.
+            setCurrentNotice(null);
+            loadNotices();
+        } else {
+            loadNotices({ autoSelect: !currentNotice });
+        }
+        // Kontext nur einmal anwenden (sonst greift er nach Reload/Projektwechsel erneut)
+        if (navState) navigate(location.pathname, { replace: true, state: null });
     }, [activeProject.id]);
 
     const handleSelectNotice = (n: NoticeOut) => {
@@ -502,7 +527,7 @@ ${userProfile?.role || 'Bauleiter'} • ${companyName}`);
                     type="button"
                     className="doc-btn"
                     style={{ fontSize: '11px', padding: '4px 8px' }}
-                    onClick={loadNotices}
+                    onClick={() => loadNotices()}
                     disabled={isLoadingNotices}
                     title="Aktualisieren"
                 >

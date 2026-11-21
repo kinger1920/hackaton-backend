@@ -1,0 +1,764 @@
+/**
+ * AI Site Manager Assistant - Unified API Client
+ * Connects frontend to FastAPI backend endpoints.
+ */
+
+export const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+
+// Notice Types
+export type NoticeType = 'delay' | 'cost' | 'defect' | 'concern';
+export type FieldSource = 'diktat' | 'ki' | 'regel' | 'nutzer';
+
+export interface SourcedField {
+  value: string;
+  src: FieldSource;
+}
+
+export interface CaptureRequest {
+  text: string;
+  lang?: string;
+  ref_date?: string;
+  ref_time?: string;
+  force_type?: NoticeType;
+  project_id?: number;
+}
+
+export interface NoticeDraft {
+  type: NoticeType;
+  fields: Record<string, SourcedField>;
+  questions: string[];
+  mode: 'ai' | 'offline';
+  site_note_id?: number | null;
+  notice_id?: number | null;
+}
+
+export interface TranscribeResponse {
+  text: string;
+  lang: string;
+}
+
+export interface ReviewResponse {
+  hints: string[];
+  mode: 'ai' | 'offline';
+}
+
+export interface NoticeOut {
+  id: number;
+  project_id: number;
+  type: NoticeType;
+  title: string | null;
+  recipient: string | null;
+  subject: string | null;
+  body: string;
+  legal_disclaimer: string;
+  source_references: string | null;
+  status: 'Entwurf' | 'Freigegeben' | 'Exportiert' | string;
+  created_at: string;
+  updated_at: string;
+  fields: Record<string, SourcedField>;
+  missing_fields: string[];
+  questions: string[];
+  approved_by: string | null;
+  approved_at: string | null;
+}
+
+export interface NoticePatch {
+  fields?: Record<string, string>;
+  recipient?: string;
+  subject?: string;
+  body?: string;
+}
+
+export interface SiteNote {
+  id: number;
+  project_id: number;
+  content: string;
+  category?: string;
+  audio_file_path?: string | null;
+  author?: string;
+  status: string;
+  created_at: string;
+}
+
+export interface SiteNoteCreate {
+  project_id: number;
+  content: string;
+  category?: string;
+  audio_file_path?: string | null;
+  author?: string;
+  status?: string;
+}
+
+export interface ConstructionPlan {
+  id: number;
+  project_id: number;
+  title: string;
+  version?: string;
+  file_path?: string | null;
+  file_name?: string | null;
+  raw_data?: string | null;
+  uploaded_at: string;
+}
+
+export interface ConstructionPlanCreate {
+  project_id: number;
+  title: string;
+  version?: string;
+  file_path?: string | null;
+  file_name?: string | null;
+  raw_data?: string | null;
+}
+
+export interface BackendProject {
+  id: number;
+  name: string;
+  number: string;
+  client: string;
+  location: string;
+  phase: string;
+  status: string;
+  description?: string;
+  start_date?: string;
+  end_date?: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
+// ---- Analysis Types ----
+export interface WorkPackage {
+  id: string;
+  name: string;
+  trade: string;
+  subcontractor: string;
+  planDate: string;
+  actualDate: string;
+  planPercent: number;
+  actualPercent: number;
+  status: 'delayed' | 'warning' | 'ontrack';
+  delayDays: number;
+}
+
+export interface DeviationItem {
+  id: string;
+  severity: 'critical' | 'warning' | 'info';
+  title: string;
+  sourceReport: string;
+  reportDate: string;
+  cause: string;
+  impact: string;
+  vobReference: string;
+  suggestedAction: string;
+  draftType: 'delay' | 'cost' | 'defect';
+}
+
+export interface ManpowerAvg {
+  plan: number;
+  actual: number;
+}
+
+export interface PlanAnalysis {
+  overallDelta: number;
+  spi: number;
+  evaluatedReports: number;
+  criticalAlertsCount: number;
+  lostHours: number;
+  manpowerAvg: ManpowerAvg;
+  workPackages: WorkPackage[];
+  deviations: DeviationItem[];
+  periodFrom: string | null;
+  periodTo: string;
+  refDate: string;
+}
+
+// ---- Dashboard Types (/api/dashboard) ----
+export interface DashboardKpis {
+  delayDays: number;
+  spi: number;
+  criticalAlerts: number;
+  openDrafts: number;
+  workersToday: number | null;
+}
+
+export interface DashboardAlert {
+  severity: 'critical' | 'warning' | 'info';
+  title: string;
+  description: string;
+  draftType: 'delay' | 'cost' | 'defect';
+  source: string;
+}
+
+export interface DashboardData {
+  kpis: DashboardKpis;
+  alerts: DashboardAlert[];
+  progress: WorkPackage[];
+}
+
+// ---- Day Analysis (/api/reports/{date}/analysis) ----
+export interface DayItem {
+  text: string;
+  source: string;
+}
+
+export interface DayAnalysis {
+  date: string;
+  title: string;
+  wentWell: DayItem[];
+  wentBadly: DayItem[];
+  deviations: DeviationItem[];
+  stats: { workers: number | null; plannedWorkers: number | null; hours: number | null; weather: string | null };
+  mode: 'ai' | 'offline';
+}
+
+// ---- Summary Types (/api/summarize) ----
+export type SummarySourceType = 'diary' | 'minutes' | 'emails';
+
+export interface SummarizeRequest {
+  text?: string;
+  source_type?: SummarySourceType;
+  project_id?: number;
+  period?: 'week' | 'month';
+  ref_date?: string;
+}
+
+export interface SummaryActionItem {
+  id: string;
+  task: string;
+  responsible: string;
+  deadline: string;
+  priority: 'Hoch' | 'Mittel' | 'Normal';
+  done: boolean;
+  source: string;
+}
+
+export interface SummaryVobRisk {
+  title: string;
+  description: string;
+  recommendation: string;
+  linkType?: 'delay' | 'cost' | 'defect' | null;
+  source?: string;
+}
+
+export interface SummaryResponse {
+  title: string;
+  executiveSummary: string[];
+  keyDecisions: string[];
+  actionItems: SummaryActionItem[];
+  vobRisks: SummaryVobRisk[];
+  traceabilityNotes: string;
+  keyDecisionSources?: string[];
+  sources?: string[];
+  periodFrom?: string | null;
+  periodTo?: string | null;
+  mode: 'ai' | 'offline';
+}
+
+// ---- Navigation state for /drafts ("Entwurf erstellen" from anywhere) ----
+export interface DraftNavState {
+  /** Brieftyp vorauswählen */
+  type?: NoticeType;
+  /** Stichworte/Sachverhalt vorbefüllen (Nutzer klickt selbst auf "Generieren") */
+  keywords?: string;
+  /** Vorhandenen Entwurf öffnen */
+  noticeId?: number;
+}
+
+// ---- Companies (/companies) ----
+export type CompanyType = 'own' | 'client' | 'subcontractor';
+
+export interface Company {
+  id: number;
+  name: string;
+  company_type: CompanyType;
+  trade?: string | null;
+  address?: string | null;
+  contact_person?: string | null;
+  phone?: string | null;
+  email?: string | null;
+  vob_rules?: string | null;
+  notes?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export type CompanyCreate = Omit<Company, 'id' | 'created_at' | 'updated_at'>;
+
+// ---- Contracts (/contracts) ----
+export interface Contract {
+  id: number;
+  project_id: number;
+  title: string;
+  contractor_name?: string | null;
+  trade?: string | null;
+  planned_workforce?: number | null;
+  vob_notes?: string | null;
+  file_name?: string | null;
+  file_path?: string | null;
+  extracted_text?: string | null;
+  uploaded_at: string;
+}
+
+export interface ContractUpload {
+  project_id: number;
+  title: string;
+  file: File;
+  contractor_name?: string;
+  trade?: string;
+  planned_workforce?: number;
+  vob_notes?: string;
+}
+
+export type ContractUpdate = Partial<Pick<Contract, 'title' | 'contractor_name' | 'trade' | 'planned_workforce' | 'vob_notes'>>;
+
+export interface ContractText {
+  id: number;
+  project_id: number;
+  title: string;
+  contractor_name: string | null;
+  trade: string | null;
+  planned_workforce: number | null;
+  vob_notes: string | null;
+  extracted_text: string;
+}
+
+// ---- Health (/health) ----
+export interface HealthStatus {
+  status: string;
+  pdf_export: boolean;
+}
+
+// ---- Daily Report Form Types (/api/reports/{date}) ----
+export interface ReportProgressIn {
+  task_id: number;
+  percent: number;
+  note?: string | null;
+}
+
+export interface ReportProgressOut {
+  task_id: number;
+  task_code: string | null;
+  title: string;
+  percent: number;
+  source: 'diktat' | 'ki' | 'regel' | 'nutzer';
+  note: string | null;
+}
+
+export interface DailyReportIn {
+  report_number?: number | null;
+  weather?: string | null;
+  workforce_count?: number | null;
+  trades?: string[];
+  work_completed?: string | null;
+  deviations_incidents?: string | null;
+  deliveries?: string | null;
+  summary?: string | null;
+  status?: 'draft' | 'reviewed' | 'finalized';
+  progress?: ReportProgressIn[] | null;
+}
+
+export interface DailyReportOut {
+  id: number | null;
+  project_id: number;
+  report_date: string;
+  report_number: number | null;
+  weather: string | null;
+  workforce_count: number | null;
+  trades: string[];
+  work_completed: string | null;
+  deviations_incidents: string | null;
+  deliveries: string | null;
+  summary: string | null;
+  status: string;
+  progress: ReportProgressOut[];
+}
+
+export interface FillRequest {
+  text: string;
+  lang?: string;
+  project_id?: number | null;
+}
+
+export interface FillResponse extends DailyReportOut {
+  mode: 'ai' | 'offline';
+  site_note_id?: number | null;
+}
+
+// ==========================================
+// API Helpers
+// ==========================================
+
+async function errorDetail(res: Response): Promise<string> {
+  try {
+    const errJson = await res.json();
+    if (errJson && errJson.detail) {
+      return typeof errJson.detail === 'object' ? JSON.stringify(errJson.detail) : errJson.detail;
+    }
+  } catch {
+    // not JSON
+  }
+  return `HTTP ${res.status}`;
+}
+
+async function expectOk(res: Response, errorPrefix: string): Promise<void> {
+  if (!res.ok && res.status !== 404) {
+    throw new Error(`${errorPrefix}: ${await errorDetail(res)}`);
+  }
+}
+
+/** Startet im Browser den Download eines Blobs unter dem angegebenen Dateinamen. */
+export function saveBlob(blob: Blob, fileName: string): void {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = fileName;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
+async function handleResponse<T>(res: Response, errorPrefix: string): Promise<T> {
+  if (!res.ok) {
+    let errorDetail = `HTTP ${res.status}`;
+    try {
+      const errJson = await res.json();
+      if (errJson && errJson.detail) {
+        errorDetail = typeof errJson.detail === 'object' ? JSON.stringify(errJson.detail) : errJson.detail;
+      }
+    } catch {
+      // not JSON
+    }
+    throw new Error(`${errorPrefix}: ${errorDetail}`);
+  }
+  return res.json() as Promise<T>;
+}
+
+export const api = {
+  // ---- AI Endpoints ----
+  async captureText(req: CaptureRequest): Promise<NoticeDraft> {
+    const res = await fetch(`${API_BASE_URL}/api/capture`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(req),
+    });
+    return handleResponse<NoticeDraft>(res, 'Fehler bei der KI-Erfassung');
+  },
+
+  async transcribeAudio(file: Blob, lang: string = 'de'): Promise<TranscribeResponse> {
+    const formData = new FormData();
+    formData.append('file', file, 'recording.webm');
+    formData.append('lang', lang);
+
+    const res = await fetch(`${API_BASE_URL}/api/transcribe`, {
+      method: 'POST',
+      body: formData,
+    });
+    return handleResponse<TranscribeResponse>(res, 'Fehler bei der Audio-Transkription');
+  },
+
+  async reviewNotice(noticeId: number): Promise<ReviewResponse> {
+    const res = await fetch(`${API_BASE_URL}/api/notices/${noticeId}/review`, {
+      method: 'POST',
+    });
+    return handleResponse<ReviewResponse>(res, 'Fehler beim KI-Review');
+  },
+
+  // ---- Notices Endpoints ----
+  async listNotices(projectId?: number): Promise<NoticeOut[]> {
+    const url = projectId ? `${API_BASE_URL}/api/notices?project_id=${projectId}` : `${API_BASE_URL}/api/notices`;
+    const res = await fetch(url);
+    return handleResponse<NoticeOut[]>(res, 'Fehler beim Laden der Entwürfe');
+  },
+
+  async getNotice(noticeId: number): Promise<NoticeOut> {
+    const res = await fetch(`${API_BASE_URL}/api/notices/${noticeId}`);
+    return handleResponse<NoticeOut>(res, 'Fehler beim Laden des Schreibens');
+  },
+
+  async patchNotice(noticeId: number, patch: NoticePatch): Promise<NoticeOut> {
+    const res = await fetch(`${API_BASE_URL}/api/notices/${noticeId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(patch),
+    });
+    return handleResponse<NoticeOut>(res, 'Fehler beim Aktualisieren des Schreibens');
+  },
+
+  async approveNotice(noticeId: number): Promise<NoticeOut> {
+    const res = await fetch(`${API_BASE_URL}/api/notices/${noticeId}/approve`, {
+      method: 'POST',
+    });
+    return handleResponse<NoticeOut>(res, 'Fehler bei der Freigabe');
+  },
+
+  getPdfUrl(noticeId: number): string {
+    return `${API_BASE_URL}/api/notices/${noticeId}/pdf`;
+  },
+
+  getDocxUrl(noticeId: number): string {
+    return `${API_BASE_URL}/api/notices/${noticeId}/docx`;
+  },
+
+  async downloadExport(noticeId: number, format: 'pdf' | 'docx'): Promise<Blob> {
+    const url = format === 'pdf' ? this.getPdfUrl(noticeId) : this.getDocxUrl(noticeId);
+    const res = await fetch(url);
+    if (!res.ok) {
+      let msg = `HTTP ${res.status}`;
+      try {
+        const errJson = await res.json();
+        if (errJson.detail) msg = typeof errJson.detail === 'object' ? JSON.stringify(errJson.detail) : errJson.detail;
+      } catch {
+        // fallback
+      }
+      throw new Error(`Export (${format.toUpperCase()}) fehlgeschlagen: ${msg}`);
+    }
+    return res.blob();
+  },
+
+  // ---- Site Notes Endpoints ----
+  async listSiteNotes(projectId?: number): Promise<SiteNote[]> {
+    const url = projectId ? `${API_BASE_URL}/site-notes?project_id=${projectId}` : `${API_BASE_URL}/site-notes`;
+    const res = await fetch(url);
+    return handleResponse<SiteNote[]>(res, 'Fehler beim Abrufen der Notizen');
+  },
+
+  async createSiteNote(note: SiteNoteCreate): Promise<SiteNote> {
+    const res = await fetch(`${API_BASE_URL}/site-notes/create`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(note),
+    });
+    return handleResponse<SiteNote>(res, 'Fehler beim Speichern der Notiz');
+  },
+
+  async deleteSiteNote(noteId: number): Promise<void> {
+    const res = await fetch(`${API_BASE_URL}/site-notes/${noteId}`, {
+      method: 'DELETE',
+    });
+    if (!res.ok && res.status !== 404) {
+      throw new Error(`Fehler beim Löschen der Notiz: HTTP ${res.status}`);
+    }
+  },
+
+  // ---- Plans Endpoints ----
+  async listPlans(projectId?: number): Promise<ConstructionPlan[]> {
+    const url = projectId ? `${API_BASE_URL}/plans?project_id=${projectId}` : `${API_BASE_URL}/plans`;
+    const res = await fetch(url);
+    return handleResponse<ConstructionPlan[]>(res, 'Fehler beim Laden der Baupläne');
+  },
+
+  async createPlan(plan: ConstructionPlanCreate): Promise<ConstructionPlan> {
+    const res = await fetch(`${API_BASE_URL}/plans`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(plan),
+    });
+    return handleResponse<ConstructionPlan>(res, 'Fehler beim Erstellen des Bauplans');
+  },
+
+  async updatePlan(planId: number, update: Partial<ConstructionPlanCreate>): Promise<ConstructionPlan> {
+    const res = await fetch(`${API_BASE_URL}/plans/${planId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(update),
+    });
+    return handleResponse<ConstructionPlan>(res, 'Fehler beim Aktualisieren des Bauplans');
+  },
+
+  async deletePlan(planId: number): Promise<void> {
+    const res = await fetch(`${API_BASE_URL}/plans/${planId}`, {
+      method: 'DELETE',
+    });
+    if (!res.ok && res.status !== 404) {
+      throw new Error(`Fehler beim Löschen des Bauplans: HTTP ${res.status}`);
+    }
+  },
+
+  // ---- Projects Endpoints ----
+  async listProjects(): Promise<BackendProject[]> {
+    const res = await fetch(`${API_BASE_URL}/projects`);
+    return handleResponse<BackendProject[]>(res, 'Fehler beim Laden der Projekte');
+  },
+
+  async createProject(project: Omit<BackendProject, 'id'>): Promise<BackendProject> {
+    const res = await fetch(`${API_BASE_URL}/projects`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(project),
+    });
+    return handleResponse<BackendProject>(res, 'Fehler beim Erstellen des Projekts');
+  },
+
+  async deleteProject(projectId: number): Promise<void> {
+    const res = await fetch(`${API_BASE_URL}/projects/${projectId}`, {
+      method: 'DELETE',
+    });
+    if (!res.ok && res.status !== 404) {
+      throw new Error(`Fehler beim Löschen des Projekts: HTTP ${res.status}`);
+    }
+  },
+
+  // ---- Analysis Endpoints ----
+  async getAnalysis(projectId?: number, period: 'week' | 'all' = 'week', refDate?: string): Promise<PlanAnalysis> {
+    const params = new URLSearchParams();
+    if (projectId) params.set('project_id', String(projectId));
+    params.set('period', period);
+    if (refDate) params.set('ref_date', refDate);
+    const res = await fetch(`${API_BASE_URL}/api/analysis?${params.toString()}`);
+    return handleResponse<PlanAnalysis>(res, 'Fehler beim Laden der Soll/Ist-Analyse');
+  },
+
+  async getDayAnalysis(reportDate: string, projectId?: number): Promise<DayAnalysis> {
+    const params = projectId ? `?project_id=${projectId}` : '';
+    const res = await fetch(`${API_BASE_URL}/api/reports/${reportDate}/analysis${params}`);
+    return handleResponse<DayAnalysis>(res, 'Fehler beim Laden der Tagesanalyse');
+  },
+
+  async getDashboard(projectId?: number, refDate?: string): Promise<DashboardData> {
+    const params = new URLSearchParams();
+    if (projectId) params.set('project_id', String(projectId));
+    if (refDate) params.set('ref_date', refDate);
+    const query = params.toString() ? `?${params.toString()}` : '';
+    const res = await fetch(`${API_BASE_URL}/api/dashboard${query}`);
+    return handleResponse<DashboardData>(res, 'Fehler beim Laden des Dashboards');
+  },
+
+  // ---- Summary Endpoint ----
+  /** Genau ein Modus: `text` (+ source_type) ODER `period` + `project_id`. */
+  async summarize(req: SummarizeRequest): Promise<SummaryResponse> {
+    const res = await fetch(`${API_BASE_URL}/api/summarize`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(req),
+    });
+    return handleResponse<SummaryResponse>(res, 'Fehler bei der Zusammenfassung');
+  },
+
+  // ---- Daily Report Form Endpoints (/api/reports/{date}) ----
+  async getReport(reportDate: string, projectId?: number): Promise<DailyReportOut> {
+    const params = projectId ? `?project_id=${projectId}` : '';
+    const res = await fetch(`${API_BASE_URL}/api/reports/${reportDate}${params}`);
+    return handleResponse<DailyReportOut>(res, 'Fehler beim Laden des Tagesberichts');
+  },
+
+  async putReport(reportDate: string, data: DailyReportIn, projectId?: number): Promise<DailyReportOut> {
+    const params = projectId ? `?project_id=${projectId}` : '';
+    const res = await fetch(`${API_BASE_URL}/api/reports/${reportDate}${params}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    return handleResponse<DailyReportOut>(res, 'Fehler beim Speichern des Tagesberichts');
+  },
+
+  async fillReport(reportDate: string, req: FillRequest): Promise<FillResponse> {
+    const res = await fetch(`${API_BASE_URL}/api/reports/${reportDate}/fill`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(req),
+    });
+    return handleResponse<FillResponse>(res, 'Fehler beim Ausfüllen des Tagesberichts per KI');
+  },
+
+  /** GET /api/reports/{date}/pdf|docx – 404 wenn der Tag nicht gespeichert ist, 503 wenn Pango fehlt (PDF). */
+  async downloadReportExport(reportDate: string, format: 'pdf' | 'docx', projectId?: number): Promise<Blob> {
+    const params = projectId ? `?project_id=${projectId}` : '';
+    const res = await fetch(`${API_BASE_URL}/api/reports/${reportDate}/${format}${params}`);
+    if (!res.ok) {
+      throw new Error(`Export (${format.toUpperCase()}) fehlgeschlagen: ${await errorDetail(res)}`);
+    }
+    return res.blob();
+  },
+
+  // ---- Projects (update) ----
+  async updateProject(projectId: number, changes: Partial<Omit<BackendProject, 'id'>>): Promise<BackendProject> {
+    const res = await fetch(`${API_BASE_URL}/projects/${projectId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(changes),
+    });
+    return handleResponse<BackendProject>(res, 'Fehler beim Aktualisieren des Projekts');
+  },
+
+  // ---- Companies (/companies) ----
+  async listCompanies(filter?: { company_type?: CompanyType; trade?: string }): Promise<Company[]> {
+    const params = new URLSearchParams();
+    if (filter?.company_type) params.set('company_type', filter.company_type);
+    if (filter?.trade) params.set('trade', filter.trade);
+    const query = params.toString() ? `?${params.toString()}` : '';
+    const res = await fetch(`${API_BASE_URL}/companies${query}`);
+    return handleResponse<Company[]>(res, 'Fehler beim Laden der Firmen');
+  },
+
+  async createCompany(company: CompanyCreate): Promise<Company> {
+    const res = await fetch(`${API_BASE_URL}/companies`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(company),
+    });
+    return handleResponse<Company>(res, 'Fehler beim Anlegen der Firma');
+  },
+
+  async updateCompany(companyId: number, changes: Partial<CompanyCreate>): Promise<Company> {
+    const res = await fetch(`${API_BASE_URL}/companies/${companyId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(changes),
+    });
+    return handleResponse<Company>(res, 'Fehler beim Aktualisieren der Firma');
+  },
+
+  async deleteCompany(companyId: number): Promise<void> {
+    const res = await fetch(`${API_BASE_URL}/companies/${companyId}`, { method: 'DELETE' });
+    await expectOk(res, 'Fehler beim Löschen der Firma');
+  },
+
+  // ---- Contracts (/contracts) ----
+  async listContracts(projectId?: number): Promise<Contract[]> {
+    const url = projectId ? `${API_BASE_URL}/contracts?project_id=${projectId}` : `${API_BASE_URL}/contracts`;
+    const res = await fetch(url);
+    return handleResponse<Contract[]>(res, 'Fehler beim Laden der Verträge');
+  },
+
+  /** POST /contracts (multipart): PDF hochladen, Backend extrahiert den Text automatisch. */
+  async uploadContract(data: ContractUpload): Promise<Contract> {
+    const form = new FormData();
+    form.append('project_id', String(data.project_id));
+    form.append('title', data.title);
+    form.append('file', data.file, data.file.name);
+    if (data.contractor_name) form.append('contractor_name', data.contractor_name);
+    if (data.trade) form.append('trade', data.trade);
+    if (data.planned_workforce != null) form.append('planned_workforce', String(data.planned_workforce));
+    if (data.vob_notes) form.append('vob_notes', data.vob_notes);
+    const res = await fetch(`${API_BASE_URL}/contracts`, { method: 'POST', body: form });
+    return handleResponse<Contract>(res, 'Fehler beim Hochladen des Vertrags');
+  },
+
+  async updateContract(contractId: number, changes: ContractUpdate): Promise<Contract> {
+    const res = await fetch(`${API_BASE_URL}/contracts/${contractId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(changes),
+    });
+    return handleResponse<Contract>(res, 'Fehler beim Aktualisieren des Vertrags');
+  },
+
+  async deleteContract(contractId: number): Promise<void> {
+    const res = await fetch(`${API_BASE_URL}/contracts/${contractId}`, { method: 'DELETE' });
+    await expectOk(res, 'Fehler beim Löschen des Vertrags');
+  },
+
+  async getContractText(contractId: number): Promise<ContractText> {
+    const res = await fetch(`${API_BASE_URL}/contracts/${contractId}/text`);
+    return handleResponse<ContractText>(res, 'Fehler beim Laden des Vertragstexts');
+  },
+
+  async downloadContractFile(contractId: number): Promise<Blob> {
+    const res = await fetch(`${API_BASE_URL}/contracts/${contractId}/file`);
+    if (!res.ok) throw new Error(`Download fehlgeschlagen: ${await errorDetail(res)}`);
+    return res.blob();
+  },
+
+  // ---- System ----
+  async health(): Promise<HealthStatus> {
+    const res = await fetch(`${API_BASE_URL}/health`);
+    return handleResponse<HealthStatus>(res, 'Backend nicht erreichbar');
+  },
+};

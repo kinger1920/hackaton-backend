@@ -7,7 +7,8 @@ import {
     Trash2,
     Hash,
     Activity,
-    Briefcase
+    Briefcase,
+    Pencil
 } from 'lucide-react';
 import {useProjects, Project} from '@/context/ProjectContext';
 import { useLanguage } from '../context/LanguageContext';
@@ -16,10 +17,9 @@ import './Projects.css';
 
 export const Projects: React.FC = () => {
     const { t } = useLanguage();
-  const { projects, activeProjectId, setActiveProjectId, addProject, deleteProject } = useProjects();
+  const { projects, activeProjectId, setActiveProjectId, addProject, updateProject, deleteProject } = useProjects();
 
-    const [showCreateForm, setShowCreateForm] = useState(false);
-    const [formData, setFormData] = useState<Omit<Project, 'id'>>({
+    const EMPTY_FORM: Omit<Project, 'id'> = {
         name: '',
         number: '',
         client: '',
@@ -27,28 +27,41 @@ export const Projects: React.FC = () => {
         phase: 'Rohbau',
         status: 'Aktiv',
         description: ''
-    });
+    };
+
+    const [showCreateForm, setShowCreateForm] = useState(false);
+    // null = neues Projekt anlegen, sonst ID des Projekts, das bearbeitet wird (PATCH)
+    const [editingId, setEditingId] = useState<number | null>(null);
+    const [formData, setFormData] = useState<Omit<Project, 'id'>>(EMPTY_FORM);
+
+    const closeForm = () => {
+        setShowCreateForm(false);
+        setEditingId(null);
+        setFormData(EMPTY_FORM);
+    };
+
+    const startEdit = (proj: Project) => {
+        const {id, ...rest} = proj;
+        setFormData({...EMPTY_FORM, ...rest, description: rest.description ?? ''});
+        setEditingId(id);
+        setShowCreateForm(true);
+        window.scrollTo({top: 0, behavior: 'smooth'});
+    };
 
     const handleCreate = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!formData.name.trim()) return;
 
         try {
-            await addProject({
-                ...formData,
-                number: formData.number.trim() || `PRJ-${new Date().getFullYear()}-${Math.floor(100 + Math.random() * 900)}`
-            });
-
-            setFormData({
-                name: '',
-                number: '',
-                client: '',
-                location: '',
-                phase: 'Rohbau',
-                status: 'Aktiv',
-                description: ''
-            });
-            setShowCreateForm(false);
+            if (editingId !== null) {
+                await updateProject(editingId, formData);
+            } else {
+                await addProject({
+                    ...formData,
+                    number: formData.number.trim() || `PRJ-${new Date().getFullYear()}-${Math.floor(100 + Math.random() * 900)}`
+                });
+            }
+            closeForm();
         } catch (err) {
             console.error(err);
             alert('Projekt konnte nicht gespeichert werden.');
@@ -66,7 +79,7 @@ export const Projects: React.FC = () => {
 
                 <button
                     className="btn btn-primary"
-                    onClick={() => setShowCreateForm(!showCreateForm)}
+                    onClick={() => (showCreateForm ? closeForm() : setShowCreateForm(true))}
                 >
                     <Plus size={18}/>
                     <span>{showCreateForm ? t('btn_cancel') : t('proj_btn_create')}</span>
@@ -79,7 +92,7 @@ export const Projects: React.FC = () => {
                     <div className="create-project-header">
                         <h2 className="create-project-title">
                             <Building2 size={20} color="var(--color-primary)"/>
-                            <span>{t('proj_btn_create')}</span>
+                            <span>{editingId !== null ? 'Projekt bearbeiten' : t('proj_btn_create')}</span>
                         </h2>
                     </div>
 
@@ -200,7 +213,7 @@ export const Projects: React.FC = () => {
                         <button
                             type="button"
                             className="btn btn-secondary"
-                            onClick={() => setShowCreateForm(false)}
+                            onClick={closeForm}
                         >
                             {t('btn_cancel')}
                         </button>
@@ -270,6 +283,15 @@ export const Projects: React.FC = () => {
                                         {t('proj_btn_set_active')}
                                     </button>
                                 )}
+
+                                <button
+                                    className="btn btn-secondary"
+                                    style={{padding: '6px 10px', fontSize: '12px'}}
+                                    title="Projekt bearbeiten"
+                                    onClick={() => startEdit(proj)}
+                                >
+                                    <Pencil size={14}/>
+                                </button>
 
                                 <button
                                     className="btn btn-danger"

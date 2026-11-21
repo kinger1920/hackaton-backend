@@ -32,6 +32,7 @@ interface ProjectContextType {
     activeProjectId: number;
     setActiveProjectId: (id: number) => void;
     addProject: (project: Omit<Project, 'id'>) => Promise<Project>;
+    updateProject: (id: number, changes: Partial<Omit<Project, 'id'>>) => Promise<Project>;
     deleteProject: (id: number) => Promise<void>;
     isLoading: boolean;
 }
@@ -111,6 +112,21 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({childr
         return created;
     };
 
+    // PATCH /projects/{id} – nur geänderte Felder
+    const updateProject = async (id: number, changes: Partial<Omit<Project, 'id'>>): Promise<Project> => {
+        const res = await fetch(`${API_BASE_URL}/projects/${id}`, {
+            method: 'PATCH',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(changes)
+        });
+        if (!res.ok) {
+            throw new Error(`Projekt konnte nicht aktualisiert werden (HTTP ${res.status})`);
+        }
+        const updated = normalizeProject(await res.json());
+        setProjects((prev) => prev.map((p) => (p.id === id ? updated : p)));
+        return updated;
+    };
+
     const deleteProject = async (id: number): Promise<void> => {
         if (projects.length <= 1) {
             alert('Mindestens ein Bauprojekt muss im System verbleiben.');
@@ -137,6 +153,7 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({childr
                 activeProjectId,
                 setActiveProjectId,
                 addProject,
+                updateProject,
                 deleteProject,
                 isLoading
             }}

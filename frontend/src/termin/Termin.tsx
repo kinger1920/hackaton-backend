@@ -706,7 +706,7 @@ export const Termin: React.FC = () => {
                       type="button"
                       className="btn btn-secondary"
                       style={{ marginTop: '6px', fontSize: '11px', padding: '4px 8px', color: '#b91c1c', borderColor: '#fca5a5' }}
-                      onClick={() => navigate('/drafts')}
+                      onClick={() => navigate('/drafts', { state: { type: 'delay', keywords: [ev.title, ev.description, `Frist: ${ev.date}`].filter(Boolean).join('. ') } })}
                     >
                       <Mail size={12} />
                       <span>{t('term_btn_to_draft')}</span>
