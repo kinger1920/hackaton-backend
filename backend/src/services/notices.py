@@ -13,7 +13,7 @@ from sqlmodel import Session, select
 from src.config import settings
 from src.models import FormalNotice, NoticeDraftData, Project
 from src.schemas.ai import NoticeDraft, SourcedField
-from src.schemas.notices import NoticeOut, NoticePatch
+from src.schemas.notices import NoticeDispatch, NoticeOut, NoticePatch
 from src.services import letters
 from src.services.extraction import QUESTIONS, REQUIRED_FIELDS
 
@@ -216,4 +216,23 @@ def list_notices(session: Session, project_id: int | None) -> list[tuple[FormalN
     if project_id is not None:
         stmt = stmt.where(FormalNotice.project_id == project_id)
     return [(n, get_data(session, n)) for n in session.exec(stmt).all()]
+
+
+def get_dispatch(data: NoticeDraftData) -> NoticeDispatch | None:
+    if not data.dispatch_json:
+        return None
+    try:
+        return NoticeDispatch(**json.loads(data.dispatch_json))
+    except Exception:
+        return None
+
+
+def save_dispatch(session: Session, notice: FormalNotice, data: NoticeDraftData, dispatch: NoticeDispatch) -> NoticeDispatch:
+    data.dispatch_json = json.dumps(dispatch.model_dump(), ensure_ascii=False)
+    notice.updated_at = _now()
+    session.add(data)
+    session.add(notice)
+    session.commit()
+    session.refresh(data)
+    return dispatch
 

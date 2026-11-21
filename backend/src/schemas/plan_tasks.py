@@ -52,6 +52,7 @@ class TaskIn(BaseModel):
     planned_start: dt.date
     planned_end: dt.date
     status: str = "pending"
+    location: str | None = None
 
     @model_validator(mode="after")
     def _order(self):
@@ -69,3 +70,4 @@ class TaskPatch(BaseModel):
     actual_start: dt.date | None = None
     actual_end: dt.date | None = None
     status: str | None = None
+    location: str | None = None

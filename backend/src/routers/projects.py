@@ -5,21 +5,27 @@ from sqlmodel import Session, select
 
 from src.database import get_session
 from src.models import (
+    Appointment,
     ChatMessage,
     ChatSession,
     ConstructionPlan,
     Contract,
     DailyReport,
     FormalNotice,
+    NoticeDraftData,
     PlanTask,
     Project,
     ProjectCreate,
+    ProjectDocument,
     ProjectRead,
     ProjectUpdate,
+    ReportProgress,
     SiteNote,
+    SitePhoto,
 )
 from src.schemas.projects import ProjectCreateIn, ProjectUpdateIn, ProjectWithContractors
 from src.services.contracts import delete_contract_file
+from src.services.photos import delete_photo_file
 from src.services.project_master import sync_contractors, with_contractors
 
 router = APIRouter(prefix="/projects", tags=["Projects"])
@@ -116,16 +122,38 @@ def delete_project(project_id: int, session: Session = Depends(get_session)):
             select(PlanTask).where(PlanTask.plan_id == plan.id)
         ).all()
         for task in tasks:
+            for prog in session.exec(select(ReportProgress).where(ReportProgress.task_id == task.id)).all():
+                session.delete(prog)
+            session.flush()
             session.delete(task)
         session.flush()
         session.delete(plan)
+
+    reports = session.exec(select(DailyReport).where(DailyReport.project_id == project_id)).all()
+    for rep in reports:
+        for prog in session.exec(select(ReportProgress).where(ReportProgress.report_id == rep.id)).all():
+            session.delete(prog)
+        session.flush()
+        session.delete(rep)
+
+    notices = session.exec(select(FormalNotice).where(FormalNotice.project_id == project_id)).all()
+    for notice in notices:
+        for draft_data in session.exec(select(NoticeDraftData).where(NoticeDraftData.notice_id == notice.id)).all():
+            session.delete(draft_data)
+        session.flush()
+        session.delete(notice)
 
     contracts = session.exec(select(Contract).where(Contract.project_id == project_id)).all()
     contract_files = [c.file_path for c in contracts]
     for contract in contracts:
         session.delete(contract)
 
-    for model in (SiteNote, DailyReport, FormalNotice):
+    photos = session.exec(select(SitePhoto).where(SitePhoto.project_id == project_id)).all()
+    photo_files = [p.file_path for p in photos]
+    for photo in photos:
+        session.delete(photo)
+
+    for model in (SiteNote, Appointment, ProjectDocument):
         rows = session.exec(select(model).where(model.project_id == project_id)).all()
         for row in rows:
             session.delete(row)
@@ -136,3 +164,5 @@ def delete_project(project_id: int, session: Session = Depends(get_session)):
 
     for file_path in contract_files:
         delete_contract_file(file_path)
+    for file_path in photo_files:
+        delete_photo_file(file_path)

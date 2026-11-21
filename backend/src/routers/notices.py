@@ -9,7 +9,7 @@ from sqlmodel import Session
 
 from src.database import get_session
 from src.models import FormalNotice, Project
-from src.schemas.notices import ApproveConflict, NoticeOut, NoticePatch
+from src.schemas.notices import ApproveConflict, NoticeDispatch, NoticeOut, NoticePatch
 from src.services import documents, notices
 
 PDF_MEDIA_TYPE = "application/pdf"
@@ -128,3 +128,23 @@ def export_docx(notice_id: int, session: Session = Depends(get_session)) -> Resp
     Fehler: 404 unbekannte ID; 409 noch nicht freigegeben. Setzt den Status auf "Exportiert".
     """
     return _export(notice_id, "docx", session)
+
+
+@router.get("/{notice_id}/dispatch", response_model=NoticeDispatch | None)
+def get_notice_dispatch(notice_id: int, session: Session = Depends(get_session)) -> NoticeDispatch | None:
+    """Versand- und Zugangsnachweis eines Briefs laden (null, wenn noch nicht versendet)."""
+    notice = _get_or_404(session, notice_id)
+    data = notices.get_data(session, notice)
+    return notices.get_dispatch(data)
+
+
+@router.put("/{notice_id}/dispatch", response_model=NoticeDispatch)
+def put_notice_dispatch(
+    notice_id: int,
+    dispatch: NoticeDispatch,
+    session: Session = Depends(get_session),
+) -> NoticeDispatch:
+    """Versand- und Zugangsnachweis eines Briefs speichern."""
+    notice = _get_or_404(session, notice_id)
+    data = notices.get_data(session, notice)
+    return notices.save_dispatch(session, notice, data, dispatch)

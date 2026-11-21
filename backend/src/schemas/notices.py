@@ -5,10 +5,24 @@ POST /api/notices/{id}/approve).
 """
 
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
 from src.schemas.ai import NoticeType, SourcedField
+
+DispatchMethod = Literal["email", "einschreiben", "bote", "fax", "persoenlich"]
+
+
+class NoticeDispatch(BaseModel):
+    """Versand & Zugangsnachweis eines freigegebenen Schreibens."""
+
+    method: DispatchMethod
+    sent_at: str
+    recipient_address: str | None = None
+    tracking_number: str | None = None
+    received_at: str | None = None
+    note: str | None = None
 
 
 class NoticeOut(BaseModel):

@@ -1,25 +1,34 @@
-"""Tagesaufgaben + kommende Termine aus dem Bauzeitenplan (Board: "Tagesaufgaben aus Terminplan ableiten").
+"""Tagesaufgaben + Termine aus dem Bauzeitenplan und der Tabelle `appointment`.
 
 - days[]: je Werktag die Vorgänge, die laut Plan laufen – mit Soll-% am Tagesende, Ist-Stand,
   zuständiger Firma und Sollstärke aus dem Vertrag. Überfällige, unfertige Vorgänge bleiben als
   Restarbeiten drin (isOverdue), bis 100 % gemeldet sind.
-- appointments[]: Jues SiteAppointment-Format für die Termin-Seite:
-  Vorgangsbeginn/-ende (milestone), verspätete Vorgänge (deadline, dringend) und offene
-  Sollstärke-Vorschläge "Behinderungsanzeige prüfen" (deadline, dringend).
-Alles aus Plan, Berichten und Verträgen berechnet (Code, kein LLM). VOB-Bezüge sind feste Texte.
+- appointments[]: zusammengeführt im SiteAppointment-Format:
+  1. Manuelle Termine aus der Tabelle `appointment` (source="manual", editable=True)
+  2. Automatisch berechnete Termine aus Bauzeitenplan (source="plan", editable=False)
+     und Sollstärke-Check (source="workforce", editable=False).
+Alles aus DB, Plan, Berichten und Verträgen berechnet (Code, kein LLM). VOB-Bezüge sind feste Texte.
 """
 
 import datetime as dt
 
 from sqlmodel import Session, select
 
-from src.models import ConstructionPlan, Contract, DailyReport, FormalNotice, PlanTask, Project
+from src.models import Appointment, ConstructionPlan, Contract, DailyReport, FormalNotice, PlanTask, Project
 from src.schemas.reports import AttendanceItem
 from src.schemas.schedule import DayTask, Schedule, ScheduleDay, SiteAppointment
 from src.services.analysis import evaluate_tasks, plan_percent, workdays
 from src.services.workforce import match_contract, workforce_check
 
 VOB_DELAY = "§ 6 Abs. 1 VOB/B"
+
+CATEGORY_LABELS = {
+    "deadline": "Frist",
+    "milestone": "Meilenstein",
+    "inspection": "Abnahme/Prüfung",
+    "meeting": "Besprechung",
+    "delivery": "Lieferung/Logistik",
+}
 
 
 def _de(d: dt.date) -> str:
@@ -51,6 +60,40 @@ def _crew_text(contract: Contract | None) -> str:
     return f" · {name}" + (f", Sollstärke {contract.planned_workforce}" if contract.planned_workforce else "")
 
 
+def appointment_to_schema(a: Appointment) -> SiteAppointment:
+    return SiteAppointment(
+        id=f"appt-{a.id}",
+        projectId=a.project_id,
+        title=a.title,
+        date=a.date,
+        time=a.time,
+        category=a.category,  # type: ignore[arg-type]
+        trade=a.trade,
+        description=a.description,
+        vobReference=a.vob_reference,
+        isUrgent=a.is_urgent,
+        source="manual",
+        sourceLabel="Manuell",
+        editable=True,
+    )
+
+
+def list_manual_appointments(
+    session: Session,
+    project: Project,
+    date_from: dt.date | None = None,
+    date_to: dt.date | None = None,
+) -> list[SiteAppointment]:
+    stmt = select(Appointment).where(Appointment.project_id == project.id)
+    if date_from is not None:
+        stmt = stmt.where(Appointment.date >= date_from)
+    if date_to is not None:
+        stmt = stmt.where(Appointment.date <= date_to)
+    rows = list(session.exec(stmt).all())
+    rows.sort(key=lambda a: (a.date, a.time or "99:99", not a.is_urgent, a.title))
+    return [appointment_to_schema(a) for a in rows]
+
+
 def _workforce_appointments(session: Session, project: Project, ref: dt.date, date_from: dt.date) -> list[SiteAppointment]:
     """Offene Briefvorschläge aus dem Sollstärke-Check am letzten Berichtstag bis ref."""
     reports = list(session.exec(select(DailyReport).where(
@@ -75,6 +118,7 @@ def _workforce_appointments(session: Session, project: Project, ref: dt.date, da
                          f"({gap.consecutiveDays} Tage in Folge, {gap.source}). Behinderung unverzüglich "
                          f"schriftlich anzeigen."),
             vobReference=VOB_DELAY, isUrgent=True,
+            source="workforce", sourceLabel="Sollstärke-Check", editable=False,
         ))
     return result
 
@@ -112,11 +156,13 @@ def schedule(session: Session, project: Project, date_from: dt.date, days: int, 
             continue
         c, s = _contract_for(t, contracts), state_by_task[t.id]
         crew = _crew_text(c)
+        plan_src = _plan_source(session, t)
         if date_from <= t.planned_start <= date_to:
             appointments.append(SiteAppointment(
                 id=f"task-{t.id}-start", projectId=project.id, title=f"Beginn: {t.title}", date=t.planned_start,
                 category="milestone", trade=t.trade,
-                description=f"{t.task_code or ''} laut {_plan_source(session, t)}{crew}".strip()))
+                description=f"{t.task_code or ''} laut {plan_src}{crew}".strip(),
+                source="plan", sourceLabel="Bauzeitenplan", editable=False))
         if s.delay > 0 and t.planned_end <= date_to and s.actual < 100:
             # Verspätet: Plan-Ende im Fenster oder schon überschritten (dann am ersten Tag des Fensters zeigen).
             appointments.append(SiteAppointment(
@@ -124,14 +170,83 @@ def schedule(session: Session, project: Project, date_from: dt.date, days: int, 
                 date=max(t.planned_end, date_from), category="deadline", trade=t.trade,
                 description=(f"Plan-Ende {_de(t.planned_end)}: Ist {s.actual} % statt Soll {s.plan} % "
                              f"({_fmt(s.delay)} AT Verzug, {s.last_report or 'ohne Bericht'}).{crew}"),
-                vobReference=VOB_DELAY, isUrgent=True))
+                vobReference=VOB_DELAY, isUrgent=True,
+                source="plan", sourceLabel="Bauzeitenplan", editable=False))
         elif date_from <= t.planned_end <= date_to:
             appointments.append(SiteAppointment(
                 id=f"task-{t.id}-end", projectId=project.id, title=f"Fertig: {t.title}", date=t.planned_end,
                 category="milestone", trade=t.trade,
-                description=f"Geplante Fertigstellung laut {_plan_source(session, t)}{crew}"))
+                description=f"Geplante Fertigstellung laut {plan_src}{crew}",
+                source="plan", sourceLabel="Bauzeitenplan", editable=False))
 
     appointments += _workforce_appointments(session, project, ref, date_from)
-    appointments.sort(key=lambda a: (a.date, not a.isUrgent, a.title))
+    appointments += list_manual_appointments(session, project, date_from, date_to)
+    appointments.sort(key=lambda a: (a.date, a.time or "99:99", not a.isUrgent, a.title))
     return Schedule(projectId=project.id, dateFrom=date_from, dateTo=date_to, refDate=ref,
                     days=day_list, appointments=appointments)
+
+
+def _ics_escape(s: str) -> str:
+    return s.replace("\\", "\\\\").replace(",", "\\,").replace(";", "\\;").replace("\n", "\\n")
+
+
+def render_project_ics(session: Session, project: Project, ref: dt.date) -> str:
+    """Erzeugt einen iCalendar-Feed (.ics) mit allen manuellen und automatischen Terminen des Projekts."""
+    contracts = list(session.exec(select(Contract).where(Contract.project_id == project.id)).all())
+    _, states, tasks = evaluate_tasks(session, project, ref)
+    state_by_task = {s.task_id: s for s in states}
+
+    all_appts: list[SiteAppointment] = list_manual_appointments(session, project)
+    for t in tasks:
+        if not (t.planned_start and t.planned_end):
+            continue
+        c, s = _contract_for(t, contracts), state_by_task[t.id]
+        crew = _crew_text(c)
+        plan_src = _plan_source(session, t)
+        all_appts.append(SiteAppointment(
+            id=f"task-{t.id}-start", projectId=project.id, title=f"Beginn: {t.title}", date=t.planned_start,
+            category="milestone", trade=t.trade,
+            description=f"{t.task_code or ''} laut {plan_src}{crew}".strip(),
+            source="plan", sourceLabel="Bauzeitenplan", editable=False))
+        if s.delay > 0 and s.actual < 100:
+            all_appts.append(SiteAppointment(
+                id=f"task-{t.id}-late", projectId=project.id, title=f"Verzug: {t.title}",
+                date=t.planned_end, category="deadline", trade=t.trade,
+                description=(f"Plan-Ende {_de(t.planned_end)}: Ist {s.actual} % statt Soll {s.plan} % "
+                             f"({_fmt(s.delay)} AT Verzug, {s.last_report or 'ohne Bericht'}).{crew}"),
+                vobReference=VOB_DELAY, isUrgent=True,
+                source="plan", sourceLabel="Bauzeitenplan", editable=False))
+        else:
+            all_appts.append(SiteAppointment(
+                id=f"task-{t.id}-end", projectId=project.id, title=f"Fertig: {t.title}", date=t.planned_end,
+                category="milestone", trade=t.trade,
+                description=f"Geplante Fertigstellung laut {plan_src}{crew}",
+                source="plan", sourceLabel="Bauzeitenplan", editable=False))
+    all_appts += _workforce_appointments(session, project, ref, ref)
+    all_appts.sort(key=lambda a: (a.date, a.time or "99:99", a.id))
+
+    lines = [
+        "BEGIN:VCALENDAR",
+        "VERSION:2.0",
+        "PRODID:-//SiteAI Assistant//Terminplaner//DE",
+        f"X-WR-CALNAME:{_ics_escape(project.name)}",
+    ]
+    for a in all_appts:
+        d = a.date.strftime("%Y%m%d")
+        lines.extend([
+            "BEGIN:VEVENT",
+            f"UID:{a.id}-p{project.id}@siteai",
+            f"SUMMARY:{_ics_escape(a.title)}",
+        ])
+        if a.time and len(a.time) >= 5:
+            hhmm = a.time[:5].replace(":", "")
+            lines.append(f"DTSTART:{d}T{hhmm}00")
+        else:
+            lines.append(f"DTSTART;VALUE=DATE:{d}")
+        desc_parts = [CATEGORY_LABELS.get(a.category, a.category), a.trade, a.description, a.vobReference]
+        desc = " • ".join(p for p in desc_parts if p)
+        if desc:
+            lines.append(f"DESCRIPTION:{_ics_escape(desc)}")
+        lines.append("END:VEVENT")
+    lines.append("END:VCALENDAR")
+    return "\r\n".join(lines)

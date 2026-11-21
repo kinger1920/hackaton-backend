@@ -15,6 +15,9 @@ Severity = Literal["critical", "warning", "info"]
 
 class WorkPackage(BaseModel):
     id: str
+    taskId: int | None = None
+    planId: int | None = None
+    location: str | None = None
     name: str
     trade: str
     subcontractor: str
