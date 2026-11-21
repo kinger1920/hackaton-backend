@@ -49,6 +49,7 @@ class NoticeDraft(BaseModel):
     questions: list[str] = Field(default_factory=list, description="Rückfragen zu fehlenden Pflichtangaben")
     mode: Literal["ai", "offline"] = Field(description="ai = Claude, offline = Regel-Fallback")
     site_note_id: int | None = Field(default=None, description="ID des neuen Tagebucheintrags (SiteNote)")
+    notice_id: int | None = Field(default=None, description="ID des gespeicherten Brief-Entwurfs (FormalNotice)")
 
 
 class TranscribeResponse(BaseModel):

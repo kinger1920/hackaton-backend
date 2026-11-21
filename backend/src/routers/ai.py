@@ -12,7 +12,7 @@ from sqlmodel import Session, select
 from src.database import get_session
 from src.models import FormalNotice, Project, SiteNote
 from src.schemas.ai import CaptureRequest, NoticeDraft, ReviewResponse, TranscribeResponse
-from src.services import extraction, review, stt
+from src.services import extraction, notices, review, stt
 
 logger = logging.getLogger(__name__)
 
@@ -26,7 +26,7 @@ async def capture(req: CaptureRequest, session: Session = Depends(get_session)) 
     Input:  {text, lang, ref_date?, ref_time?, force_type?, project_id?} – Pydantic prüft das
             (422 bei Fehlern).
     Output: NoticeDraft mit Typ, Feldern (je mit Quelle), Rückfragen, Modus (ai/offline)
-            und der ID des neuen Tagebucheintrags.
+            sowie die IDs des neuen Tagebucheintrags und des gespeicherten Brief-Entwurfs.
     Fehler: 404, wenn `project_id` angegeben ist, das Projekt aber nicht existiert.
     """
     # Contract: Jede Erfassung erzeugt auch einen Tagebucheintrag (`SiteNote`), der zu
@@ -54,6 +54,11 @@ async def capture(req: CaptureRequest, session: Session = Depends(get_session)) 
     session.commit()
     session.refresh(note)
     draft.site_note_id = note.id
+
+    # Smart Draft: gleich einen gespeicherten Brief-Entwurf anlegen. Der VOB/B-Wortlaut
+    # kommt aus festen Vorlagen (services/letters.py), nicht vom LLM.
+    notice, _ = notices.create_from_draft(session, project, draft, note.id)
+    draft.notice_id = notice.id
     return draft
 
 
