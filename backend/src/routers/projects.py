@@ -8,6 +8,7 @@ from src.models import (
     ChatMessage,
     ChatSession,
     ConstructionPlan,
+    Contract,
     DailyReport,
     FormalNotice,
     PlanTask,
@@ -17,6 +18,7 @@ from src.models import (
     ProjectUpdate,
     SiteNote,
 )
+from src.services.contracts import delete_contract_file
 
 router = APIRouter(prefix="/projects", tags=["Projects"])
 
@@ -105,6 +107,11 @@ def delete_project(project_id: int, session: Session = Depends(get_session)):
         session.flush()
         session.delete(plan)
 
+    contracts = session.exec(select(Contract).where(Contract.project_id == project_id)).all()
+    contract_files = [c.file_path for c in contracts]
+    for contract in contracts:
+        session.delete(contract)
+
     for model in (SiteNote, DailyReport, FormalNotice):
         rows = session.exec(select(model).where(model.project_id == project_id)).all()
         for row in rows:
@@ -113,3 +120,6 @@ def delete_project(project_id: int, session: Session = Depends(get_session)):
     session.flush()
     session.delete(db_project)
     session.commit()
+
+    for file_path in contract_files:
+        delete_contract_file(file_path)

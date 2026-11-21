@@ -11,6 +11,7 @@ from docx import Document
 from sqlmodel import Session
 
 from src.models import Project
+from src.services import documents
 
 try:
     import weasyprint  # noqa: F401
@@ -81,3 +82,19 @@ def test_draft_cannot_be_exported(client, engine, ext):
 @pytest.mark.parametrize("ext", ["pdf", "docx"])
 def test_unknown_notice_export_404(client, ext):
     assert client.get(f"/api/notices/999/{ext}").status_code == 404
+
+
+def test_health_reports_pdf_export(client):
+    data = client.get("/health").json()
+    assert data["status"] == "ok"
+    assert data["pdf_export"] is documents.pdf_available()
+
+
+def test_pdf_without_pango_returns_503_with_hint(client, engine, monkeypatch):
+    # Simuliert einen Rechner ohne Pango: PDF → 503 mit Hinweis, Word geht weiter.
+    notice_id = _approved_notice(client, engine)
+    monkeypatch.setattr(documents, "pdf_available", lambda: False)
+    r = client.get(f"/api/notices/{notice_id}/pdf")
+    assert r.status_code == 503
+    assert "dev.sh" in r.json()["detail"] and "Word" in r.json()["detail"]
+    assert client.get(f"/api/notices/{notice_id}/docx").status_code == 200

@@ -6,21 +6,31 @@ BACKEND_DIR = Path(__file__).resolve().parent.parent
 if str(BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(BACKEND_DIR))
 
+import logging
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from src.database import init_db
+from src.services.documents import PDF_UNAVAILABLE_HINT, pdf_available
 
 from src.routers.notes import router as notes_router
 from src.routers.plans import router as plans_router
 from src.routers.projects import router as projects_router
+from src.routers.companies import router as companies_router
+from src.routers.contracts import router as contracts_router
 from src.routers.ai import router as ai_router
 from src.routers.notices import router as notices_router
+from src.routers.summary import router as summary_router
+from src.routers.reports import router as reports_router
+from src.routers.analysis import router as analysis_router
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Auto-create tables on startup
     init_db()
+    if not pdf_available():
+        # Früh und deutlich warnen – sonst merkt man es erst beim Klick auf "PDF" (503).
+        logging.getLogger(__name__).warning(PDF_UNAVAILABLE_HINT)
     yield
 
 
@@ -47,8 +57,13 @@ app.add_middleware(
 app.include_router(notes_router)
 app.include_router(plans_router)
 app.include_router(projects_router)
+app.include_router(companies_router)
+app.include_router(contracts_router)
 app.include_router(ai_router)
 app.include_router(notices_router)
+app.include_router(summary_router)
+app.include_router(reports_router)
+app.include_router(analysis_router)
 
 @app.get("/")
 async def root():
@@ -57,4 +72,5 @@ async def root():
 
 @app.get("/health")
 async def health_check():
-    return {"status": "ok"}
+    # pdf_export: ob WeasyPrint/Pango geladen werden kann (sonst liefert /pdf 503, Word geht immer).
+    return {"status": "ok", "pdf_export": pdf_available()}
