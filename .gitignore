@@ -19,6 +19,7 @@ build/
 .env
 .env.local
 .env.*.local
+.idea
 
 # OS & Logs
 .DS_Store
