@@ -72,6 +72,31 @@ class DayStats(BaseModel):
     weather: str | None
 
 
+class WorkforceSuggestion(BaseModel):
+    """Vorschlag: Brief erstellen. prefillText geht als `text` (+ force_type=draftType) an POST /api/capture."""
+
+    draftType: DraftType
+    title: str
+    prefillText: str
+
+
+class WorkforceGap(BaseModel):
+    """Sollstärke laut Vertrag vs. Ist-Anwesenheit laut Tagesbericht (nur Unterschreitungen)."""
+
+    company: str | None
+    trade: str | None
+    contractId: int
+    contractTitle: str
+    planned: int
+    actual: int
+    shortfallPercent: int
+    consecutiveDays: int
+    source: str
+    contractSource: str
+    vobHints: list[str]
+    suggestion: WorkforceSuggestion | None = None
+
+
 class DayAnalysis(BaseModel):
     """Antwort von GET /api/reports/{date}/analysis: Was lief gut, was lief schlecht."""
 
@@ -82,6 +107,7 @@ class DayAnalysis(BaseModel):
     deviations: list[DeviationItem]
     stats: DayStats
     mode: Literal["ai", "offline"]
+    workforce: list[WorkforceGap] = []
 
 
 class DashboardKpis(BaseModel):
@@ -98,6 +124,7 @@ class DashboardAlert(BaseModel):
     description: str
     draftType: DraftType
     source: str
+    prefillText: str | None = None  # gesetzt bei Briefvorschlägen (Sollstärke-Check) → POST /api/capture
 
 
 class Dashboard(BaseModel):

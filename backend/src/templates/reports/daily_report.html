@@ -49,6 +49,18 @@
     <tr><td>Gewerke</td><td>{{ d.trades }}</td></tr>
   </table>
 
+  {% if d.attendance %}
+  <h2>Anwesenheit je Firma / Gewerk</h2>
+  <table>
+    <tr><th>Firma</th><th>Gewerk</th><th class="num">Ist</th><th class="num">Soll (Vertrag)</th></tr>
+    {% for a in d.attendance %}
+    <tr><td>{{ a.company }}</td><td>{{ a.trade }}</td>
+        <td class="num{% if a.planned != '–' and a.workers < (a.planned|int) * 0.8 %} late{% endif %}">{{ a.workers }}</td>
+        <td class="num">{{ a.planned }}</td></tr>
+    {% endfor %}
+  </table>
+  {% endif %}
+
   <h2>Ausgeführte Arbeiten</h2>
   <p class="text">{{ d.work_completed }}</p>
   <h2>Vorkommnisse / Behinderungen</h2>

@@ -97,7 +97,7 @@ def test_fill_ai_validates_and_appends(client, engine, monkeypatch):
 
     async def fake(system, user, schema, max_tokens=2048):
         assert "B-200: Aushub Achse B" in user  # Vorgangsliste wird mitgeschickt
-        return schema(work_completed="Aushub Achse B fortgesetzt.", deviations_incidents="",
+        return schema(work_completed="Aushub Achse B fortgesetzt.", deviations_incidents="", temperature_c="", attendance=[],
                       deliveries="", weather="Regen", workforce_count="12 Personen", trades=["Erdbau"],
                       progress=[{"task_code": "B-200", "percent": 80},
                                 {"task_code": "Z-999", "percent": 50},   # unbekannt → verworfen

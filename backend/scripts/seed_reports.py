@@ -11,6 +11,9 @@ Idempotent: Vorhandene Pläne/Vorgänge/Berichte werden wiederverwendet, nur Feh
 Die Story: normaler Rohbau-Fortschritt, Regentag am 10.11., verspätete Betonlieferung am 12.11.,
 Behinderung durch fehlende Leitungspläne vom 17.–19.11., Freigabe der Pläne am 20.11.
 Ergebnis für die Analyse am 20.11.: "Aushub Achse B" Soll 100 % / Ist 55 % bei 4 Werktagen → 1,8 Tage Verzug.
+
+Firmen + Verträge mit Sollstärke (seed_companies): Erdbau Krause 3, BetonTech Rohbau 8.
+17.–19.11. nur 1 bzw. 4 Arbeitskräfte → Sollstärke-Check warnt, ab 18.11. Vorschlag Behinderungsanzeige.
 """
 
 import argparse
@@ -24,10 +27,21 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))  # damit `src` i
 from sqlmodel import Session, select  # noqa: E402
 
 from src.database import engine, init_db  # noqa: E402
-from src.models import ConstructionPlan, DailyReport, PlanTask, Project, ReportProgress  # noqa: E402
+from src.models import (  # noqa: E402
+    Company, ConstructionPlan, Contract, DailyReport, PlanTask, Project, ReportProgress,
+)
 
-CREW_NORMAL = [{"trade": "Erdbau", "workers": 3, "hours": 24}, {"trade": "Rohbau", "workers": 8, "hours": 64}]
-CREW_REDUCED = [{"trade": "Erdbau", "workers": 1, "hours": 8}, {"trade": "Rohbau", "workers": 4, "hours": 32}]
+ERDBAU, ROHBAU = "Erdbau Krause GmbH", "BetonTech Rohbau GmbH"
+CREW_NORMAL = [{"company": ERDBAU, "trade": "Erdbau", "workers": 3, "hours": 24},
+               {"company": ROHBAU, "trade": "Rohbau", "workers": 8, "hours": 64}]
+CREW_REDUCED = [{"company": ERDBAU, "trade": "Erdbau", "workers": 1, "hours": 8},
+                {"company": ROHBAU, "trade": "Rohbau", "workers": 4, "hours": 32}]
+# (Firma, Gewerk, Sollstärke, Vertragstitel, VOB-Besonderheit im Vertrag, Ansprechpartner)
+COMPANIES = [
+    (ERDBAU, "Erdbau", 3, "NU-Vertrag Erdarbeiten Haus B & C",
+     "Behinderungen sind binnen 2 Arbeitstagen schriftlich anzuzeigen (BVB Ziff. 7).", "Herr Krause"),
+    (ROHBAU, "Rohbau", 8, "NU-Vertrag Rohbau Haus B & C", None, "Frau Nowak"),
+]
 EQUIP = [{"machine": "Bagger CAT 320", "hours": 7}, {"machine": "Kran 1", "hours": 6}]
 
 # Datum → (Wetter, Personal, Ausgeführte Arbeiten, Vorkommnisse)
@@ -114,6 +128,23 @@ def seed_plan(session: Session, project: Project) -> dict[str, PlanTask]:
     return existing
 
 
+def seed_companies(session: Session, project: Project) -> list[Contract]:
+    """Firmen + Verträge mit Sollstärke anlegen (idempotent, ohne Commit) – Basis für den Sollstärke-Check."""
+    contracts = []
+    for name, trade, target, title, vob, contact in COMPANIES:
+        if session.exec(select(Company).where(Company.name == name)).first() is None:
+            session.add(Company(name=name, trade=trade, company_type="subcontractor", contact_person=contact))
+        contract = session.exec(select(Contract).where(
+            Contract.project_id == project.id, Contract.title == title)).first()
+        if contract is None:
+            contract = Contract(project_id=project.id, title=title, contractor_name=name, trade=trade,
+                                planned_workforce=target, vob_notes=vob)
+            session.add(contract)
+        contracts.append(contract)
+    session.flush()
+    return contracts
+
+
 def seed_all(session: Session, project: Project) -> tuple[dict[str, PlanTask], int]:
     """Plan, Berichte und Fortschritt für ein Projekt anlegen/ergänzen (ohne Commit). Auch von Tests genutzt."""
     tasks = seed_plan(session, project)
@@ -162,9 +193,10 @@ def main() -> None:
             sys.exit("Kein Projekt gefunden – zuerst ein Projekt anlegen (POST /projects).")
 
         tasks, created = seed_all(session, project)
+        contracts = seed_companies(session, project)
         session.commit()
         print(f"Projekt #{project.id} ({project.name}): Plan '{PLAN_TITLE}' mit {len(tasks)} Vorgängen, "
-              f"{created} Tagesberichte neu, {len(DAYS) - created} vorhanden (ergänzt).")
+              f"{created} Tagesberichte neu, {len(DAYS) - created} vorhanden (ergänzt), {len(contracts)} Verträge.")
 
 
 if __name__ == "__main__":
