@@ -107,7 +107,7 @@ brew install pango
 export DYLD_FALLBACK_LIBRARY_PATH=/opt/homebrew/lib
 ```
 
-Daily reports export the same way: `GET /api/reports/{date}/pdf|docx` (404 if the day has no saved report; reports not `finalized` carry an "ENTWURF" watermark; contents incl. plan vs. actual table, rule-based day analysis and signature lines, no LLM call). Without Pango the PDF endpoints return `503` and the PDF test is skipped; Word export (`/docx`) works without system libraries. Linux/Docker: install `libpango-1.0-0 libpangoft2-1.0-0`.
+Attendance per company (`attendance[]` in `/api/reports/{date}`, stored in `DailyReport.workforce` JSON) is compared with `Contract.planned_workforce` in `services/workforce.py`: below 80 % → warning; 2 report days in a row → dashboard alert with `prefillText` for `POST /api/capture` (`force_type: "delay"`). Seed firms/contracts: `scripts/seed_reports.py` (`seed_companies`). Daily reports export the same way: `GET /api/reports/{date}/pdf|docx` (404 if the day has no saved report; reports not `finalized` carry an "ENTWURF" watermark; contents incl. plan vs. actual table, rule-based day analysis and signature lines, no LLM call). Without Pango the PDF endpoints return `503` and the PDF test is skipped; Word export (`/docx`) works without system libraries. Linux/Docker: install `libpango-1.0-0 libpangoft2-1.0-0`.
 
 ### Demo Data for Summaries & Analysis
 

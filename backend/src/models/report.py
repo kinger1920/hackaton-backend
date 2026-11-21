@@ -20,6 +20,7 @@ class DailyReportBase(SQLModel):
     workforce_count: Optional[int] = None  # Personal gesamt (Personen)
     trades: Optional[str] = None  # JSON-Liste: ["Rohbau (Fa. BetonTech)", "Tiefbau"]
     deliveries: Optional[str] = None  # Lieferungen, Abnahmen & Prüfungen
+    site_manager: Optional[str] = None  # verantwortliche Bauleitung des Tages (Name)
 
 
 class DailyReport(DailyReportBase, table=True):

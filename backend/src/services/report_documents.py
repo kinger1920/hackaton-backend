@@ -22,8 +22,9 @@ from sqlmodel import Session
 from src.config import settings
 from src.models import DailyReport, Project
 from src.services import analysis
+from src.services.workforce import contracts_with_target, match_contract
 from src.services.documents import PDF_UNAVAILABLE_HINT, PdfUnavailable, pdf_available
-from src.services.reports import to_out
+from src.services.reports import to_out, weather_text
 
 TEMPLATE_DIR = Path(__file__).resolve().parent.parent / "templates" / "reports"
 # autoescape: Diktattext kann "<" oder "&" enthalten – darf das HTML nicht zerstören.
@@ -41,6 +42,14 @@ class ProgressRow:
     actual: int
     delay: str  # "1,8" (Arbeitstage)
     status: str
+
+
+@dataclass
+class AttendanceRow:
+    company: str
+    trade: str
+    workers: int
+    planned: str  # Sollstärke laut Vertrag oder "–"
 
 
 @dataclass
@@ -63,6 +72,7 @@ class ReportDoc:
     deliveries: str
     is_draft: bool
     progress: list[ProgressRow] = field(default_factory=list)
+    attendance: list[AttendanceRow] = field(default_factory=list)
     went_well: list[str] = field(default_factory=list)
     went_badly: list[str] = field(default_factory=list)
     footer: str = ""
@@ -84,18 +94,25 @@ async def build(session: Session, project: Project, report: DailyReport) -> Repo
                                     delay=f"{state.delay:.1f}".replace(".", ","), status=STATUS_LABELS[pkg.status]))
 
     day = await analysis.analyze_day(session, project, date, use_llm=False)
+    contracts = contracts_with_target(session, project.id)
+    attendance = []
+    for a in out.attendance:
+        c = match_contract(a, contracts)
+        company = a.company or (c.contractor_name if c else None)  # ältere Berichte: Firma aus dem Vertrag
+        attendance.append(AttendanceRow(company=company or "–", trade=a.trade or "–", workers=a.workers,
+                                        planned=str(c.planned_workforce) if c else "–"))
     is_draft = report.status != "finalized"
     number = str(report.report_number) if report.report_number else "–"
     created = dt.datetime.now(dt.timezone.utc)
     return ReportDoc(
         number=number, date=date.strftime("%d.%m.%Y"), weekday=WEEKDAYS[date.weekday()],
         project_name=project.name, project_number=project.number or "", project_location=project.location or "",
-        company=settings.demo_company, site_manager=settings.demo_user_name,
-        weather=out.weather or "–",
+        company=settings.demo_company, site_manager=report.site_manager or settings.demo_user_name,
+        weather=weather_text(report.weather) or "–",
         workforce=f"{out.workforce_count} Personen" if out.workforce_count is not None else "–",
         trades=", ".join(out.trades) or "–",
         work_completed=out.work_completed or "–", incidents=out.deviations_incidents or "keine",
-        deliveries=out.deliveries or "–", is_draft=is_draft, progress=rows,
+        deliveries=out.deliveries or "–", is_draft=is_draft, progress=rows, attendance=attendance,
         went_well=[i.text for i in day.wentWell], went_badly=[i.text for i in day.wentBadly],
         footer=(f"Bautagesbericht Nr. {number} vom {date:%d.%m.%Y} · "
                 f"{'ENTWURF – nicht abgeschlossen' if is_draft else 'abgeschlossen'} · "
@@ -165,6 +182,16 @@ def render_docx(doc: ReportDoc) -> bytes:
                          ("Wetter", doc.weather), ("Personal", doc.workforce), ("Gewerke", doc.trades)):
         cells = meta.add_row().cells
         cells[0].text, cells[1].text = label, value
+
+    if doc.attendance:
+        _heading(document, "Anwesenheit je Firma / Gewerk")
+        table = document.add_table(rows=1, cols=4)
+        table.style = "Table Grid"
+        for cell, text in zip(table.rows[0].cells, ("Firma", "Gewerk", "Ist", "Soll (Vertrag)")):
+            cell.text = text
+        for r in doc.attendance:
+            for cell, text in zip(table.add_row().cells, (r.company, r.trade, str(r.workers), r.planned)):
+                cell.text = text
 
     for heading, text in (("Ausgeführte Arbeiten", doc.work_completed),
                           ("Vorkommnisse / Behinderungen", doc.incidents),
