@@ -509,7 +509,11 @@ const ContractsTab: React.FC<{ projectId: number; onError: (msg: string) => void
                                     className="btn btn-secondary"
                                     onClick={() => handleParse(c)}
                                     disabled={parsingId === c.id || !c.extracted_text}
-                                    title={c.extracted_text ? 'Sollstärke, Firma, Gewerk und Fristen per KI auslesen' : 'Kein Text im PDF (Scan?)'}
+                                    title={c.extracted_text
+                                        ? 'Sollstärke, Firma, Gewerk und Fristen per KI auslesen'
+                                        : c.file_name
+                                            ? 'Kein Text im PDF (Scan?)'
+                                            : 'Keine Datei hinterlegt – zum Auslesen den Vertrag als PDF hochladen'}
                                 >
                                     {parsingId === c.id ? <RefreshCw size={14}/> : <Sparkles size={14}/>}
                                 </button>

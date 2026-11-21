@@ -77,6 +77,10 @@ export const VoiceOrText: React.FC = () => {
   const [isCapturing, setIsCapturing] = useState(false);
   const [lastDraft, setLastDraft] = useState<NoticeDraft | null>(null);
   const [aiQuestions, setAiQuestions] = useState<string[]>([]);
+  // Jeder POST /api/capture legt im Backend eine Notiz UND einen Brief-Entwurf an.
+  // Darum: denselben Text nie zweimal erfassen und den Rohtext beim Speichern nicht doppelt ablegen.
+  const lastCapturedTextRef = useRef<string | null>(null);
+  const lastSavedContentRef = useRef<string | null>(null);
 
   // Audio Playback Listener
   useEffect(() => {
@@ -93,9 +97,9 @@ export const VoiceOrText: React.FC = () => {
     try {
       const res = await api.transcribeAudio(audioBlob);
       if (res?.text?.trim()) {
+        // nur übernehmen – erfasst (Notiz + Brief) wird erst über „KI kategorisieren“
         setAudioTranscript(res.text);
         setGeneralNotes((prev) => (prev ? prev + '\n' + res.text : res.text));
-        handleAutoCategorize(res.text);
       } else {
         setAudioTranscript('Transkription gerade nicht verfügbar (KI offline) – bitte Notiz unten eintippen.');
       }
@@ -167,15 +171,20 @@ export const VoiceOrText: React.FC = () => {
     }));
   };
 
-  // Quick preset click
+  // Quick preset click: nur Text einfügen (kein Backend-Aufruf je Klick)
   const handleApplyPreset = (presetText: string) => {
     setGeneralNotes((prev) => (prev ? prev + '\n' + presetText : presetText));
-    handleAutoCategorize(presetText);
   };
 
   // AI Categorization: Parse general notes into categories via backend API or fallback
   const handleAutoCategorize = async (textToParse = generalNotes) => {
     if (!textToParse.trim()) return;
+    // gleicher Text wurde schon erfasst → kein zweiter Tagebucheintrag / Brief-Entwurf
+    if (lastCapturedTextRef.current === textToParse.trim()) {
+      setAiClassifiedSuccess(true);
+      setTimeout(() => setAiClassifiedSuccess(false), 3000);
+      return;
+    }
 
     setIsCapturing(true);
     setAiQuestions([]);
@@ -186,6 +195,7 @@ export const VoiceOrText: React.FC = () => {
         project_id: Number(activeProject.id)
       });
       setLastDraft(draft);
+      if (draft.site_note_id) lastCapturedTextRef.current = textToParse.trim();
 
       if (draft.questions && draft.questions.length > 0) {
         setAiQuestions(draft.questions);
@@ -265,12 +275,18 @@ export const VoiceOrText: React.FC = () => {
   // Save current capture to Project Diary & Backend DB
   const handleSaveToDiary = async () => {
     const today = new Date().toLocaleDateString('de-DE');
+    // Wurde genau dieser Text schon per KI erfasst, liegt er bereits als Notiz im Backend
+    // (Quelle des Brief-Entwurfs) → hier nur darauf verweisen statt ihn erneut abzulegen.
+    const capturedNoteId =
+      lastDraft?.site_note_id && lastCapturedTextRef.current === generalNotes.trim() ? lastDraft.site_note_id : null;
+    const notesSection = capturedNoteId
+      ? `Allgemeine Notizen: siehe Tagebucheintrag #${capturedNoteId}`
+      : `Allgemeine Notizen:\n${generalNotes}`;
     const content = `Schnellerfassung & Sprachnotiz — ${today}
 Bauprojekt: ${activeProject.name} (${activeProject.number})
 Erfasser: ${userName}
 
-Allgemeine Notizen:
-${generalNotes}
+${notesSection}
 
 Kategorisierte Stichpunkte:
 - Baufortschritt: ${categories.progress.join('; ') || 'Keine Angaben'}
@@ -278,6 +294,13 @@ Kategorisierte Stichpunkte:
 - Mehrkosten & Nachträge (§ 2 VOB/B): ${categories.cost.join('; ') || 'Keine'}
 - Mängel / Qualität: ${categories.defect.join('; ') || 'Keine'}
 - Lieferungen & Material: ${categories.delivery.join('; ') || 'Keine'}`.trim();
+
+    // Zweimal „Speichern“ ohne Änderung → kein zweiter identischer Eintrag
+    if (lastSavedContentRef.current === content) {
+      setSaveSuccessMsg(true);
+      setTimeout(() => setSaveSuccessMsg(false), 4000);
+      return;
+    }
 
     // Tagebucheintrag im Backend; nur wenn das scheitert, lokal sichern (vorher immer doppelt gespeichert)
     try {
@@ -287,6 +310,7 @@ Kategorisierte Stichpunkte:
         category: categories.hindrance.length > 0 ? 'incident' : 'progress',
         author: userName
       });
+      lastSavedContentRef.current = content;
     } catch (err) {
       console.warn('Backend nicht erreichbar – Notiz lokal gesichert:', err);
       saveProjectDocument({
