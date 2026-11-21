@@ -18,17 +18,19 @@ from src.models import (
     ProjectUpdate,
     SiteNote,
 )
+from src.schemas.projects import ProjectCreateIn, ProjectUpdateIn, ProjectWithContractors
 from src.services.contracts import delete_contract_file
+from src.services.project_master import sync_contractors, with_contractors
 
 router = APIRouter(prefix="/projects", tags=["Projects"])
 
 
-@router.get("", response_model=list[ProjectRead])
+@router.get("", response_model=list[ProjectWithContractors])
 def list_projects(session: Session = Depends(get_session)):
-    return session.exec(select(Project)).all()
+    return [with_contractors(session, p) for p in session.exec(select(Project)).all()]
 
 
-@router.get("/{project_id}", response_model=ProjectRead)
+@router.get("/{project_id}", response_model=ProjectWithContractors)
 def get_project(project_id: int, session: Session = Depends(get_session)):
     project = session.get(Project, project_id)
     if not project:
@@ -36,25 +38,29 @@ def get_project(project_id: int, session: Session = Depends(get_session)):
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Project not found",
         )
-    return project
+    return with_contractors(session, project)
 
 
-@router.post("", response_model=ProjectRead, status_code=status.HTTP_201_CREATED)
+@router.post("", response_model=ProjectWithContractors, status_code=status.HTTP_201_CREATED)
 def create_project(
-    project: ProjectCreate,
+    project: ProjectCreateIn,
     session: Session = Depends(get_session),
 ):
-    db_project = Project.model_validate(project)
+    # Firmenliste (contractors) wird zu Firmen + Verträgen (Sollstärke), nicht zur Projektspalte.
+    db_project = Project.model_validate(project.model_dump(exclude={"contractors"}))
     session.add(db_project)
+    session.flush()
+    if project.contractors:
+        sync_contractors(session, db_project, project.contractors)
     session.commit()
     session.refresh(db_project)
-    return db_project
+    return with_contractors(session, db_project)
 
 
-@router.patch("/{project_id}", response_model=ProjectRead)
+@router.patch("/{project_id}", response_model=ProjectWithContractors)
 def update_project(
     project_id: int,
-    project_update: ProjectUpdate,
+    project_update: ProjectUpdateIn,
     session: Session = Depends(get_session),
 ):
     db_project = session.get(Project, project_id)
@@ -64,13 +70,20 @@ def update_project(
             detail="Project not found",
         )
 
-    update_data = project_update.model_dump(exclude_unset=True)
+    update_data = project_update.model_dump(exclude_unset=True, exclude={"contractors"})
     db_project.sqlmodel_update(update_data)
     db_project.updated_at = datetime.now(timezone.utc)
+    if project_update.start_date or project_update.end_date:
+        start = db_project.start_date
+        end = db_project.end_date
+        if start and end and end < start:
+            raise HTTPException(status_code=422, detail="end_date liegt vor start_date")
     session.add(db_project)
+    if project_update.contractors is not None:  # None = Firmenliste unverändert
+        sync_contractors(session, db_project, project_update.contractors)
     session.commit()
     session.refresh(db_project)
-    return db_project
+    return with_contractors(session, db_project)
 
 
 @router.delete("/{project_id}", status_code=status.HTTP_204_NO_CONTENT)
