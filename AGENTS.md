@@ -1,6 +1,6 @@
-# AGENTS.md — AI Site Manager Assistant (Backend)
+# AGENTS.md — AI Site Manager Assistant
 
-This repository (`hackaton-backend`) is the backend for **Challenge B: AI Site Manager Assistant for Documentation, Daily Reports and Claims**.
+This repository is a monorepo for **Challenge B: AI Site Manager Assistant for Documentation, Daily Reports and Claims**, structured into `backend/` and `frontend/`.
 
 ---
 
@@ -54,22 +54,37 @@ Build an AI assistant that reduces operational documentation workload for site m
 
 ## 6. Tech Stack & Repository Setup
 
-- **Language:** Python (`>=3.15`, see `pyproject.toml`)
-- **Package Manager:** `uv` (`uv.lock` present)
-- **Web Framework:** FastAPI + Uvicorn
-- **Current Entrypoint:** `main.py`
+### Repository Layout
 
-### Common Commands
+```text
+.
+├── backend/          # FastAPI backend (Python + uv)
+│   ├── pyproject.toml
+│   ├── uv.lock
+│   └── src/
+│       └── main.py
+├── frontend/         # Frontend application
+└── AGENTS.md
+```
+
+### Backend
+
+- **Language:** Python (`>=3.15`, see `backend/pyproject.toml`)
+- **Package Manager:** `uv` (`backend/uv.lock` present)
+- **Web Framework:** FastAPI + Uvicorn
+- **Current Entrypoint:** `backend/src/main.py`
+
+### Common Commands (Backend)
 
 ```bash
 # Install / sync dependencies
-uv sync
+cd backend && uv sync
 
 # Add a new dependency
-uv add <package-name>
+cd backend && uv add <package-name>
 
 # Run the development server
-uv run uvicorn main:app --reload
+cd backend && uv run uvicorn src.main:app --reload
 ```
 
 ---
@@ -77,6 +92,6 @@ uv run uvicorn main:app --reload
 ## 7. Guidelines for Coding Agents
 
 - **Hackathon Pragmatism:** Optimize for clean, working, demoable end-to-end flows over over-engineered abstractions.
-- **Modular Structure:** As features are added, organize code cleanly (e.g., `app/routers/`, `app/services/`, `app/models/` or `schemas/`, `app/prompts/`, `app/exporters/` for PDF/DOCX generation).
+- **Modular Structure:** As features are added in `backend/src/`, organize code cleanly (e.g., `routers/`, `services/`, `models/` or `schemas/`, `prompts/`, `exporters/` for PDF/DOCX generation).
 - **API Clarity:** Use Pydantic models for request/response schemas so FastAPI's OpenAPI docs (`/docs`) stay accurate for frontend integration.
 - **Keep `AGENTS.md` Updated:** When adding major modules, environment variables, LLM providers, or architectural decisions, update this file so subsequent agents have accurate context.
