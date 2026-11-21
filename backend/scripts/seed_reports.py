@@ -19,7 +19,9 @@ Firmen + Verträge mit Sollstärke (seed_companies): Erdbau Krause 3, BetonTech 
 import argparse
 import datetime as dt
 import json
+import re
 import sys
+from collections.abc import Callable
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))  # damit `src` importierbar ist
@@ -109,7 +111,30 @@ DELIVERIES = {
 }
 
 
-def seed_plan(session: Session, project: Project) -> dict[str, PlanTask]:
+Shift = Callable[[dt.date], dt.date]
+SEED_YEAR = 2026
+
+
+def _same(d: dt.date) -> dt.date:
+    return d
+
+
+def shift_text(text: str | None, shift: Shift) -> str | None:
+    """Datumsangaben im Text mitverschieben: "bis 19.11. zu" → "bis 03.12. zu" (passt zur Demo-Verschiebung)."""
+    if not text or shift is _same:
+        return text
+
+    def repl(m: re.Match) -> str:
+        try:
+            d = shift(dt.date(SEED_YEAR, int(m.group(2)), int(m.group(1))))
+        except ValueError:
+            return m.group(0)
+        return f"{d:%d.%m.}"
+
+    return re.sub(r"(?<!\d)(\d{1,2})\.(\d{1,2})\.(?!\d)", repl, text)
+
+
+def seed_plan(session: Session, project: Project, shift: Shift = _same) -> dict[str, PlanTask]:
     """Plan + Vorgänge anlegen (oder vorhandene wiederverwenden). Rückgabe: Code → Vorgang."""
     plan = session.exec(select(ConstructionPlan).where(
         ConstructionPlan.project_id == project.id, ConstructionPlan.title == PLAN_TITLE)).first()
@@ -121,8 +146,8 @@ def seed_plan(session: Session, project: Project) -> dict[str, PlanTask]:
     for code, title, trade, start, end in TASKS:
         if code not in existing:
             existing[code] = PlanTask(plan_id=plan.id, task_code=code, title=title, trade=trade,
-                                      planned_start=dt.date.fromisoformat(start),
-                                      planned_end=dt.date.fromisoformat(end), status="pending")
+                                      planned_start=shift(dt.date.fromisoformat(start)),
+                                      planned_end=shift(dt.date.fromisoformat(end)), status="pending")
             session.add(existing[code])
     session.flush()
     return existing
@@ -145,14 +170,18 @@ def seed_companies(session: Session, project: Project) -> list[Contract]:
     return contracts
 
 
-def seed_all(session: Session, project: Project) -> tuple[dict[str, PlanTask], int]:
-    """Plan, Berichte und Fortschritt für ein Projekt anlegen/ergänzen (ohne Commit). Auch von Tests genutzt."""
-    tasks = seed_plan(session, project)
+def seed_all(session: Session, project: Project, shift: Shift = _same) -> tuple[dict[str, PlanTask], int]:
+    """Plan, Berichte und Fortschritt für ein Projekt anlegen/ergänzen (ohne Commit). Auch von Tests genutzt.
+
+    shift: verschiebt jedes Datum (Demo-Reset: auf "heute" bezogen), Texte inklusive.
+    """
+    tasks = seed_plan(session, project, shift)
     existing = {r.report_date: r for r in session.exec(
         select(DailyReport).where(DailyReport.project_id == project.id)).all()}
     created = 0
     for number, (day, (weather, crew, done, incidents)) in enumerate(DAYS.items(), start=120):
-        date = dt.date.fromisoformat(day)
+        date = shift(dt.date.fromisoformat(day))
+        done, incidents = shift_text(done, shift), shift_text(incidents, shift)
         report = existing.get(date)
         if report is None:
             report = DailyReport(
@@ -168,7 +197,7 @@ def seed_all(session: Session, project: Project) -> tuple[dict[str, PlanTask], i
         report.report_number = report.report_number or number
         report.workforce_count = report.workforce_count or sum(c["workers"] for c in crew)
         report.trades = report.trades or json.dumps([c["trade"] for c in crew], ensure_ascii=False)
-        report.deliveries = report.deliveries or DELIVERIES.get(day)
+        report.deliveries = report.deliveries or shift_text(DELIVERIES.get(day), shift)
         session.add(report)
         session.flush()
         for code, percent in PROGRESS.get(day, {}).items():
