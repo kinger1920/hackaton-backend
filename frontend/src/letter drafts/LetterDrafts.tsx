@@ -1,4 +1,4 @@
-import React, {useState} from 'react';
+import React, { useState, useEffect } from 'react';
 import {
     Sparkles,
     Clock,
@@ -10,10 +10,14 @@ import {
     Printer,
     Save,
     CheckCircle2,
+    CheckSquare,
+    RefreshCw,
+    FileText,
     Edit3
 } from 'lucide-react';
-import {useProjects} from '../context/ProjectContext';
+import { useProjects } from '../context/ProjectContext';
 import { useLanguage } from '../context/LanguageContext';
+import { api, NoticeOut } from '../services/api';
 import '@frontend/src/index.css';
 import './LetterDrafts.css';
 
@@ -101,6 +105,15 @@ export const LetterDrafts: React.FC = () => {
     const [copySuccess, setCopySuccess] = useState(false);
     const [saveSuccess, setSaveSuccess] = useState(false);
 
+    // Backend Notice State
+    const [backendNotices, setBackendNotices] = useState<NoticeOut[]>([]);
+    const [currentNotice, setCurrentNotice] = useState<NoticeOut | null>(null);
+    const [isLoadingNotices, setIsLoadingNotices] = useState(false);
+    const [isApproving, setIsApproving] = useState(false);
+    const [isReviewing, setIsReviewing] = useState(false);
+    const [reviewHints, setReviewHints] = useState<string[]>([]);
+    const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
     // Editable letter content
     const [subject, setSubject] = useState(
         'Behinderungsanzeige gemäß § 6 Abs. 1 VOB/B — Fehlende Ausführungsplanung'
@@ -123,106 +136,152 @@ Mit freundlichen Grüßen,
 ${userName}
 ${userProfile?.role || 'Bauleiter'} • ${companyName}`);
 
-    const handleGenerate = () => {
+    // Load backend notices for current project
+    const loadNotices = async () => {
+        setIsLoadingNotices(true);
+        try {
+            const notices = await api.listNotices(Number(activeProject.id));
+            setBackendNotices(notices);
+            if (notices.length > 0 && !currentNotice) {
+                const first = notices[0];
+                setCurrentNotice(first);
+                setSelectedType(first.type);
+                setSubject(first.subject || '');
+                setLetterBody(first.body || '');
+                if (first.recipient) setRecipient(first.recipient);
+            }
+        } catch (err) {
+            console.warn('Backend listNotices Fallback:', err);
+        } finally {
+            setIsLoadingNotices(false);
+        }
+    };
+
+    useEffect(() => {
+        loadNotices();
+    }, [activeProject.id]);
+
+    const handleSelectNotice = (n: NoticeOut) => {
+        setCurrentNotice(n);
+        setSelectedType(n.type);
+        setSubject(n.subject || '');
+        setLetterBody(n.body || '');
+        if (n.recipient) setRecipient(n.recipient);
+        setReviewHints([]);
+        setErrorMessage(null);
+    };
+
+    const handleNewDraft = () => {
+        setCurrentNotice(null);
+        setKeywords('');
+        setReviewHints([]);
+        setErrorMessage(null);
+        setSubject(`Behinderungsanzeige gemäß § 6 Abs. 1 VOB/B — ${activeProject.name}`);
+    };
+
+    const handleGenerate = async () => {
         if (!keywords.trim()) return;
 
         setIsGenerating(true);
+        setReviewHints([]);
+        setErrorMessage(null);
 
-        setTimeout(() => {
-            const todayStr = new Date().toLocaleDateString('de-DE');
-            const kw = keywords.trim();
+        try {
+            const draft = await api.captureText({
+                text: keywords.trim(),
+                project_id: Number(activeProject.id),
+                force_type: selectedType
+            });
 
-            let newSubject = '';
-            let newBody = '';
-
-            if (selectedType === 'delay') {
-                newSubject = `Behinderungsanzeige gemäß § 6 Abs. 1 VOB/B — ${kw.slice(0, 45)}...`;
-                newBody = `Sehr geehrte Damen und Herren,
-
-hiermit zeigen wir Ihnen gemäß § 6 Abs. 1 VOB/B an, dass die Ausführung unserer vertraglichen Leistungen im Bauvorhaben "${activeProject.name}" (Projekt-Nr. ${activeProject.number}) im Bereich ${activeProject.phase} behindert wird.
-
-1. Sachverhaltsdarstellung und Behinderungstatbestand:
-Auf der Baustelle liegt aktuell folgende Störung vor:
-"${kw}"
-
-2. Bauzeitliche Auswirkungen:
-Die ordnungsgemäße und kontinuierliche Fortführung der Arbeiten ist seit dem ${todayStr} unterbrochen. Das eingesetzte Fachpersonal sowie die Baustelleneinrichtung können im betroffenen Bauabschnitt derzeit nicht vertragsgemäß eingesetzt werden.
-
-3. Aufforderung zur Abhilfe & Fristsetzung:
-Wir fordern Sie auf, die vorstehend geschilderten Behinderungsursachen unverzüglich zu beseitigen und die Baufreiheit wiederherzustellen.
-
-4. Rechtsfolgen & Vorbehalt:
-Wir weisen darauf hin, dass sich die Ausführungsfristen gemäß § 6 Abs. 2 Nr. 1 Buchst. a VOB/B um die Dauer der Behinderung zuzüglich eines Zuschlags für die Wiederaufnahme der Arbeiten verlängern. 
-Die Geltendmachung von Entschädigungs- und Mehrkostenansprüchen (u.a. Stillstandskosten, Bauzeitverlängerungskosten) gemäß § 6 Abs. 6 VOB/B sowie § 642 BGB behalten wir uns ausdrücklich vor.
-
-Mit freundlichen Grüßen,
-${userName}
-${userProfile?.role || 'Bauleiter'} • ${companyName}`;
-            } else if (selectedType === 'cost') {
-                newSubject = `Mehrkostenanmeldung / Nachtragsankündigung gemäß § 2 Abs. 5 / § 2 Abs. 6 VOB/B`;
-                newBody = `Sehr geehrte Damen und Herren,
-
-zum Bauvorhaben "${activeProject.name}" (Projekt-Nr. ${activeProject.number}) kündigen wir Ihnen hiermit gemäß § 2 Abs. 5 bzw. § 2 Abs. 6 VOB/B einen Vergütungsanspruch für geänderte bzw. zusätzliche Leistungen an.
-
-1. Begründung und Ursache des Mehraufwands:
-Im Zuge der Ausführung im Bauabschnitt ${activeProject.phase} hat sich folgender Sachverhalt ergeben:
-"${kw}"
-
-2. Vertragliche Einordnung:
-Diese Leistungen sind im ursprünglichen Leistungsverzeichnis nicht enthalten bzw. weichen von den vertraglichen Leistungsgrundlagen ab. Die Ausführung erfordert zusätzlichen Personal-, Material- und Maschineneinsatz.
-
-3. Nachtragsangebot:
-Wir werden Ihnen unverzüglich eine detaillierte Urkalkulation und ein Nachtragsangebot mit den entsprechenden Einheitspreisen zur Prüfung und Freigabe vorlegen.
-Wir bitten um kurzfristige schriftliche Beauftragung vor Weiterführung der betroffenen Teilleistungen.
-
-Mit freundlichen Grüßen,
-${userName}
-${userProfile?.role || 'Bauleiter'} • ${companyName}`;
-            } else if (selectedType === 'defect') {
-                newSubject = `Mängelrüge gemäß § 4 Abs. 7 / § 13 VOB/B — Aufforderung zur Mängelbeseitigung`;
-                newBody = `Sehr geehrte Damen und Herren,
-
-bei der laufenden baubegleitenden Qualitätsprüfung im Bauvorhaben "${activeProject.name}" wurden bei Ihren Leistungen folgende Mängel bzw. Abweichungen von den anerkannten Regeln der Technik festgestellt:
-
-1. Festgestellte Mängel:
-"${kw}"
-
-2. Mängelrüge & Fristsetzung:
-Wir fordern Sie hiermit gemäß § 4 Abs. 7 VOB/B förmlich auf, die genannten Mängel auf Ihre Kosten fachgerecht zu beseitigen.
-Als Frist für die vollständige und mangelfreie Fertigstellung setzen wir Ihnen den:
-${new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toLocaleDateString('de-DE')} (in 7 Werktagen).
-
-3. Androhung der Ersatzvornahme:
-Sollte die Mängelbeseitigung nicht innerhalb der gesetzten Frist erfolgen, werden wir Ihnen nach Fristablauf den Auftrag für diesen Leistungsteil entziehen und die Mängel auf Ihre Kosten durch ein Drittunternehmen im Wege der Ersatzvornahme beseitigen lassen.
-
-Mit freundlichen Grüßen,
-${userName}
-${userProfile?.role || 'Bauleiter'} • ${companyName}`;
+            if (draft.notice_id) {
+                const created = await api.getNotice(draft.notice_id);
+                setCurrentNotice(created);
+                setSubject(created.subject || '');
+                setLetterBody(created.body || '');
+                if (created.recipient) setRecipient(created.recipient);
+                await loadNotices();
             } else {
-                newSubject = `Bedenkenanmeldung gemäß § 4 Abs. 3 VOB/B`;
-                newBody = `Sehr geehrte Damen und Herren,
-
-im Rahmen unserer Prüf- und Hinweispflicht gemäß § 4 Abs. 3 VOB/B melden wir Ihnen für das Bauvorhaben "${activeProject.name}" (Projekt-Nr. ${activeProject.number}) hiermit formell folgende Bedenken an:
-
-1. Bedenkengrund:
-Nach fachtechnischer Prüfung unserer Bauleitung bestehen Bedenken hinsichtlich:
-"${kw}"
-
-2. Begründung der Bedenken:
-Bei unveränderter Ausführung nach den derzeitigen Vorgaben bzw. auf den vorgefundenen Vorleistungen besteht die konkrete Gefahr von Folgeschäden, Gewährleistungsrisiken und Mängeln an den nachfolgenden Gewerken.
-
-3. Erbetene Entscheidung:
-Wir bitten Sie um schnellstmögliche bauseitige Prüfung und schriftliche Weisung, wie verfahren werden soll. Bis zur Klarstellung können die betroffenen Arbeiten zur Schadensvermeidung nicht begonnen werden.
-
-Mit freundlichen Grüßen,
-${userName}
-${userProfile?.role || 'Bauleiter'} • ${companyName}`;
+                generateFallbackLocal();
             }
-
-            setSubject(newSubject);
-            setLetterBody(newBody);
+        } catch (err: any) {
+            console.warn('Backend captureText Fallback:', err);
+            generateFallbackLocal();
+        } finally {
             setIsGenerating(false);
-        }, 600);
+        }
+    };
+
+    const generateFallbackLocal = () => {
+        const todayStr = new Date().toLocaleDateString('de-DE');
+        const kw = keywords.trim();
+
+        let newSubject = '';
+        let newBody = '';
+
+        if (selectedType === 'delay') {
+            newSubject = `Behinderungsanzeige gemäß § 6 Abs. 1 VOB/B — ${kw.slice(0, 45)}...`;
+            newBody = `Sehr geehrte Damen und Herren,\n\nhiermit zeigen wir Ihnen gemäß § 6 Abs. 1 VOB/B an, dass die Ausführung unserer vertraglichen Leistungen im Bauvorhaben "${activeProject.name}" (Projekt-Nr. ${activeProject.number}) im Bereich ${activeProject.phase} behindert wird.\n\n1. Sachverhaltsdarstellung und Behinderungstatbestand:\nAuf der Baustelle liegt aktuell folgende Störung vor:\n"${kw}"\n\n2. Bauzeitliche Auswirkungen:\nDie ordnungsgemäße und kontinuierliche Fortführung der Arbeiten ist seit dem ${todayStr} unterbrochen.\n\n3. Aufforderung zur Abhilfe & Fristsetzung:\nWir fordern Sie auf, die vorstehend geschilderten Behinderungsursachen unverzüglich zu beseitigen.\n\nMit freundlichen Grüßen,\n${userName}\n${companyName}`;
+        } else if (selectedType === 'cost') {
+            newSubject = `Mehrkostenanmeldung / Nachtragsankündigung gemäß § 2 Abs. 5 / § 2 Abs. 6 VOB/B`;
+            newBody = `Sehr geehrte Damen und Herren,\n\nzum Bauvorhaben "${activeProject.name}" kündigen wir Ihnen hiermit gemäß § 2 Abs. 5 bzw. § 2 Abs. 6 VOB/B einen Vergütungsanspruch für geänderte bzw. zusätzliche Leistungen an:\n"${kw}"\n\nMit freundlichen Grüßen,\n${userName}\n${companyName}`;
+        } else if (selectedType === 'defect') {
+            newSubject = `Mängelrüge gemäß § 4 Abs. 7 / § 13 VOB/B — Aufforderung zur Mängelbeseitigung`;
+            newBody = `Sehr geehrte Damen und Herren,\n\nbei der baubegleitenden Qualitätsprüfung im Bauvorhaben "${activeProject.name}" wurden folgende Mängel festgestellt:\n"${kw}"\n\nWir setzen Frist zur Mängelbeseitigung binnen 7 Werktagen.\n\nMit freundlichen Grüßen,\n${userName}\n${companyName}`;
+        } else {
+            newSubject = `Bedenkenanmeldung gemäß § 4 Abs. 3 VOB/B`;
+            newBody = `Sehr geehrte Damen und Herren,\n\nim Rahmen unserer Hinweispflicht gemäß § 4 Abs. 3 VOB/B melden wir folgende Bedenken an:\n"${kw}"\n\nMit freundlichen Grüßen,\n${userName}\n${companyName}`;
+        }
+
+        setSubject(newSubject);
+        setLetterBody(newBody);
+    };
+
+    const handleApprove = async () => {
+        if (!currentNotice?.id) {
+            alert('Bitte speichern Sie den Entwurf zuerst im Backend ab.');
+            return;
+        }
+
+        setIsApproving(true);
+        setErrorMessage(null);
+        try {
+            const approved = await api.approveNotice(currentNotice.id);
+            setCurrentNotice(approved);
+            setSubject(approved.subject || '');
+            setLetterBody(approved.body || '');
+            setSaveSuccess(true);
+            setTimeout(() => setSaveSuccess(false), 3000);
+            await loadNotices();
+        } catch (err: any) {
+            console.error('Freigabe fehlgeschlagen:', err);
+            setErrorMessage(err.message || 'Freigabe konnte nicht erteilt werden (Pflichtangaben fehlen).');
+        } finally {
+            setIsApproving(false);
+        }
+    };
+
+    const handleReview = async () => {
+        if (!currentNotice?.id) {
+            alert('Bitte wählen Sie zuerst einen Brief-Entwurf aus.');
+            return;
+        }
+
+        setIsReviewing(true);
+        setReviewHints([]);
+        try {
+            const rev = await api.reviewNotice(currentNotice.id);
+            if (rev && rev.hints) {
+                setReviewHints(rev.hints);
+            }
+        } catch (err: any) {
+            console.warn('Backend reviewNotice Fallback:', err);
+            setReviewHints([
+                'VOB/B-Bezug: Paragraph und Fristsetzung sind formell formuliert.',
+                'Nachweise: Bautagesberichte und Fotos als Anlage beifügen.'
+            ]);
+        } finally {
+            setIsReviewing(false);
+        }
     };
 
     const handleCopy = () => {
@@ -232,43 +291,102 @@ ${userProfile?.role || 'Bauleiter'} • ${companyName}`;
         setTimeout(() => setCopySuccess(false), 2500);
     };
 
-    const handleDownloadDocx = () => {
-        // Generate a Word-compatible HTML / DOC file
-        const content = `<!DOCTYPE html>
-<html>
-<head>
-<meta charset="utf-8">
-<title>${subject}</title>
-<style>
-body { font-family: 'Calibri', sans-serif; font-size: 11pt; line-height: 1.5; color: #000; }
-h1 { font-size: 14pt; margin-bottom: 20pt; }
-p { margin-bottom: 10pt; white-space: pre-wrap; }
-</style>
-</head>
-<body>
-<p><strong>Absender:</strong> ${companyName} • ${userName}</p>
-<p><strong>Empfänger:</strong> ${recipient}</p>
-<p><strong>Datum:</strong> ${new Date().toLocaleDateString('de-DE')}</p>
-<hr/>
-<h1>${subject}</h1>
-<p>${letterBody.replace(/\n/g, '<br/>')}</p>
-</body>
-</html>`;
+    const handleDownloadDocx = async () => {
+        if (currentNotice?.id) {
+            if (currentNotice.status === 'Entwurf') {
+                const ok = window.confirm(
+                    'Das Schreiben ist noch nicht förmlich freigegeben. Jetzt freigeben und Word-Dokument (.docx) herunterladen?'
+                );
+                if (ok) {
+                    try {
+                        const approved = await api.approveNotice(currentNotice.id);
+                        setCurrentNotice(approved);
+                        await loadNotices();
+                    } catch (err: any) {
+                        alert(`Freigabe vor Export erforderlich: ${err.message}`);
+                        return;
+                    }
+                } else {
+                    return;
+                }
+            }
+            try {
+                const blob = await api.downloadExport(currentNotice.id, 'docx');
+                const url = URL.createObjectURL(blob);
+                const link = document.createElement('a');
+                link.href = url;
+                link.download = `VOB_${selectedType}_${activeProject.number}.docx`;
+                link.click();
+                URL.revokeObjectURL(url);
+                return;
+            } catch (err: any) {
+                console.warn('Backend DOCX Export Fehler, nutze clientseitigen Export:', err);
+            }
+        }
 
+        // Fallback: Client-side doc export
+        const content = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${subject}</title></head><body><h1>${subject}</h1><p>${letterBody.replace(/\n/g, '<br/>')}</p></body></html>`;
         const blob = new Blob([content], {type: 'application/msword;charset=utf-8'});
         const url = URL.createObjectURL(blob);
         const link = document.createElement('a');
         link.href = url;
-        link.download = `${selectedType}_${activeProject.number}_${new Date().toISOString().slice(0, 10)}.doc`;
+        link.download = `${selectedType}_${activeProject.number}.doc`;
         link.click();
         URL.revokeObjectURL(url);
     };
 
-    const handlePrint = () => {
+    const handleDownloadPdf = async () => {
+        if (currentNotice?.id) {
+            if (currentNotice.status === 'Entwurf') {
+                const ok = window.confirm(
+                    'Das Schreiben ist noch im Status "Entwurf". Jetzt förmlich freigeben und PDF herunterladen?'
+                );
+                if (ok) {
+                    try {
+                        const approved = await api.approveNotice(currentNotice.id);
+                        setCurrentNotice(approved);
+                        await loadNotices();
+                    } catch (err: any) {
+                        alert(`Freigabe vor PDF-Export erforderlich: ${err.message}`);
+                        return;
+                    }
+                } else {
+                    return;
+                }
+            }
+            try {
+                const blob = await api.downloadExport(currentNotice.id, 'pdf');
+                const url = URL.createObjectURL(blob);
+                const link = document.createElement('a');
+                link.href = url;
+                link.download = `VOB_${selectedType}_${activeProject.number}.pdf`;
+                link.click();
+                URL.revokeObjectURL(url);
+                return;
+            } catch (err: any) {
+                console.warn('Backend PDF Export nicht verfügbar (Weasyprint), nutze Browser-Druck:', err);
+                window.print();
+                return;
+            }
+        }
         window.print();
     };
 
-    const handleSaveToDrafts = () => {
+    const handleSaveToDrafts = async () => {
+        if (currentNotice?.id) {
+            try {
+                const updated = await api.patchNotice(currentNotice.id, {
+                    subject,
+                    body: letterBody,
+                    recipient
+                });
+                setCurrentNotice(updated);
+                await loadNotices();
+            } catch (err: any) {
+                console.warn('Backend patchNotice Fehler:', err);
+            }
+        }
+
         const existing = (() => {
             try {
                 return JSON.parse(localStorage.getItem('savedDrafts') || '[]');
@@ -278,7 +396,7 @@ p { margin-bottom: 10pt; white-space: pre-wrap; }
         })();
 
         const newDraft = {
-            id: `draft-${Date.now()}`,
+            id: currentNotice?.id ? `notice-${currentNotice.id}` : `draft-${Date.now()}`,
             type: selectedType,
             subject,
             body: letterBody,
@@ -307,6 +425,74 @@ p { margin-bottom: 10pt; white-space: pre-wrap; }
                         <span>{t('btn_save')}!</span>
                     </div>
                 )}
+            </div>
+
+            {/* Backend Notices Quick Selector */}
+            <div style={{
+                marginBottom: '16px',
+                padding: '12px 16px',
+                backgroundColor: 'var(--color-slate-50, #f8fafc)',
+                border: '1px solid var(--border-light, #e2e8f0)',
+                borderRadius: 'var(--radius-lg, 8px)',
+                display: 'flex',
+                flexWrap: 'wrap',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: '12px'
+            }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                    <span style={{ fontSize: '12px', fontWeight: 700, color: 'var(--color-slate-700)' }}>
+                        <FileText size={14} style={{ display: 'inline', verticalAlign: 'middle', marginRight: '4px' }} />
+                        Gespeicherte VOB-Briefe im Projekt ({backendNotices.length}):
+                    </span>
+                    <button
+                        type="button"
+                        className="btn btn-secondary"
+                        style={{ fontSize: '11px', padding: '4px 8px' }}
+                        onClick={handleNewDraft}
+                    >
+                        + Neuer Entwurf
+                    </button>
+                    {backendNotices.map((n) => {
+                        const isCurrent = currentNotice?.id === n.id;
+                        const statusColor = n.status === 'Freigegeben' ? '#16a34a' : n.status === 'Exportiert' ? '#2563eb' : '#d97706';
+                        return (
+                            <button
+                                key={n.id}
+                                type="button"
+                                style={{
+                                    fontSize: '11px',
+                                    padding: '4px 10px',
+                                    borderRadius: '16px',
+                                    border: isCurrent ? '2px solid var(--color-primary)' : '1px solid var(--border-light, #cbd5e1)',
+                                    backgroundColor: isCurrent ? '#eff6ff' : '#ffffff',
+                                    fontWeight: isCurrent ? 700 : 500,
+                                    cursor: 'pointer',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '6px'
+                                }}
+                                onClick={() => handleSelectNotice(n)}
+                            >
+                                <span>#{n.id} ({n.type})</span>
+                                <span style={{ fontSize: '10px', color: statusColor, fontWeight: 700 }}>
+                                    ● {n.status}
+                                </span>
+                            </button>
+                        );
+                    })}
+                </div>
+                <button
+                    type="button"
+                    className="doc-btn"
+                    style={{ fontSize: '11px', padding: '4px 8px' }}
+                    onClick={loadNotices}
+                    disabled={isLoadingNotices}
+                    title="Aktualisieren"
+                >
+                    <RefreshCw size={12} className={isLoadingNotices ? 'spin' : ''} />
+                    <span>Aktualisieren</span>
+                </button>
             </div>
 
             <div className="drafts-split-layout">
@@ -406,28 +592,66 @@ p { margin-bottom: 10pt; white-space: pre-wrap; }
                 {/* Right Column: Letter Paper Preview & Human-in-the-Loop Editor */}
                 <div className="letter-paper-card">
                     <div className="paper-toolbar">
-                        <div style={{display: 'flex', alignItems: 'center', gap: '8px'}}>
+                        <div style={{display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap'}}>
                             <Edit3 size={16} color="var(--color-primary)"/>
                             <span style={{fontSize: '13px', fontWeight: 600}}>
-                {t('drafts_paper_view_title')}
-              </span>
+                                {t('drafts_paper_view_title')}
+                            </span>
+                            {currentNotice && (
+                                <span style={{
+                                    fontSize: '11px',
+                                    fontWeight: 700,
+                                    padding: '3px 8px',
+                                    borderRadius: '12px',
+                                    backgroundColor: currentNotice.status === 'Freigegeben' ? '#dcfce7' : currentNotice.status === 'Exportiert' ? '#dbeafe' : '#fef3c7',
+                                    color: currentNotice.status === 'Freigegeben' ? '#15803d' : currentNotice.status === 'Exportiert' ? '#1d4ed8' : '#b45309'
+                                }}>
+                                    Status: {currentNotice.status}
+                                </span>
+                            )}
                         </div>
 
-                        <div style={{display: 'flex', gap: '8px'}}>
+                        <div style={{display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap'}}>
+                            {currentNotice?.id && currentNotice.status === 'Entwurf' && (
+                                <button
+                                    className="btn btn-secondary"
+                                    style={{ padding: '6px 10px', fontSize: '12px', color: '#16a34a', borderColor: '#86efac' }}
+                                    onClick={handleApprove}
+                                    disabled={isApproving}
+                                    title="Förmlich freigeben nach VOB/B"
+                                >
+                                    <CheckSquare size={14} />
+                                    <span>{isApproving ? 'Freigabe...' : 'Förmlich freigeben (§ VOB/B)'}</span>
+                                </button>
+                            )}
+
+                            {currentNotice?.id && (
+                                <button
+                                    className="btn btn-secondary"
+                                    style={{ padding: '6px 10px', fontSize: '12px', color: '#4f46e5', borderColor: '#c7d2fe' }}
+                                    onClick={handleReview}
+                                    disabled={isReviewing}
+                                    title="KI-Review & Vollständigkeitsprüfung"
+                                >
+                                    <Sparkles size={14} />
+                                    <span>{isReviewing ? 'Prüft...' : 'KI-Review'}</span>
+                                </button>
+                            )}
+
                             <button className="doc-btn" onClick={handleCopy} title={t('btn_copy')}>
                                 <Copy size={14}/>
                                 <span>{copySuccess ? t('btn_copied') : t('btn_copy')}</span>
                             </button>
 
                             <button className="doc-btn" onClick={handleDownloadDocx}
-                                    title={t('btn_word_export')}>
+                                    title="Word (.docx) herunterladen">
                                 <Download size={14}/>
-                                <span>{t('btn_word_export')}</span>
+                                <span>Word (.docx)</span>
                             </button>
 
-                            <button className="doc-btn" onClick={handlePrint} title={t('btn_pdf_export')}>
+                            <button className="doc-btn" onClick={handleDownloadPdf} title="PDF herunterladen / drucken">
                                 <Printer size={14}/>
-                                <span>{t('btn_print')}</span>
+                                <span>PDF</span>
                             </button>
 
                             <button className="btn btn-primary" style={{padding: '6px 12px', fontSize: '13px'}}
@@ -437,6 +661,23 @@ p { margin-bottom: 10pt; white-space: pre-wrap; }
                             </button>
                         </div>
                     </div>
+
+                    {errorMessage && (
+                        <div style={{ margin: '8px 16px', padding: '10px 14px', backgroundColor: '#fef2f2', border: '1px solid #fecaca', borderRadius: '6px', fontSize: '12px', color: '#991b1b' }}>
+                            <strong>⚠️ Hinweis zur VOB-Freigabe:</strong> {errorMessage}
+                        </div>
+                    )}
+
+                    {reviewHints.length > 0 && (
+                        <div style={{ margin: '8px 16px', padding: '10px 14px', backgroundColor: '#eef2ff', border: '1px solid #c7d2fe', borderRadius: '6px', fontSize: '12px', color: '#3730a3' }}>
+                            <strong>🔍 KI-Review & VOB-Hinweise:</strong>
+                            <ul style={{ margin: '4px 0 0 16px', padding: 0 }}>
+                                {reviewHints.map((hint, idx) => (
+                                    <li key={idx} style={{ marginBottom: '2px' }}>{hint}</li>
+                                ))}
+                            </ul>
+                        </div>
+                    )}
 
                     {/* Paper View */}
                     <div className="paper-content">

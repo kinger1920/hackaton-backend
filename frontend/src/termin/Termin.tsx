@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { useProjects } from '../context/ProjectContext';
 import { useLanguage } from '../context/LanguageContext';
+import { api, ConstructionPlan } from '../services/api';
 import '@frontend/src/index.css';
 import './Termin.css';
 
@@ -24,7 +25,7 @@ export type EventCategory = 'deadline' | 'milestone' | 'inspection' | 'meeting' 
 
 export interface SiteAppointment {
   id: string;
-  projectId: string;
+  projectId: string | number;
   title: string;
   date: string; // YYYY-MM-DD
   time?: string;
@@ -241,6 +242,7 @@ export const Termin: React.FC = () => {
   const [newDesc, setNewDesc] = useState('');
   const [newVobRef, setNewVobRef] = useState('');
   const [newIsUrgent, setNewIsUrgent] = useState(false);
+  const [backendPlans, setBackendPlans] = useState<ConstructionPlan[]>([]);
 
   // Synchronize when project changes
   useEffect(() => {
@@ -255,6 +257,11 @@ export const Termin: React.FC = () => {
     } catch {
       setAppointments(INITIAL_PROJECT_EVENTS[activeProject.id] || []);
     }
+
+    // Load backend construction plans
+    api.listPlans(Number(activeProject.id))
+      .then((plans) => setBackendPlans(plans))
+      .catch((err) => console.warn('Backend listPlans Fallback:', err));
   }, [activeProject.id]);
 
   const saveAppointments = (updated: SiteAppointment[]) => {
@@ -442,6 +449,11 @@ export const Termin: React.FC = () => {
             <h1 className="termin-title">{t('term_title')}</h1>
             <p className="termin-sub">
               {t('term_sub')} <strong>{activeProject.name}</strong> ({activeProject.number})
+              {backendPlans.length > 0 && (
+                <span style={{ marginLeft: '10px', fontSize: '11px', color: '#16a34a', fontWeight: 600 }}>
+                  ✓ {backendPlans.length} {backendPlans.length === 1 ? 'Bauplan' : 'Baupläne'} synchronisiert
+                </span>
+              )}
             </p>
           </div>
         </div>
