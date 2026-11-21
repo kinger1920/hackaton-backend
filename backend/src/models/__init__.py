@@ -14,6 +14,7 @@ from .plan import (
 )
 from .project import Project, ProjectCreate, ProjectRead, ProjectUpdate
 from .report import DailyReport, DailyReportCreate, DailyReportRead
+from .report_progress import ReportProgress
 
 __all__ = [
     "Project",
@@ -41,6 +42,7 @@ __all__ = [
     "FormalNoticeCreate",
     "FormalNoticeRead",
     "NoticeDraftData",
+    "ReportProgress",
     "ChatSession",
     "ChatSessionCreate",
     "ChatSessionRead",
