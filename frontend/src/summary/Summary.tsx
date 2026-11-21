@@ -87,14 +87,17 @@ export const Summary: React.FC = () => {
   const [copyDone, setCopyDone] = useState(false);
 
   // Dokumente: Tagebuch = echte Berichte + Diktate aus dem Backend (/api/timeline, 90 Tage),
-  // Protokolle/E-Mails = lokale Ablage (dafür gibt es noch keinen Backend-Speicher).
+  // Protokolle/E-Mails = aus dem Backend (/api/documents), Fallback auf lokale Ablage.
   useEffect(() => {
     let cancelled = false;
     const refreshDocs = async () => {
       const local = getDocumentsForProject(activeProject.id);
       let docs = local;
       try {
-        const tl = await api.getTimeline(Number(activeProject.id), toIsoDate(addDays(new Date(), -90)), todayIso(), ['report', 'note']);
+        const [tl, backendDocs] = await Promise.all([
+          api.getTimeline(Number(activeProject.id), toIsoDate(addDays(new Date(), -90)), todayIso(), ['report', 'note']),
+          api.listDocuments(Number(activeProject.id)).catch(() => [])
+        ]);
         const diary: ProjectDocumentItem[] = tl.items.map((it) => ({
           id: `${it.type}-${it.refId ?? it.id}`,
           projectId: activeProject.id,
@@ -104,9 +107,22 @@ export const Summary: React.FC = () => {
           authorOrSender: it.source,
           content: it.summary
         }));
-        docs = [...diary, ...local.filter((d) => d.type !== 'diary')];
+        const nonDiaryFromBackend: ProjectDocumentItem[] = backendDocs
+          .filter((d) => d.type !== 'diary')
+          .map((d) => ({
+            id: d.id,
+            projectId: d.projectId,
+            type: d.type,
+            title: d.title,
+            date: d.date,
+            authorOrSender: d.authorOrSender,
+            content: d.content,
+            summary: d.summary ?? undefined
+          }));
+        const extraDocs = nonDiaryFromBackend.length > 0 ? nonDiaryFromBackend : local.filter((d) => d.type !== 'diary');
+        docs = [...diary, ...extraDocs];
       } catch (err) {
-        console.warn('Timeline nicht erreichbar – Tagebuch aus lokaler Ablage:', err);
+        console.warn('Timeline/Dokumente nicht erreichbar – Tagebuch aus lokaler Ablage:', err);
       }
       if (cancelled) return;
       setProjectDocs(docs);

@@ -140,6 +140,9 @@ export type ProjectPayload = Partial<Record<keyof Omit<BackendProject, 'id' | 'c
 // ---- Analysis Types ----
 export interface WorkPackage {
   id: string;
+  taskId?: number | null;
+  planId?: number | null;
+  location?: string | null;
   name: string;
   trade: string;
   subcontractor: string;
@@ -269,11 +272,64 @@ export interface ContractParseResponse {
 // Liefert das Backend 404, zeigt die Oberfläche "Backend folgt".
 // ==========================================
 
-/** Idee #1: Foto → Tagebucheintrag (Contract aus dem Hackathon-Plan) */
+/** Idee #1: Foto → Tagebucheintrag & Foto-Verwaltung (/api/photos) */
 export interface PhotoDescribeResponse {
   caption: string;
   diary_text: string;
   issues: string[];
+  mode?: 'ai' | 'offline';
+  id?: number | null;
+  project_id?: number | null;
+  report_date?: string | null;
+  file_name?: string | null;
+  url?: string | null;
+  created_at?: string | null;
+}
+
+export interface SitePhotoOut {
+  id: number;
+  project_id: number;
+  report_date: string;
+  file_name: string;
+  mime_type: string;
+  url: string;
+  caption: string;
+  diary_text: string;
+  issues: string[];
+  mode: 'ai' | 'offline';
+  created_at: string;
+}
+
+export interface UserProfilePayload {
+  fullName: string;
+  email: string;
+  phone: string;
+  company: string;
+  role: string;
+  officeLocation: string;
+  workplaceType: string;
+  permissions: {
+    dailyReports: boolean;
+    vobLetters: boolean;
+    defectNotices: boolean;
+    claims: boolean;
+  };
+}
+
+export interface BackendProjectDocument {
+  id: string;
+  db_id?: number;
+  projectId: number | string;
+  type: 'diary' | 'minutes' | 'emails';
+  title: string;
+  date: string;
+  authorOrSender: string;
+  content: string;
+  weather?: string | null;
+  workforceCount?: number | null;
+  trades?: string[] | null;
+  hindrance?: string | null;
+  summary?: any;
 }
 
 /** Idee #2: Wetter automatisch */
@@ -416,8 +472,9 @@ export interface ContractText {
   extracted_text: string;
 }
 
-// ---- Schedule (/api/schedule) – Zukunft: Aufgaben je Werktag + Termine ----
+// ---- Schedule (/api/schedule) & Manuelle Termine (/api/appointments) ----
 export type AppointmentCategory = 'deadline' | 'milestone' | 'inspection' | 'meeting' | 'delivery';
+export type AppointmentSource = 'manual' | 'plan' | 'workforce';
 
 export interface DayTask {
   taskId: number;
@@ -451,7 +508,24 @@ export interface ScheduleAppointment {
   description?: string | null;
   vobReference?: string | null;
   isUrgent?: boolean;
+  source?: AppointmentSource;
+  sourceLabel?: string | null;
+  editable?: boolean;
 }
+
+export interface AppointmentCreate {
+  projectId: number;
+  title: string;
+  date: string;
+  time?: string | null;
+  category: AppointmentCategory;
+  trade?: string | null;
+  description?: string | null;
+  vobReference?: string | null;
+  isUrgent?: boolean;
+}
+
+export type AppointmentUpdate = Partial<Omit<AppointmentCreate, 'projectId'>>;
 
 export interface Schedule {
   projectId: number;
@@ -499,6 +573,7 @@ export interface PlanTask {
   actual_end?: string | null;
   status: PlanTaskStatus | string;
   notes?: string | null;
+  location?: string | null;
 }
 
 export interface PlanTaskIn {
@@ -508,6 +583,7 @@ export interface PlanTaskIn {
   planned_start: string;
   planned_end: string;
   status?: string;
+  location?: string | null;
 }
 
 export type PlanTaskPatch = Partial<Omit<PlanTask, 'id' | 'plan_id' | 'notes'>>;
@@ -1008,6 +1084,48 @@ export const api = {
     return handleResponse<Schedule>(res, 'Terminplan konnte nicht geladen werden');
   },
 
+  /** URL für den iCalendar-Feed (.ics) des Projekts (Outlook / Google / Apple Kalender) */
+  getScheduleIcsUrl(projectId: number): string {
+    return `${API_BASE_URL}/api/schedule/ics?project_id=${projectId}`;
+  },
+
+  /** GET /api/appointments – alle manuell angelegten Termine eines Projekts */
+  async listAppointments(projectId: number, from?: string, to?: string): Promise<ScheduleAppointment[]> {
+    const params = new URLSearchParams({ project_id: String(projectId) });
+    if (from) params.set('from', from);
+    if (to) params.set('to', to);
+    const res = await fetch(`${API_BASE_URL}/api/appointments?${params.toString()}`);
+    return handleResponse<ScheduleAppointment[]>(res, 'Termine konnten nicht geladen werden');
+  },
+
+  /** POST /api/appointments – neuen manuellen Termin anlegen */
+  async createAppointment(data: AppointmentCreate): Promise<ScheduleAppointment> {
+    const res = await fetch(`${API_BASE_URL}/api/appointments`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    return handleResponse<ScheduleAppointment>(res, 'Termin konnte nicht gespeichert werden');
+  },
+
+  /** PATCH /api/appointments/{id} – manuellen Termin bearbeiten */
+  async updateAppointment(id: string | number, data: AppointmentUpdate): Promise<ScheduleAppointment> {
+    const numericId = String(id).replace(/^appt-/, '');
+    const res = await fetch(`${API_BASE_URL}/api/appointments/${numericId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    return handleResponse<ScheduleAppointment>(res, 'Termin konnte nicht aktualisiert werden');
+  },
+
+  /** DELETE /api/appointments/{id} – manuellen Termin löschen */
+  async deleteAppointment(id: string | number): Promise<void> {
+    const numericId = String(id).replace(/^appt-/, '');
+    const res = await fetch(`${API_BASE_URL}/api/appointments/${numericId}`, { method: 'DELETE' });
+    await expectOk(res, 'Termin konnte nicht gelöscht werden');
+  },
+
   /** GET /api/timeline – max. 92 Tage je Abruf, neueste zuerst */
   async getTimeline(projectId: number, from: string, to: string, types?: TimelineType[]): Promise<Timeline> {
     const params = new URLSearchParams({ project_id: String(projectId), from, to });
@@ -1082,17 +1200,95 @@ export const api = {
   },
 
   // ==========================================
-  // Geplante Endpunkte (Ideen) – existieren im Backend noch nicht → 404 → "Backend folgt"
+  // Fotos, Versand, Dokumente & Profil
   // ==========================================
 
-  /** Idee #1: POST /api/photos/describe (multipart: file, project_id, lang) */
-  async describePhoto(file: File, projectId?: number, lang = 'de'): Promise<PhotoDescribeResponse> {
+  getPhotoFileUrl(photoOrId: SitePhotoOut | number | string): string {
+    if (typeof photoOrId === 'object' && photoOrId !== null) {
+      if (photoOrId.url.startsWith('http')) return photoOrId.url;
+      return `${API_BASE_URL}${photoOrId.url}`;
+    }
+    return `${API_BASE_URL}/api/photos/${photoOrId}/file`;
+  },
+
+  /** GET /api/photos – Fotos eines Projekts für einen Tag oder Zeitraum */
+  async listPhotos(projectId: number, from?: string, to?: string, exactDate?: string): Promise<SitePhotoOut[]> {
+    const params = new URLSearchParams({ project_id: String(projectId) });
+    if (exactDate) params.set('date', exactDate);
+    if (from) params.set('from', from);
+    if (to) params.set('to', to);
+    const res = await fetch(`${API_BASE_URL}/api/photos?${params.toString()}`);
+    return handleResponse<SitePhotoOut[]>(res, 'Fotos konnten nicht geladen werden');
+  },
+
+  /** POST /api/photos – Foto hochladen, speichern und per KI/Offline-Regeln beschreiben */
+  async uploadPhoto(file: File, projectId: number, reportDate?: string, caption?: string, lang = 'de'): Promise<SitePhotoOut> {
+    const form = new FormData();
+    form.append('file', file, file.name);
+    form.append('project_id', String(projectId));
+    form.append('lang', lang);
+    if (reportDate) form.append('report_date', reportDate);
+    if (caption) form.append('caption', caption);
+    const res = await fetch(`${API_BASE_URL}/api/photos`, { method: 'POST', body: form });
+    return handleResponse<SitePhotoOut>(res, 'Foto konnte nicht hochgeladen werden');
+  },
+
+  /** DELETE /api/photos/{id} */
+  async deletePhoto(photoId: number): Promise<void> {
+    const res = await fetch(`${API_BASE_URL}/api/photos/${photoId}`, { method: 'DELETE' });
+    await expectOk(res, 'Foto konnte nicht gelöscht werden');
+  },
+
+  /** Idee #1: POST /api/photos/describe (multipart: file, project_id, report_date, lang) */
+  async describePhoto(file: File, projectId?: number, lang = 'de', reportDate?: string, caption?: string): Promise<PhotoDescribeResponse> {
     const form = new FormData();
     form.append('file', file, file.name);
     form.append('lang', lang);
     if (projectId) form.append('project_id', String(projectId));
+    if (reportDate) form.append('report_date', reportDate);
+    if (caption) form.append('caption', caption);
     const res = await fetch(`${API_BASE_URL}/api/photos/describe`, { method: 'POST', body: form });
     return handleResponse<PhotoDescribeResponse>(res, 'Fotoanalyse fehlgeschlagen');
+  },
+
+  /** GET /api/documents */
+  async listDocuments(projectId: number, docType?: 'diary' | 'minutes' | 'emails'): Promise<BackendProjectDocument[]> {
+    const params = new URLSearchParams({ project_id: String(projectId) });
+    if (docType) params.set('doc_type', docType);
+    const res = await fetch(`${API_BASE_URL}/api/documents?${params.toString()}`);
+    return handleResponse<BackendProjectDocument[]>(res, 'Dokumente konnten nicht geladen werden');
+  },
+
+  /** POST /api/documents */
+  async saveDocument(doc: BackendProjectDocument): Promise<BackendProjectDocument> {
+    const res = await fetch(`${API_BASE_URL}/api/documents`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(doc),
+    });
+    return handleResponse<BackendProjectDocument>(res, 'Dokument konnte nicht gespeichert werden');
+  },
+
+  /** DELETE /api/documents/{id} */
+  async deleteDocument(docId: string | number): Promise<void> {
+    const res = await fetch(`${API_BASE_URL}/api/documents/${encodeURIComponent(String(docId))}`, { method: 'DELETE' });
+    await expectOk(res, 'Dokument konnte nicht gelöscht werden');
+  },
+
+  /** GET /api/profile */
+  async getProfile(): Promise<UserProfilePayload> {
+    const res = await fetch(`${API_BASE_URL}/api/profile`);
+    return handleResponse<UserProfilePayload>(res, 'Profil konnte nicht geladen werden');
+  },
+
+  /** PUT /api/profile */
+  async saveProfile(profile: UserProfilePayload): Promise<UserProfilePayload> {
+    const res = await fetch(`${API_BASE_URL}/api/profile`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(profile),
+    });
+    return handleResponse<UserProfilePayload>(res, 'Profil konnte nicht gespeichert werden');
   },
 
   /** Idee #2: GET /api/weather?project_id=&date= */

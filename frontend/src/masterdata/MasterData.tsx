@@ -1,4 +1,5 @@
 import React, {useEffect, useState} from 'react';
+import {useLocation} from 'react-router-dom';
 import {
     Building2,
     FileText,
@@ -81,7 +82,10 @@ export const MasterData: React.FC = () => {
     const {t} = useLanguage();
     const {activeProject} = useProjects();
     const projectId = Number(activeProject.id);
-    const [tab, setTab] = useState<Tab>('companies');
+    const navTab = (useLocation().state as { tab?: Tab } | null)?.tab;
+    const [tab, setTab] = useState<Tab>(
+        navTab === 'companies' || navTab === 'contracts' || navTab === 'plans' ? navTab : 'companies'
+    );
     const [error, setError] = useState<string | null>(null);
 
     return (
@@ -596,7 +600,9 @@ const PlansTab: React.FC<{ projectId: number; onError: (msg: string) => void }> 
     const load = async () => {
         setLoading(true);
         try {
-            setPlans(await api.listPlans(projectId));
+            const list = await api.listPlans(projectId);
+            setPlans(list);
+            setOpenPlanId((prev) => (prev !== null && list.some((p) => p.id === prev) ? prev : list[0]?.id ?? null));
         } catch (err: any) {
             onError(err?.message || 'Pläne konnten nicht geladen werden');
         } finally {

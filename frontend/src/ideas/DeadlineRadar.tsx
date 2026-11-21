@@ -2,15 +2,13 @@ import React, {useEffect, useMemo, useState} from 'react';
 import {useNavigate} from 'react-router-dom';
 import {AlarmClock, RefreshCw, Mail, CalendarDays, Layers, FileText} from 'lucide-react';
 import {useProjects} from '../context/ProjectContext';
-import {api, NoticeOut, PlanAnalysis} from '../services/api';
-import {ComingSoonNote} from '../components/ComingSoon';
+import {api, NoticeOut, PlanAnalysis, ScheduleAppointment} from '../services/api';
 import {parseAnyDate, startOfToday, todayIso} from '../utils/dates';
 import './Ideas.css';
 
 /**
  * Idee #3: Fristen-Radar.
- * Sammelt Fristen aus vorhandenen Daten (Briefe, Vorgänge, Termine) – ohne Backend-Änderung.
- * Später (Backend): Fristen automatisch aus VOB-Regeln + Versanddatum berechnen, Erinnerungen.
+ * Sammelt Fristen aus vorhandenen Backend-Daten (Briefe, Vorgänge, manuelle + automatische Termine).
  */
 
 type Kind = 'notice' | 'task' | 'appointment';
@@ -95,30 +93,19 @@ function fromAnalysis(a: PlanAnalysis | null): DeadlineItem[] {
         .filter((x): x is DeadlineItem => x !== null);
 }
 
-function fromAppointments(projectId: number): DeadlineItem[] {
-    try {
-        const raw = localStorage.getItem(`siteAppointments_${projectId}`);
-        const list: any[] = raw ? JSON.parse(raw) : [];
-        return list
-            .filter((ev) => ev.category === 'deadline')
-            .map((ev): DeadlineItem | null => {
-                const due = parseDate(ev.date);
-                return due
-                    ? {
-                          id: `a-${ev.id}`,
-                          kind: 'appointment' as Kind,
-                          title: ev.title,
-                          detail: ev.description || '',
-                          due,
-                          source: 'Terminplaner',
-                          vob: ev.vobReference
-                      }
-                    : null;
-            })
-            .filter((x): x is DeadlineItem => x !== null);
-    } catch {
-        return [];
-    }
+function appointmentToDeadline(ap: ScheduleAppointment): DeadlineItem | null {
+    const due = parseDate(ap.date);
+    if (!due) return null;
+    const src = ap.source === 'manual' ? 'Terminplaner (manuell)' : `Terminplan (${ap.sourceLabel || 'automatisch'})`;
+    return {
+        id: `ap-${ap.id}`,
+        kind: 'appointment',
+        title: ap.title,
+        detail: ap.description || '',
+        due,
+        source: src,
+        vob: ap.vobReference ?? undefined
+    };
 }
 
 /** `embedded`: im Terminplaner (Ansicht „Fristen“) – ohne eigenen Seitenkopf */
@@ -135,26 +122,27 @@ export const DeadlineRadar: React.FC<{ embedded?: boolean }> = ({embedded = fals
     const load = async () => {
         setLoading(true);
         const from = todayIso();
-        const [n, a, s] = await Promise.allSettled([
+        const [n, a, s, m] = await Promise.allSettled([
             api.listNotices(projectId),
             api.getAnalysis(projectId, 'all'),
-            api.getSchedule(projectId, from, 31) // Fristen/Abnahmen der nächsten 31 Tage aus dem Terminplan
+            api.getSchedule(projectId, from, 31), // Fristen/Abnahmen der nächsten 31 Tage aus dem Terminplan
+            api.listAppointments(projectId)       // alle manuellen Termine des Projekts aus dem Backend
         ]);
+        const byId = new Map<string, ScheduleAppointment>();
+        if (s.status === 'fulfilled') {
+            s.value.appointments
+                .filter((ap) => ap.category === 'deadline' || ap.category === 'inspection')
+                .forEach((ap) => byId.set(ap.id, ap));
+        }
+        if (m.status === 'fulfilled') {
+            m.value
+                .filter((ap) => ap.category === 'deadline' || ap.category === 'inspection')
+                .forEach((ap) => byId.set(ap.id, ap));
+        }
         setScheduled(
-            s.status === 'fulfilled'
-                ? s.value.appointments
-                      .filter((ap) => ap.category === 'deadline' || ap.category === 'inspection')
-                      .map((ap) => ({
-                          id: `s-${ap.id}`,
-                          kind: 'appointment' as Kind,
-                          title: ap.title,
-                          detail: ap.description || '',
-                          due: parseDate(ap.date)!,
-                          source: 'Terminplan (Backend)',
-                          vob: ap.vobReference ?? undefined
-                      }))
-                      .filter((x) => x.due)
-                : []
+            Array.from(byId.values())
+                .map(appointmentToDeadline)
+                .filter((x): x is DeadlineItem => x !== null)
         );
         setNotices(n.status === 'fulfilled' ? n.value : []);
         setAnalysis(a.status === 'fulfilled' ? a.value : null);
@@ -166,11 +154,11 @@ export const DeadlineRadar: React.FC<{ embedded?: boolean }> = ({embedded = fals
     }, [projectId]);
 
     const items = useMemo(() => {
-        const all = [...fromNotices(notices), ...fromAnalysis(analysis), ...scheduled, ...fromAppointments(projectId)];
+        const all = [...fromNotices(notices), ...fromAnalysis(analysis), ...scheduled];
         return all
             .filter((i) => filter === 'all' || i.kind === filter)
             .sort((x, y) => x.due.getTime() - y.due.getTime());
-    }, [notices, analysis, scheduled, projectId, filter]);
+    }, [notices, analysis, scheduled, filter]);
 
     const overdue = items.filter((i) => daysUntil(i.due) < 0).length;
     const soon = items.filter((i) => daysUntil(i.due) >= 0 && daysUntil(i.due) <= 3).length;
@@ -234,12 +222,6 @@ export const DeadlineRadar: React.FC<{ embedded?: boolean }> = ({embedded = fals
                     );
                 })}
             </div>
-
-            <ComingSoonNote endpoint="GET /api/deadlines?project_id=">
-                Später mit Backend: Fristen automatisch aus VOB/B-Regeln und dem Zugangsdatum berechnen (z. B. Mängelfrist ab Zugang),
-                Fristen aus Verträgen übernehmen und Erinnerungen per E-Mail/Push senden. Aktuell werden vorhandene Daten
-                (Briefe, Bauzeitenplan, Terminplaner) ausgewertet.
-            </ComingSoonNote>
         </div>
     );
 };

@@ -1,17 +1,17 @@
 import React, {useEffect, useMemo, useRef, useState} from 'react';
 import {useNavigate} from 'react-router-dom';
-import {TrendingUp, Play, Pause, Mail, MapPin, UploadCloud} from 'lucide-react';
+import {TrendingUp, Play, Pause, Mail, MapPin} from 'lucide-react';
 import {useProjects} from '../context/ProjectContext';
 import {api, PlanAnalysis, WorkPackage} from '../services/api';
-import {ComingSoonBadge, ComingSoonNote} from '../components/ComingSoon';
+import {ComingSoonNote} from '../components/ComingSoon';
 import {addDays, parseAnyDate, startOfToday, toIsoDate} from '../utils/dates';
 import './Ideas.css';
 
 /**
  * Idee #7: Live-Baufortschritt auf (schematischem) Grundriss mit Zeitregler.
  * Daten: GET /api/analysis?period=all&ref_date=… liefert Soll/Ist je Vorgang zu jedem Stichtag.
- * Ort der Vorgänge: aus dem Titel abgeleitet ("Achse B", "Haus C", "1. OG"), per Klick änderbar (lokal gespeichert).
- * Später (Backend): Ortsfelder an PlanTask, Grundriss-PDF hochladen und Bereiche einzeichnen.
+ * Ort der Vorgänge: direkt am Vorgang im Backend gespeichert (`PlanTask.location`, via PATCH /api/plans/{planId}/tasks/{taskId}),
+ * ansonsten aus dem Titel abgeleitet ("Achse B", "Haus C", "1. OG").
  */
 
 type ZoneState = 'notstarted' | 'ontrack' | 'warning' | 'delayed' | 'done';
@@ -64,7 +64,7 @@ export const ProgressMap: React.FC = () => {
     const navigate = useNavigate();
     const {activeProject} = useProjects();
     const projectId = Number(activeProject.id);
-    const storageKey = `progressZones_${projectId}`;
+    const legacyStorageKey = `progressZones_${projectId}`;
 
     const [base, setBase] = useState<PlanAnalysis | null>(null);      // heute – für den Zeitbereich
     const [current, setCurrent] = useState<PlanAnalysis | null>(null); // gewählter Stichtag
@@ -72,13 +72,7 @@ export const ProgressMap: React.FC = () => {
     const [playing, setPlaying] = useState(false);
     const [selectedZone, setSelectedZone] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
-    const [zoneOverrides, setZoneOverrides] = useState<Record<string, string>>(() => {
-        try {
-            return JSON.parse(localStorage.getItem(storageKey) || '{}');
-        } catch {
-            return {};
-        }
-    });
+    const [zoneOverrides, setZoneOverrides] = useState<Record<string, string>>({});
     const cache = useRef<Map<string, PlanAnalysis>>(new Map());
 
     const today = useMemo(startOfToday, []);
@@ -99,19 +93,33 @@ export const ProgressMap: React.FC = () => {
     useEffect(() => {
         cache.current.clear();
         setSelectedZone(null);
+        setZoneOverrides({});
         api.getAnalysis(projectId, 'all', iso(today))
             .then((a) => {
                 setBase(a);
                 setCurrent(a);
                 cache.current.set(iso(today), a);
                 setError(null);
+
+                // Einmalige Migration alter localStorage-Zonen ins Backend
+                try {
+                    const raw = localStorage.getItem(legacyStorageKey);
+                    if (raw) {
+                        const legacyMap: Record<string, string> = JSON.parse(raw);
+                        localStorage.removeItem(legacyStorageKey);
+                        a.workPackages.forEach((wp) => {
+                            const legacyZone = legacyMap[wp.id];
+                            if (legacyZone && wp.planId && wp.taskId && !wp.location) {
+                                api.updatePlanTask(wp.planId, wp.taskId, {location: legacyZone}).catch(() => undefined);
+                                setZoneOverrides((prev) => ({...prev, [wp.id]: legacyZone}));
+                            }
+                        });
+                    }
+                } catch {
+                    // ignore
+                }
             })
             .catch((err) => setError(err?.message || 'Analyse nicht verfügbar'));
-        try {
-            setZoneOverrides(JSON.parse(localStorage.getItem(storageKey) || '{}'));
-        } catch {
-            setZoneOverrides({});
-        }
     }, [projectId]);
 
     // Stichtag geändert → Analyse für diesen Tag laden (gecacht, leicht entprellt)
@@ -148,7 +156,7 @@ export const ProgressMap: React.FC = () => {
         return () => window.clearInterval(timer);
     }, [playing, range.max]);
 
-    const zoneOf = (wp: WorkPackage) => zoneOverrides[wp.id] || deriveZone(wp.name);
+    const zoneOf = (wp: WorkPackage) => zoneOverrides[wp.id] || wp.location || deriveZone(wp.name);
 
     const zones = useMemo(() => {
         const map = new Map<string, WorkPackage[]>();
@@ -173,13 +181,15 @@ export const ProgressMap: React.FC = () => {
         .sort((a, b) => a.end!.getTime() - b.end!.getTime())
         .slice(0, 6);
 
-    const setZoneFor = (wpId: string, zone: string) => {
-        const next = {...zoneOverrides, [wpId]: zone};
-        setZoneOverrides(next);
-        try {
-            localStorage.setItem(storageKey, JSON.stringify(next));
-        } catch {
-            // ignore
+    const setZoneFor = async (wp: WorkPackage, zone: string) => {
+        setZoneOverrides((prev) => ({...prev, [wp.id]: zone}));
+        if (wp.planId && wp.taskId) {
+            try {
+                await api.updatePlanTask(wp.planId, wp.taskId, {location: zone});
+                cache.current.clear();
+            } catch (err: any) {
+                setError(err?.message || 'Bereich konnte nicht im Backend gespeichert werden');
+            }
         }
     };
 
@@ -250,7 +260,6 @@ export const ProgressMap: React.FC = () => {
                                 return (
                                     <g key={z.name} className="progress-zone" onClick={() => setSelectedZone(z.name)}>
                                         <rect x={x} y={y} width={cellW} height={cellH} rx={8} fill="white" stroke={isSel ? '#0f172a' : color} strokeWidth={isSel ? 3 : 2}/>
-                                        {/* Ist-Füllung von unten */}
                                         <rect
                                             x={x + 2}
                                             y={y + 2 + (cellH - 4) * (1 - z.actual / 100)}
@@ -260,7 +269,6 @@ export const ProgressMap: React.FC = () => {
                                             fill={color}
                                             opacity={0.35}
                                         />
-                                        {/* Soll-Linie */}
                                         <line
                                             x1={x + 4}
                                             x2={x + cellW - 4}
@@ -313,10 +321,10 @@ export const ProgressMap: React.FC = () => {
                                                     const v = e.target.value === '__new'
                                                         ? window.prompt('Neuer Bereich (z. B. "Haus C", "Achse D", "2. OG"):')?.trim() || zoneOf(wp)
                                                         : e.target.value;
-                                                    setZoneFor(wp.id, v);
+                                                    setZoneFor(wp, v);
                                                     setSelectedZone(v);
                                                 }}
-                                                title="Bereich zuordnen (lokal gespeichert)"
+                                                title="Bereich zuordnen (im Backend am Vorgang gespeichert)"
                                             >
                                                 {Array.from(new Set([...zones.map((z) => z.name), zoneOf(wp)])).map((z) => (
                                                     <option key={z} value={z}>{z}</option>
@@ -357,19 +365,6 @@ export const ProgressMap: React.FC = () => {
                                 <strong style={{whiteSpace: 'nowrap'}}>{end!.toLocaleDateString('de-DE')}</strong>
                             </div>
                         ))}
-                    </div>
-
-                    <div className="progress-detail">
-                        <strong style={{display: 'flex', alignItems: 'center', gap: '6px'}}>
-                            Echter Grundriss <ComingSoonBadge/>
-                        </strong>
-                        <button className="btn btn-secondary" disabled title="Folgt mit Backend">
-                            <UploadCloud size={14}/> <span>Grundriss-/Lageplan-PDF hochladen</span>
-                        </button>
-                        <ComingSoonNote endpoint="PlanTask.location + POST /plans/{id}/floorplan">
-                            Später: Ort (Bauteil/Geschoss/Achse) direkt am Vorgang speichern, Grundriss hochladen und Bereiche
-                            einzeichnen, Fotos je Bereich. Bis dahin wird der Ort aus dem Vorgangstitel abgeleitet und hier lokal zugeordnet.
-                        </ComingSoonNote>
                     </div>
                 </div>
             </div>

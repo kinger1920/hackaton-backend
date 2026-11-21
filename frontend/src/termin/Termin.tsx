@@ -21,28 +21,28 @@ import {
     RefreshCw,
     Link2,
     Trash2,
+    Pencil,
+    Lock,
     Flag,
     PlayCircle,
     CheckCircle2
 } from 'lucide-react';
 import {useProjects} from '../context/ProjectContext';
 import {useLanguage} from '../context/LanguageContext';
-import {api, AppointmentCategory, DayTask, saveBlob, ScheduleAppointment, TimelineItem} from '../services/api';
-import {ComingSoonBadge} from '../components/ComingSoon';
+import {api, AppointmentCategory, DayTask, saveBlob, ScheduleAppointment, SitePhotoOut, TimelineItem} from '../services/api';
 import DeadlineRadar from '../ideas/DeadlineRadar';
 import {addDays, daysBetween, formatDe, isoWeek, parseIsoDate, startOfToday, startOfWeek, toIsoDate, weekdayIndex} from '../utils/dates';
 import '@frontend/src/index.css';
 import './Termin.css';
 
 /**
- * Terminplaner & Kalender – alles auf einer Seite.
- *  Vergangenheit: GET /api/timeline  (Berichte, Notizen, Briefe/Mängel, Fortschritt, Warnungen; max. 92 Tage je Abruf)
- *  Planung:       GET /api/schedule  (Arbeiten je Werktag aus dem Bauzeitenplan + Termine; max. 31 Tage je Abruf)
- *  Eigene Termine: lokal (localStorage `siteAppointments_<projectId>`), bis es einen Backend-Endpunkt zum Anlegen gibt.
- *  Fotos: Backend folgt (Idee #1).
+ * Terminplaner & Kalender – alles auf einer Seite, komplett über das Backend.
+ *  Vergangenheit:   GET /api/timeline      (Berichte, Notizen, Briefe/Mängel, Fortschritt, Warnungen; max. 92 Tage je Abruf)
+ *  Planung:         GET /api/schedule      (Arbeiten je Werktag aus dem Bauzeitenplan + manuelle & automatische Termine; max. 31 Tage je Abruf)
+ *  Eigene Termine:  POST/PATCH/DELETE /api/appointments (manuelle Termine in der DB; automatische Termine bleiben read-only mit Quellenhinweis)
+ *  Fotos:           GET/POST/DELETE /api/photos (Baustellenfotos je Kalendertag inkl. KI-/Offline-Beschreibung)
  */
 
-// Format der lokal gespeicherten Termine (wird auch vom Fristen-Radar gelesen)
 export type EventCategory = AppointmentCategory;
 
 export interface SiteAppointment {
@@ -61,9 +61,7 @@ export interface SiteAppointment {
 type View = 'day' | 'week' | 'month' | 'year' | 'all' | 'deadlines';
 type Layer = 'tasks' | 'appointments' | 'report' | 'defect' | 'note' | 'notice' | 'progress' | 'alert' | 'photos';
 
-interface Appt extends ScheduleAppointment {
-    local?: boolean;
-}
+type Appt = ScheduleAppointment;
 
 interface DayInfo {
     tasks: DayTask[];
@@ -74,6 +72,7 @@ interface DayInfo {
     progress: TimelineItem[];
     alerts: TimelineItem[];
     defects: TimelineItem[];
+    photos: SitePhotoOut[];
 }
 
 type DayDataFn = (d: string) => DayInfo;
@@ -87,7 +86,7 @@ const VIEWS: { id: View; label: string }[] = [
     {id: 'deadlines', label: 'Fristen'}
 ];
 
-const LAYERS: { id: Layer; label: string; color: string; soon?: boolean }[] = [
+const LAYERS: { id: Layer; label: string; color: string }[] = [
     {id: 'tasks', label: 'Arbeiten (Plan)', color: '#2563eb'},
     {id: 'appointments', label: 'Termine', color: '#7c3aed'},
     {id: 'report', label: 'Berichte', color: '#0f766e'},
@@ -96,7 +95,7 @@ const LAYERS: { id: Layer; label: string; color: string; soon?: boolean }[] = [
     {id: 'note', label: 'Notizen', color: '#475569'},
     {id: 'progress', label: 'Fortschritt', color: '#16a34a'},
     {id: 'alert', label: 'Warnungen', color: '#ea580c'},
-    {id: 'photos', label: 'Fotos', color: '#0891b2', soon: true}
+    {id: 'photos', label: 'Fotos', color: '#0891b2'}
 ];
 
 const CATEGORY: Record<AppointmentCategory, { label: string; color: string }> = {
@@ -110,7 +109,6 @@ const CATEGORY: Record<AppointmentCategory, { label: string; color: string }> = 
 const WEEKDAYS = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'];
 const MONTHS = ['Januar', 'Februar', 'März', 'April', 'Mai', 'Juni', 'Juli', 'August', 'September', 'Oktober', 'November', 'Dezember'];
 
-// Datums-Helfer: gemeinsam in utils/dates.ts (Kurz-Aliasse für diese Datei)
 const iso = toIsoDate;
 const parseIso = parseIsoDate;
 const fmt = (d: Date, opts: Intl.DateTimeFormatOptions) => formatDe(d, opts);
@@ -168,21 +166,28 @@ export const Termin: React.FC = () => {
     const [view, setView] = useState<View>(navView && VIEWS.some((v) => v.id === navView) ? navView : 'month');
     const [anchor, setAnchor] = useState<Date>(today);
     const [selected, setSelected] = useState<string>(todayIso);
-    const [layers, setLayers] = useState<Set<Layer>>(new Set(LAYERS.filter((l) => !l.soon).map((l) => l.id)));
+    const [layers, setLayers] = useState<Set<Layer>>(new Set(LAYERS.map((l) => l.id)));
     const [search, setSearch] = useState('');
 
     // Daten (akkumuliert über alle geladenen Zeiträume)
     const [tasksByDay, setTasksByDay] = useState<Record<string, DayTask[]>>({});
     const [items, setItems] = useState<Record<string, TimelineItem>>({});
     const [backendAppts, setBackendAppts] = useState<Record<string, ScheduleAppointment>>({});
+    const [photosById, setPhotosById] = useState<Record<number, SitePhotoOut>>({});
+    const [uploadingPhoto, setUploadingPhoto] = useState(false);
+    const [activePhoto, setActivePhoto] = useState<SitePhotoOut | null>(null);
+    const [showIcsModal, setShowIcsModal] = useState(false);
+    const [icsCopied, setIcsCopied] = useState(false);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const loaded = useRef<Set<string>>(new Set());
 
-    // Eigene Termine (lokal)
-    const storageKey = `siteAppointments_${projectId}`;
-    const [localAppts, setLocalAppts] = useState<SiteAppointment[]>([]);
+    // Manuelle Termine (anlegen / bearbeiten) & Hinweis-Modal für automatische Termine
     const [showAdd, setShowAdd] = useState(false);
+    const [editingId, setEditingId] = useState<string | null>(null);
+    const [saving, setSaving] = useState(false);
+    const [modalError, setModalError] = useState<string | null>(null);
+    const [autoInfo, setAutoInfo] = useState<Appt | null>(null);
     const emptyForm = (date: string): SiteAppointment => ({
         id: '', projectId, title: '', date, time: '09:00', category: 'meeting', trade: '', description: '', vobReference: '', isUrgent: false
     });
@@ -200,17 +205,53 @@ export const Termin: React.FC = () => {
     const [rangeFrom, rangeTo] = rangeFor(view, anchor, projectStart, projectEnd);
     const rangeKey = `${iso(rangeFrom)}:${iso(rangeTo)}`;
 
-    // Projektwechsel → alles zurücksetzen
+    // Projektwechsel → alles zurücksetzen & ggf. noch vorhandene alte localStorage-Termine einmalig ins Backend migrieren
     useEffect(() => {
         loaded.current.clear();
         setTasksByDay({});
         setItems({});
         setBackendAppts({});
+        setPhotosById({});
         setError(null);
+        setAutoInfo(null);
+        setActivePhoto(null);
+
+        const legacyKey = `siteAppointments_${projectId}`;
         try {
-            setLocalAppts(JSON.parse(localStorage.getItem(storageKey) || '[]'));
+            const raw = localStorage.getItem(legacyKey);
+            if (raw) {
+                const legacyList: SiteAppointment[] = JSON.parse(raw);
+                if (Array.isArray(legacyList) && legacyList.length > 0) {
+                    Promise.all(
+                        legacyList.map((a) =>
+                            api.createAppointment({
+                                projectId,
+                                title: a.title,
+                                date: a.date,
+                                time: a.time || null,
+                                category: a.category || 'meeting',
+                                trade: a.trade || null,
+                                description: a.description || null,
+                                vobReference: a.vobReference || null,
+                                isUrgent: !!a.isUrgent
+                            })
+                        )
+                    )
+                        .then((migrated) => {
+                            localStorage.removeItem(legacyKey);
+                            setBackendAppts((prev) => {
+                                const next = {...prev};
+                                migrated.forEach((m) => (next[m.id] = m));
+                                return next;
+                            });
+                        })
+                        .catch(() => undefined);
+                } else {
+                    localStorage.removeItem(legacyKey);
+                }
+            }
         } catch {
-            setLocalAppts([]);
+            // ignore
         }
     }, [projectId]);
 
@@ -259,6 +300,22 @@ export const Termin: React.FC = () => {
                 })
             );
         }
+        const photoKey = `${projectId}:ph:${iso(from)}:${iso(to)}`;
+        if (!loaded.current.has(photoKey)) {
+            loaded.current.add(photoKey);
+            jobs.push(
+                api.listPhotos(projectId, iso(from), iso(to)).then((list) => {
+                    setPhotosById((prev) => {
+                        const next = {...prev};
+                        list.forEach((p) => (next[p.id] = p));
+                        return next;
+                    });
+                }).catch((err) => {
+                    loaded.current.delete(photoKey);
+                    throw err;
+                })
+            );
+        }
         if (jobs.length === 0) return;
         setLoading(true);
         const results = await Promise.allSettled(jobs);
@@ -276,6 +333,7 @@ export const Termin: React.FC = () => {
         setTasksByDay({});
         setItems({});
         setBackendAppts({});
+        setPhotosById({});
         loadRange(rangeFrom, rangeTo);
     };
 
@@ -283,22 +341,7 @@ export const Termin: React.FC = () => {
     const q = search.trim().toLowerCase();
     const matches = (text: string) => !q || text.toLowerCase().includes(q);
 
-    const allAppts: Appt[] = useMemo(() => {
-        const local: Appt[] = localAppts.map((a) => ({
-            id: a.id,
-            projectId,
-            title: a.title,
-            date: a.date,
-            time: a.time ?? null,
-            category: a.category,
-            trade: a.trade ?? null,
-            description: a.description ?? null,
-            vobReference: a.vobReference ?? null,
-            isUrgent: a.isUrgent ?? false,
-            local: true
-        }));
-        return [...Object.values(backendAppts), ...local];
-    }, [backendAppts, localAppts, projectId]);
+    const allAppts: Appt[] = useMemo(() => Object.values(backendAppts), [backendAppts]);
 
     const itemsByDay = useMemo(() => {
         const map: Record<string, TimelineItem[]> = {};
@@ -316,6 +359,15 @@ export const Termin: React.FC = () => {
         return map;
     }, [allAppts]);
 
+    const photosByDay = useMemo(() => {
+        const map: Record<string, SitePhotoOut[]> = {};
+        Object.values(photosById).forEach((p) => {
+            (map[p.report_date] ??= []).push(p);
+        });
+        Object.values(map).forEach((l) => l.sort((a, b) => b.id - a.id));
+        return map;
+    }, [photosById]);
+
     /** Alles zu einem Tag, gefiltert nach Ebenen + Suche */
     const dayData: DayDataFn = (d) => {
         const its = (itemsByDay[d] ?? []).filter((it) => matches(`${it.title} ${it.summary}`));
@@ -330,13 +382,14 @@ export const Termin: React.FC = () => {
             notices: pick('notice', 'notice'),
             progress: pick('progress', 'progress'),
             alerts: pick('alert', 'alert'),
-            defects: defectsOn ? its.filter(isDefect) : []
+            defects: defectsOn ? its.filter(isDefect) : [],
+            photos: layers.has('photos') ? (photosByDay[d] ?? []).filter((p) => matches(`${p.caption} ${p.diary_text} ${p.issues.join(' ')}`)) : []
         };
     };
 
     // Kennzahlen für den sichtbaren Zeitraum
     const stats = useMemo(() => {
-        let reports = 0, defects = 0, warnings = 0, appts = 0;
+        let reports = 0, defects = 0, warnings = 0, appts = 0, photos = 0;
         const taskIds = new Set<number>();
         const overdue = new Set<number>();
         for (let d = rangeFrom; d <= rangeTo; d = addDays(d, 1)) {
@@ -345,13 +398,14 @@ export const Termin: React.FC = () => {
             defects += dd.defects.length;
             warnings += warningCount(dd);
             appts += dd.appts.length;
+            photos += dd.photos.length;
             dd.tasks.forEach((tk) => {
                 taskIds.add(tk.taskId);
                 if (tk.isOverdue) overdue.add(tk.taskId);
             });
         }
-        return {reports, defects, warnings, appts, tasks: taskIds.size, overdue: overdue.size};
-    }, [itemsByDay, tasksByDay, apptsByDay, layers, q, rangeKey]);
+        return {reports, defects, warnings, appts, photos, tasks: taskIds.size, overdue: overdue.size};
+    }, [itemsByDay, tasksByDay, apptsByDay, photosByDay, layers, q, rangeKey]);
 
     // ---------- Navigation ----------
     const shift = (dir: -1 | 1) => {
@@ -409,26 +463,114 @@ export const Termin: React.FC = () => {
         });
     };
 
-    const saveLocal = (list: SiteAppointment[]) => {
-        setLocalAppts(list);
-        try {
-            localStorage.setItem(storageKey, JSON.stringify(list));
-        } catch {
-            // ignore
-        }
-    };
-
     const openAdd = (date: string) => {
+        setEditingId(null);
+        setModalError(null);
         setForm(emptyForm(date));
         setShowAdd(true);
     };
 
-    const submitAdd = (e: React.FormEvent) => {
+    const openEdit = (a: Appt) => {
+        if (!a.editable) {
+            setAutoInfo(a);
+            return;
+        }
+        setEditingId(a.id);
+        setModalError(null);
+        setForm({
+            id: a.id,
+            projectId,
+            title: a.title,
+            date: a.date,
+            time: a.time ?? '',
+            category: a.category,
+            trade: a.trade ?? '',
+            description: a.description ?? '',
+            vobReference: a.vobReference ?? '',
+            isUrgent: !!a.isUrgent
+        });
+        setShowAdd(true);
+    };
+
+    const submitAdd = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!form.title.trim()) return;
-        saveLocal([...localAppts, {...form, id: `local-${Date.now()}`, title: form.title.trim()}]);
-        setShowAdd(false);
-        setSelected(form.date);
+        if (!form.title.trim() || saving) return;
+        setSaving(true);
+        setModalError(null);
+        try {
+            const payload = {
+                title: form.title.trim(),
+                date: form.date,
+                time: form.time?.trim() || null,
+                category: form.category,
+                trade: form.trade?.trim() || null,
+                description: form.description?.trim() || null,
+                vobReference: form.vobReference?.trim() || null,
+                isUrgent: !!form.isUrgent
+            };
+            const saved = editingId
+                ? await api.updateAppointment(editingId, payload)
+                : await api.createAppointment({projectId, ...payload});
+            setBackendAppts((prev) => ({...prev, [saved.id]: saved}));
+            setShowAdd(false);
+            setEditingId(null);
+            setSelected(saved.date);
+        } catch (err: any) {
+            setModalError(err?.message || 'Termin konnte nicht gespeichert werden');
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    const deleteAppt = async (a: Appt) => {
+        if (!a.editable) {
+            setAutoInfo(a);
+            return;
+        }
+        try {
+            await api.deleteAppointment(a.id);
+            setBackendAppts((prev) => {
+                const next = {...prev};
+                delete next[a.id];
+                return next;
+            });
+        } catch (err: any) {
+            setError(err?.message || 'Termin konnte nicht gelöscht werden');
+        }
+    };
+
+    const handleUploadPhotos = async (date: string, files: FileList | null) => {
+        if (!files || files.length === 0) return;
+        setUploadingPhoto(true);
+        setError(null);
+        try {
+            const uploaded = await Promise.all(
+                Array.from(files).map((file) => api.uploadPhoto(file, projectId, date))
+            );
+            setPhotosById((prev) => {
+                const next = {...prev};
+                uploaded.forEach((p) => (next[p.id] = p));
+                return next;
+            });
+        } catch (err: any) {
+            setError(err?.message || 'Foto konnte nicht hochgeladen werden');
+        } finally {
+            setUploadingPhoto(false);
+        }
+    };
+
+    const handleDeletePhoto = async (photo: SitePhotoOut) => {
+        try {
+            await api.deletePhoto(photo.id);
+            setPhotosById((prev) => {
+                const next = {...prev};
+                delete next[photo.id];
+                return next;
+            });
+            if (activePhoto?.id === photo.id) setActivePhoto(null);
+        } catch (err: any) {
+            setError(err?.message || 'Foto konnte nicht gelöscht werden');
+        }
     };
 
     /** Termine des sichtbaren Zeitraums als .ics (Outlook, Google, Apple) */
@@ -458,11 +600,10 @@ export const Termin: React.FC = () => {
         }
     };
 
-    const deleteLocal = (id: string) => saveLocal(localAppts.filter((a) => a.id !== id));
-
     // ---------- Darstellung ----------
     const sel = dayData(selected);
     const selRel: 'past' | 'today' | 'future' = selected < todayIso ? 'past' : selected === todayIso ? 'today' : 'future';
+    const icsFeedUrl = api.getScheduleIcsUrl(projectId);
 
     return (
         <div className="tp-page">
@@ -482,8 +623,8 @@ export const Termin: React.FC = () => {
                     <button className="tp-btn" onClick={exportIcs} title="Termine des Zeitraums als .ics exportieren (Outlook/Google/Apple)">
                         <Download size={14}/> <span>.ics</span>
                     </button>
-                    <button className="tp-btn" disabled title="Kalender-Abo (Outlook/Google) – Backend folgt">
-                        <Link2 size={14}/> <span>Kalender verbinden</span> <ComingSoonBadge label="folgt"/>
+                    <button className="tp-btn" onClick={() => setShowIcsModal(true)} title="Live-Kalender-Abo (Outlook/Google/Apple) über Backend-Feed">
+                        <Link2 size={14}/> <span>Kalender verbinden</span>
                     </button>
                     <button className="tp-btn" onClick={() => window.print()} title="Drucken"><Printer size={14}/></button>
                     <button className="btn btn-primary" onClick={() => openAdd(selected)}>
@@ -513,12 +654,12 @@ export const Termin: React.FC = () => {
                 </div>
                 <div className="tp-search">
                     <Search size={14}/>
-                    <input placeholder="Suchen: Vorgang, Firma, Termin…" value={search} onChange={(e) => setSearch(e.target.value)}/>
+                    <input placeholder="Suchen: Vorgang, Firma, Termin, Foto…" value={search} onChange={(e) => setSearch(e.target.value)}/>
                     {search && <button className="tp-icon-btn small" onClick={() => setSearch('')} aria-label="Suche leeren"><X size={12}/></button>}
                 </div>
             </div>
 
-            {/* Fristen-Ansicht (früher eigene Seite „Fristen-Radar“) */}
+            {/* Fristen-Ansicht */}
             {view === 'deadlines' && <DeadlineRadar embedded/>}
 
             {view !== 'deadlines' && <>
@@ -529,11 +670,10 @@ export const Termin: React.FC = () => {
                         key={l.id}
                         className={`tp-layer ${layers.has(l.id) ? 'on' : ''}`}
                         style={{'--layer': l.color} as React.CSSProperties}
-                        onClick={() => !l.soon && toggleLayer(l.id)}
-                        disabled={l.soon}
-                        title={l.soon ? 'Fotos: Backend folgt' : `${l.label} ein-/ausblenden`}
+                        onClick={() => toggleLayer(l.id)}
+                        title={`${l.label} ein-/ausblenden`}
                     >
-                        <i/>{l.label}{l.soon && <ComingSoonBadge label="folgt"/>}
+                        <i/>{l.label}
                     </button>
                 ))}
             </div>
@@ -546,6 +686,7 @@ export const Termin: React.FC = () => {
                 <Kpi icon={<ClipboardList size={15}/>} label="Vorgänge geplant" value={stats.tasks}/>
                 <Kpi icon={<Flag size={15}/>} label="Überfällig" value={stats.overdue} tone={stats.overdue > 0 ? 'danger' : undefined}/>
                 <Kpi icon={<CalendarIcon size={15}/>} label="Termine" value={stats.appts}/>
+                <Kpi icon={<Camera size={15}/>} label="Fotos" value={stats.photos}/>
             </div>
 
             {error && <div className="tp-error">{error}</div>}
@@ -560,7 +701,10 @@ export const Termin: React.FC = () => {
                     )}
                     {view === 'day' && (
                         <DayDetail date={selected} rel={selRel} data={sel} navigate={navigate} onExport={exportReport}
-                                   onAdd={() => openAdd(selected)} onDeleteLocal={deleteLocal} large/>
+                                   onAdd={() => openAdd(selected)} onEdit={openEdit} onDelete={deleteAppt}
+                                   onUploadPhotos={(files) => handleUploadPhotos(selected, files)}
+                                   onDeletePhoto={handleDeletePhoto} onOpenPhoto={setActivePhoto}
+                                   uploadingPhoto={uploadingPhoto} large/>
                     )}
                     {view === 'year' && (
                         <YearGrid year={anchor.getFullYear()} todayIso={todayIso} selected={selected} dayData={dayData}
@@ -580,25 +724,28 @@ export const Termin: React.FC = () => {
                 {view !== 'day' && (
                     <aside className="tp-side">
                         <DayDetail date={selected} rel={selRel} data={sel} navigate={navigate} onExport={exportReport}
-                                   onAdd={() => openAdd(selected)} onDeleteLocal={deleteLocal}
+                                   onAdd={() => openAdd(selected)} onEdit={openEdit} onDelete={deleteAppt}
+                                   onUploadPhotos={(files) => handleUploadPhotos(selected, files)}
+                                   onDeletePhoto={handleDeletePhoto} onOpenPhoto={setActivePhoto}
+                                   uploadingPhoto={uploadingPhoto}
                                    onOpenDay={() => selectDay(selected, true)}/>
                     </aside>
                 )}
             </div>
 
             <div className="tp-footnote">
-                Quellen: Bautagesberichte, Diktate, Briefe und Bauzeitenplan aus dem Backend (Timeline & Terminplan).
-                Klick auf einen Tag zeigt Details, Doppelklick öffnet die Tagesansicht. Eigene Termine werden vorerst lokal gespeichert.
+                Quellen: Bautagesberichte, Diktate, Briefe, Fotos, Bauzeitenplan und manuelle Termine aus dem Backend.
+                Klick auf einen Tag zeigt Details, Doppelklick öffnet die Tagesansicht. Automatische Termine sind entsprechend gekennzeichnet.
             </div>
             </>}
 
-            {/* Neuer Termin */}
+            {/* Neuer / Bearbeiten Termin */}
             {showAdd && (
-                <div className="tp-modal-overlay" onClick={() => setShowAdd(false)}>
+                <div className="tp-modal-overlay" onClick={() => !saving && setShowAdd(false)}>
                     <form className="tp-modal" onClick={(e) => e.stopPropagation()} onSubmit={submitAdd}>
                         <div className="tp-modal-header">
-                            <strong>Neuer Termin / Frist</strong>
-                            <button type="button" className="tp-icon-btn" onClick={() => setShowAdd(false)} aria-label="Schließen"><X size={16}/></button>
+                            <strong>{editingId ? 'Termin bearbeiten' : 'Neuer Termin / Frist'}</strong>
+                            <button type="button" className="tp-icon-btn" onClick={() => setShowAdd(false)} disabled={saving} aria-label="Schließen"><X size={16}/></button>
                         </div>
                         <div className="tp-form-grid">
                             <label className="span-2">Bezeichnung *
@@ -633,14 +780,152 @@ export const Termin: React.FC = () => {
                                 Dringend
                             </label>
                         </div>
-                        <div className="tp-modal-note">
-                            Wird vorerst nur lokal in diesem Browser gespeichert <ComingSoonBadge label="Sync: Backend folgt"/>
-                        </div>
+                        {modalError && <div className="tp-error">{modalError}</div>}
                         <div className="tp-modal-actions">
-                            <button type="button" className="btn btn-secondary" onClick={() => setShowAdd(false)}>Abbrechen</button>
-                            <button type="submit" className="btn btn-primary">Speichern</button>
+                            <button type="button" className="btn btn-secondary" onClick={() => setShowAdd(false)} disabled={saving}>Abbrechen</button>
+                            <button type="submit" className="btn btn-primary" disabled={saving}>{saving ? 'Speichert…' : 'Speichern'}</button>
                         </div>
                     </form>
+                </div>
+            )}
+
+            {/* Hinweis-Modal bei Bearbeitungs-Klick auf automatischen Termin */}
+            {autoInfo && (
+                <div className="tp-modal-overlay" onClick={() => setAutoInfo(null)}>
+                    <div className="tp-modal" onClick={(e) => e.stopPropagation()}>
+                        <div className="tp-modal-header">
+                            <strong><Lock size={15} style={{verticalAlign: '-2px', marginRight: 6}}/>Automatischer Termin</strong>
+                            <button type="button" className="tp-icon-btn" onClick={() => setAutoInfo(null)} aria-label="Schließen"><X size={16}/></button>
+                        </div>
+                        <div className="tp-auto-box">
+                            <strong>{autoInfo.title}</strong>
+                            <div className="tp-appt-meta">
+                                {fmt(parseIso(autoInfo.date), {day: '2-digit', month: '2-digit', year: 'numeric'})}
+                                {' • '}{CATEGORY[autoInfo.category]?.label}
+                                {autoInfo.sourceLabel ? ` • Quelle: ${autoInfo.sourceLabel}` : ''}
+                            </div>
+                            {autoInfo.description && <div>{autoInfo.description}</div>}
+                            {autoInfo.vobReference && <div className="tp-appt-meta">⚖️ {autoInfo.vobReference}</div>}
+                        </div>
+                        <p className="tp-auto-hint">
+                            {autoInfo.source === 'workforce'
+                                ? 'Dieser Hinweis wird automatisch aus dem Sollstärke-Check (Vertrag vs. Tagesbericht) berechnet und kann im Kalender nicht direkt bearbeitet werden. Sobald eine Behinderungsanzeige angelegt ist, verschwindet er automatisch.'
+                                : 'Dieser Termin wird automatisch aus dem Bauzeitenplan berechnet und kann im Kalender nicht direkt bearbeitet werden. Änderungen am Start- oder Enddatum bitte direkt im Bauzeitenplan vornehmen.'}
+                        </p>
+                        <div className="tp-modal-actions">
+                            <button type="button" className="btn btn-secondary" onClick={() => setAutoInfo(null)}>Schließen</button>
+                            {autoInfo.source === 'workforce' ? (
+                                <button
+                                    type="button"
+                                    className="btn btn-primary"
+                                    onClick={() => {
+                                        const info = autoInfo;
+                                        setAutoInfo(null);
+                                        navigate('/drafts', {
+                                            state: {type: 'delay', keywords: [info.title, info.description].filter(Boolean).join('. ')}
+                                        });
+                                    }}
+                                >
+                                    <Mail size={14}/> Behinderungsanzeige erstellen
+                                </button>
+                            ) : (
+                                <button
+                                    type="button"
+                                    className="btn btn-primary"
+                                    onClick={() => {
+                                        setAutoInfo(null);
+                                        navigate('/stammdaten', {state: {tab: 'plans'}});
+                                    }}
+                                >
+                                    Zum Bauzeitenplan
+                                </button>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Foto-Lightbox */}
+            {activePhoto && (
+                <div className="tp-modal-overlay" onClick={() => setActivePhoto(null)}>
+                    <div className="tp-modal" style={{maxWidth: '680px'}} onClick={(e) => e.stopPropagation()}>
+                        <div className="tp-modal-header">
+                            <strong><Camera size={15} style={{verticalAlign: '-2px', marginRight: 6}}/>{activePhoto.caption}</strong>
+                            <button type="button" className="tp-icon-btn" onClick={() => setActivePhoto(null)} aria-label="Schließen"><X size={16}/></button>
+                        </div>
+                        <img
+                            src={api.getPhotoFileUrl(activePhoto)}
+                            alt={activePhoto.caption}
+                            style={{width: '100%', maxHeight: '420px', objectFit: 'contain', borderRadius: '8px', background: '#0f172a'}}
+                        />
+                        <div className="tp-auto-box">
+                            <div className="tp-appt-meta">
+                                Aufnahmedatum: {fmt(parseIso(activePhoto.report_date), {day: '2-digit', month: '2-digit', year: 'numeric'})}
+                                {' • '}Datei: {activePhoto.file_name}
+                                {' • '}Analyse: {activePhoto.mode === 'ai' ? 'KI' : 'Regelbasiert'}
+                            </div>
+                            {activePhoto.diary_text && <div><strong>Tagebuch-Eintrag:</strong> {activePhoto.diary_text}</div>}
+                            {activePhoto.issues.length > 0 && (
+                                <div style={{color: '#b91c1c', fontWeight: 600}}>⚠️ {activePhoto.issues.join(' • ')}</div>
+                            )}
+                        </div>
+                        <div className="tp-modal-actions">
+                            <button
+                                type="button"
+                                className="btn btn-secondary"
+                                style={{color: '#dc2626'}}
+                                onClick={() => handleDeletePhoto(activePhoto)}
+                            >
+                                <Trash2 size={14}/> Foto löschen
+                            </button>
+                            <button
+                                type="button"
+                                className="btn btn-primary"
+                                onClick={() => {
+                                    const dt = activePhoto.report_date;
+                                    setActivePhoto(null);
+                                    navigate('/reports', {state: {date: dt}});
+                                }}
+                            >
+                                Im Tagesbericht öffnen
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Kalender-Abo (.ics Feed) Modal */}
+            {showIcsModal && (
+                <div className="tp-modal-overlay" onClick={() => setShowIcsModal(false)}>
+                    <div className="tp-modal" onClick={(e) => e.stopPropagation()}>
+                        <div className="tp-modal-header">
+                            <strong><Link2 size={15} style={{verticalAlign: '-2px', marginRight: 6}}/>Kalender verbinden (Outlook / Google / Apple)</strong>
+                            <button type="button" className="tp-icon-btn" onClick={() => setShowIcsModal(false)} aria-label="Schließen"><X size={16}/></button>
+                        </div>
+                        <p className="tp-auto-hint">
+                            Über diese Live-iCalendar-URL können alle Projekttermine (manuelle Termine, Bauzeitenplan-Meilensteine und VOB-Fristen) direkt in Outlook, Google Calendar oder Apple Kalender abonniert oder heruntergeladen werden:
+                        </p>
+                        <div style={{display: 'flex', gap: '8px'}}>
+                            <input className="form-input" readOnly value={icsFeedUrl} onFocus={(e) => e.target.select()}/>
+                            <button
+                                type="button"
+                                className="btn btn-secondary"
+                                onClick={() => {
+                                    navigator.clipboard.writeText(icsFeedUrl);
+                                    setIcsCopied(true);
+                                    setTimeout(() => setIcsCopied(false), 2500);
+                                }}
+                            >
+                                {icsCopied ? 'Kopiert!' : 'URL kopieren'}
+                            </button>
+                        </div>
+                        <div className="tp-modal-actions">
+                            <button type="button" className="btn btn-secondary" onClick={() => setShowIcsModal(false)}>Schließen</button>
+                            <a className="btn btn-primary" href={icsFeedUrl} target="_blank" rel="noreferrer">
+                                <Download size={14}/> Kompletten Projekt-Kalender (.ics) laden
+                            </a>
+                        </div>
+                    </div>
                 </div>
             )}
         </div>
@@ -668,6 +953,7 @@ const DayBadges: React.FC<{ d: DayInfo; compact?: boolean }> = ({d, compact}) =>
     return (
         <div className="tp-badges">
             {d.reports.length > 0 && <span className="tp-badge report" title="Bautagesbericht"><FileText size={10}/>{!compact && 'Bericht'}</span>}
+            {d.photos.length > 0 && <span className="tp-badge photo" title={`${d.photos.length} Foto(s)`}><Camera size={10}/>{d.photos.length}</span>}
             {d.defects.length > 0 && <span className="tp-badge defect" title="Mängel"><Wrench size={10}/>{d.defects.length}</span>}
             {warn > 0 && <span className="tp-badge alert" title="Warnungen"><AlertTriangle size={10}/>{warn}</span>}
             {d.tasks.length > 0 && (
@@ -733,7 +1019,7 @@ const WeekColumns: React.FC<{
             const k = iso(day);
             const d = dayData(k);
             const past = k < todayIso;
-            const empty = d.tasks.length + d.appts.length + d.reports.length + d.defects.length === 0;
+            const empty = d.tasks.length + d.appts.length + d.reports.length + d.defects.length + d.photos.length === 0;
             return (
                 <div
                     key={k}
@@ -792,7 +1078,6 @@ const YearGrid: React.FC<{
                     defects += d.defects.length;
                     warns += warningCount(d);
                     tasks += d.tasks.length;
-                    // Vergangenheit: grün = Bericht, orange/rot = Probleme • Zukunft: blau nach Menge geplanter Arbeit
                     let bg = '';
                     if (k <= todayIso) {
                         if (w > 1) bg = '#dc2626';
@@ -811,7 +1096,7 @@ const YearGrid: React.FC<{
                             style={{background: bg || undefined, gridColumnStart: n === 0 ? offset + 1 : undefined}}
                             onClick={() => onSelect(k)}
                             onDoubleClick={() => onSelect(k, true)}
-                            title={`${fmt(day, {weekday: 'short', day: '2-digit', month: '2-digit'})}: ${d.reports.length} Bericht(e), ${d.defects.length} Mängel, ${d.tasks.length} Vorgänge, ${d.appts.length} Termine`}
+                            title={`${fmt(day, {weekday: 'short', day: '2-digit', month: '2-digit'})}: ${d.reports.length} Bericht(e), ${d.defects.length} Mängel, ${d.tasks.length} Vorgänge, ${d.appts.length} Termine, ${d.photos.length} Fotos`}
                         >
                             {n + 1}
                         </button>
@@ -998,15 +1283,70 @@ const DayDetail: React.FC<{
     navigate: ReturnType<typeof useNavigate>;
     onExport: (date: string, f: 'pdf' | 'docx') => void;
     onAdd: () => void;
-    onDeleteLocal: (id: string) => void;
+    onEdit: (a: Appt) => void;
+    onDelete: (a: Appt) => void;
+    onUploadPhotos: (files: FileList | null) => void;
+    onDeletePhoto: (p: SitePhotoOut) => void;
+    onOpenPhoto: (p: SitePhotoOut) => void;
+    uploadingPhoto?: boolean;
     onOpenDay?: () => void;
     large?: boolean;
-}> = ({date, rel, data, navigate, onExport, onAdd, onDeleteLocal, onOpenDay, large}) => {
+}> = ({date, rel, data, navigate, onExport, onAdd, onEdit, onDelete, onUploadPhotos, onDeletePhoto, onOpenPhoto, uploadingPhoto, onOpenDay, large}) => {
     const d = parseIso(date);
     const report = data.reports[0];
     const events = [...data.notes, ...data.notices, ...data.progress, ...data.alerts].sort((a, b) => (b.time ?? '').localeCompare(a.time ?? ''));
     const weekend = weekdayIndex(d) >= 5;
     const dateDe = fmt(d, {day: '2-digit', month: '2-digit', year: 'numeric'});
+
+    const photoBlock = (
+        <div className="tp-block">
+            <div className="tp-block-head">
+                <span><Camera size={13}/> Fotos ({data.photos.length})</span>
+                <label className="tp-link" style={{cursor: 'pointer'}}>
+                    <Plus size={11}/> {uploadingPhoto ? 'Lädt…' : 'Foto hinzufügen'}
+                    <input
+                        type="file"
+                        accept="image/*"
+                        multiple
+                        style={{display: 'none'}}
+                        disabled={uploadingPhoto}
+                        onChange={(e) => {
+                            onUploadPhotos(e.target.files);
+                            e.target.value = '';
+                        }}
+                    />
+                </label>
+            </div>
+            {data.photos.length === 0 ? (
+                <p className="tp-muted">Noch keine Fotos für diesen Tag hinterlegt.</p>
+            ) : (
+                <div className="tp-photo-grid">
+                    {data.photos.map((p) => (
+                        <div key={p.id} className="tp-photo-card" onClick={() => onOpenPhoto(p)}>
+                            <img src={api.getPhotoFileUrl(p)} alt={p.caption} className="tp-photo-thumb"/>
+                            <div className="tp-photo-body">
+                                <div className="tp-photo-caption" title={p.caption}>{p.caption}</div>
+                                {p.issues.length > 0 && (
+                                    <div className="tp-photo-issue" title={p.issues.join(', ')}>⚠️ {p.issues[0]}</div>
+                                )}
+                            </div>
+                            <button
+                                type="button"
+                                className="tp-photo-del"
+                                title="Foto löschen"
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    onDeletePhoto(p);
+                                }}
+                            >
+                                <Trash2 size={11}/>
+                            </button>
+                        </div>
+                    ))}
+                </div>
+            )}
+        </div>
+    );
 
     const past = (
         <section className="tp-section">
@@ -1032,18 +1372,7 @@ const DayDetail: React.FC<{
                 )}
             </div>
 
-            <div className="tp-block">
-                <div className="tp-block-head">
-                    <span><Camera size={13}/> Fotos</span>
-                    <ComingSoonBadge/>
-                </div>
-                <div className="tp-photo-placeholder">
-                    <button className="tp-btn" disabled title="Foto-Galerie je Tag – Backend folgt"><Camera size={13}/> Fotos anzeigen</button>
-                    <button className="tp-btn" onClick={() => navigate('/reports', {state: {date}})} title="Fotos im Tagesbericht hochladen">
-                        <Plus size={13}/> Foto hinzufügen
-                    </button>
-                </div>
-            </div>
+            {photoBlock}
 
             <div className="tp-block">
                 <div className="tp-block-head"><span><Wrench size={13}/> Mängel ({data.defects.length})</span></div>
@@ -1106,31 +1435,55 @@ const DayDetail: React.FC<{
                     <span><CalendarIcon size={13}/> Termine ({data.appts.length})</span>
                     <button className="tp-link" onClick={onAdd}><Plus size={11}/> Termin</button>
                 </div>
-                {data.appts.length === 0 ? <p className="tp-muted">Keine Termine.</p> : data.appts.map((a) => (
-                    <div key={a.id} className="tp-appt" style={{'--c': CATEGORY[a.category]?.color} as React.CSSProperties}>
-                        <div className="tp-appt-top">
-                            <strong>{a.time ? `${a.time.slice(0, 5)} • ` : ''}{a.title}</strong>
-                            {a.local && (
-                                <button className="tp-icon-btn small" title="Lokalen Termin löschen" onClick={() => onDeleteLocal(a.id)}>
-                                    <Trash2 size={11}/>
+                {data.appts.length === 0 ? <p className="tp-muted">Keine Termine.</p> : data.appts.map((a) => {
+                    const isAuto = !a.editable;
+                    return (
+                        <div key={a.id} className={`tp-appt ${isAuto ? 'auto' : ''}`} style={{'--c': CATEGORY[a.category]?.color} as React.CSSProperties}>
+                            <div className="tp-appt-top">
+                                <strong>
+                                    {a.time ? `${a.time.slice(0, 5)} • ` : ''}{a.title}
+                                    {isAuto && (
+                                        <span className="tp-auto-badge" title={`Automatisch aus ${a.sourceLabel || 'Bauzeitenplan'}`}>
+                                            <Lock size={9}/> automatisch
+                                        </span>
+                                    )}
+                                </strong>
+                                <div className="tp-appt-actions">
+                                    <button
+                                        className="tp-icon-btn small"
+                                        title={isAuto ? 'Automatischer Termin – Hinweis anzeigen' : 'Termin bearbeiten'}
+                                        onClick={() => onEdit(a)}
+                                    >
+                                        <Pencil size={11}/>
+                                    </button>
+                                    {!isAuto && (
+                                        <button className="tp-icon-btn small" title="Termin löschen" onClick={() => onDelete(a)}>
+                                            <Trash2 size={11}/>
+                                        </button>
+                                    )}
+                                </div>
+                            </div>
+                            <div className="tp-appt-meta">
+                                {CATEGORY[a.category]?.label}
+                                {a.trade ? ` • ${a.trade}` : ''}
+                                {a.isUrgent ? ' • dringend' : ''}
+                                {isAuto && a.sourceLabel ? ` • ${a.sourceLabel}` : ''}
+                            </div>
+                            {a.description && <div className="tp-appt-desc">{a.description}</div>}
+                            {a.vobReference && <div className="tp-appt-meta">⚖️ {a.vobReference}</div>}
+                            {a.category === 'deadline' && (
+                                <button className="tp-link danger" onClick={() => navigate('/drafts', {
+                                    state: {type: 'delay', keywords: [a.title, a.description, `Frist: ${dateDe}`].filter(Boolean).join('. ')}
+                                })}>
+                                    <Mail size={11}/> VOB-Brief
                                 </button>
                             )}
                         </div>
-                        <div className="tp-appt-meta">
-                            {CATEGORY[a.category]?.label}{a.trade ? ` • ${a.trade}` : ''}{a.isUrgent ? ' • dringend' : ''}{a.local ? ' • lokal' : ''}
-                        </div>
-                        {a.description && <div className="tp-appt-desc">{a.description}</div>}
-                        {a.vobReference && <div className="tp-appt-meta">⚖️ {a.vobReference}</div>}
-                        {a.category === 'deadline' && (
-                            <button className="tp-link danger" onClick={() => navigate('/drafts', {
-                                state: {type: 'delay', keywords: [a.title, a.description, `Frist: ${dateDe}`].filter(Boolean).join('. ')}
-                            })}>
-                                <Mail size={11}/> VOB-Brief
-                            </button>
-                        )}
-                    </div>
-                ))}
+                    );
+                })}
             </div>
+
+            {rel === 'future' && photoBlock}
         </section>
     );
 

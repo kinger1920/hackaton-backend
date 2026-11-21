@@ -870,6 +870,8 @@ export function getDocumentSummary(doc: ProjectDocumentItem): DocumentSummary {
   };
 }
 
+import { api } from '../services/api';
+
 export function saveProjectDocument(doc: ProjectDocumentItem): ProjectDocumentItem[] {
   const docs = getAllProjectDocuments();
   // Ensure the document has an associated summary attached
@@ -878,6 +880,21 @@ export function saveProjectDocument(doc: ProjectDocumentItem): ProjectDocumentIt
   }
   const updated = [doc, ...docs.filter((d) => d.id !== doc.id)];
   localStorage.setItem('projectDocuments', JSON.stringify(updated));
+  // Synchronize to backend asynchronously
+  api.saveDocument({
+    id: doc.id,
+    projectId: doc.projectId,
+    type: doc.type,
+    title: doc.title,
+    date: doc.date,
+    authorOrSender: doc.authorOrSender,
+    content: doc.content,
+    weather: doc.weather ?? null,
+    workforceCount: doc.workforceCount ?? null,
+    trades: doc.trades ?? null,
+    hindrance: doc.hindrance ?? null,
+    summary: doc.summary ?? null,
+  }).catch(() => undefined);
   if (typeof window !== 'undefined') {
     window.dispatchEvent(new Event('project-documents-updated'));
   }
@@ -888,6 +905,7 @@ export function deleteProjectDocument(docId: string): ProjectDocumentItem[] {
   const docs = getAllProjectDocuments();
   const updated = docs.filter((d) => d.id !== docId);
   localStorage.setItem('projectDocuments', JSON.stringify(updated));
+  api.deleteDocument(docId).catch(() => undefined);
   if (typeof window !== 'undefined') {
     window.dispatchEvent(new Event('project-documents-updated'));
   }

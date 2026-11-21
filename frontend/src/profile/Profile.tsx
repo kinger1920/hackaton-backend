@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import {useProjects} from '../context/ProjectContext';
 import { useLanguage } from '../context/LanguageContext';
+import { api } from '../services/api';
 import '@frontend/src/index.css';
 import './Profile.css';
 import OfflineAppCard from '../components/OfflineAppCard';
@@ -68,33 +69,45 @@ export const Profile: React.FC = () => {
     const [savedSuccess, setSavedSuccess] = useState(false);
 
     useEffect(() => {
-        const saved = localStorage.getItem('userProfile');
-        const existingName = localStorage.getItem('userName');
-        if (saved) {
-            try {
-                const parsed = JSON.parse(saved);
-                setProfile({
-                    ...parsed,
-                    projectName: activeProject.name,
-                    projectNumber: activeProject.number,
-                    client: activeProject.client,
-                    projectPhase: activeProject.phase,
-                    siteAddress: activeProject.location
-                });
-            } catch {
-                // fallback
-            }
-        } else {
+        let cancelled = false;
+        const applyProfile = (data: Partial<UserProfileData>) => {
+            if (cancelled) return;
             setProfile((prev) => ({
                 ...prev,
-                fullName: existingName || prev.fullName,
+                ...data,
                 projectName: activeProject.name,
                 projectNumber: activeProject.number,
                 client: activeProject.client,
                 projectPhase: activeProject.phase,
                 siteAddress: activeProject.location
             }));
-        }
+        };
+
+        api.getProfile()
+            .then((remote) => {
+                applyProfile(remote);
+                localStorage.setItem('userProfile', JSON.stringify(remote));
+                if (remote.fullName?.trim()) {
+                    localStorage.setItem('userName', remote.fullName.trim());
+                }
+            })
+            .catch(() => {
+                const saved = localStorage.getItem('userProfile');
+                const existingName = localStorage.getItem('userName');
+                if (saved) {
+                    try {
+                        applyProfile(JSON.parse(saved));
+                        return;
+                    } catch {
+                        // fallback
+                    }
+                }
+                applyProfile({ fullName: existingName || DEFAULT_PROFILE.fullName });
+            });
+
+        return () => {
+            cancelled = true;
+        };
     }, [activeProject]);
 
     const handleChange = (field: keyof UserProfileData, value: any) => {
@@ -129,11 +142,28 @@ export const Profile: React.FC = () => {
         }));
     };
 
-    const handleSave = (e: React.FormEvent) => {
+    const handleSave = async (e: React.FormEvent) => {
         e.preventDefault();
-        localStorage.setItem('userProfile', JSON.stringify(profile));
-        if (profile.fullName.trim()) {
-            localStorage.setItem('userName', profile.fullName.trim());
+        try {
+            const saved = await api.saveProfile({
+                fullName: profile.fullName,
+                email: profile.email,
+                phone: profile.phone,
+                company: profile.company,
+                role: profile.role,
+                officeLocation: profile.officeLocation,
+                workplaceType: profile.workplaceType,
+                permissions: profile.permissions
+            });
+            localStorage.setItem('userProfile', JSON.stringify(saved));
+            if (saved.fullName.trim()) {
+                localStorage.setItem('userName', saved.fullName.trim());
+            }
+        } catch {
+            localStorage.setItem('userProfile', JSON.stringify(profile));
+            if (profile.fullName.trim()) {
+                localStorage.setItem('userName', profile.fullName.trim());
+            }
         }
         setSavedSuccess(true);
         setTimeout(() => {
@@ -141,7 +171,7 @@ export const Profile: React.FC = () => {
         }, 3000);
     };
 
-    const handleReset = () => {
+    const handleReset = async () => {
         if (window.confirm('Möchten Sie das Profil auf die Standardwerte zurücksetzen?')) {
             const resetData = {
                 ...DEFAULT_PROFILE,
@@ -152,6 +182,11 @@ export const Profile: React.FC = () => {
                 siteAddress: activeProject.location
             };
             setProfile(resetData);
+            try {
+                await api.saveProfile(resetData);
+            } catch {
+                // offline fallback
+            }
             localStorage.setItem('userProfile', JSON.stringify(resetData));
             localStorage.setItem('userName', resetData.fullName);
         }
