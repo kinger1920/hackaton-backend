@@ -25,3 +25,16 @@ build/
 .DS_Store
 Thumbs.db
 *.log
+
+# Secrets (Vorlage bleibt im Repo)
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Lokale Daten: SQLite, Uploads, Exporte
+*.db
+*.db-shm
+*.db-wal
+*.sqlite3
+uploads/

@@ -65,7 +65,7 @@ interface SummaryResult {
 }
 
 export const Summary: React.FC = () => {
-  const navigate = useNavigate();
+    const navigate = useNavigate();
   const { t } = useLanguage();
   const { activeProject } = useProjects();
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -751,8 +751,8 @@ ${summaryData.vobRisks.map((r) => `<p><strong>${r.title}</strong><br/>${r.descri
           </div>
         </div>
       </div>
-    </div>
-  );
+        </div>
+    );
 };
 
 // Situation-adaptive summary builder based on project situation

@@ -46,7 +46,7 @@ interface DeviationItem {
 }
 
 export const Analysis: React.FC = () => {
-  const navigate = useNavigate();
+    const navigate = useNavigate();
   const { t } = useLanguage();
   const { activeProject } = useProjects();
   const [selectedPeriod, setSelectedPeriod] = useState<'kw47' | 'kw46' | 'all'>('kw47');
@@ -379,7 +379,7 @@ ${analysisData.deviations.map((d) => `<div><h3>${d.title} (${d.sourceReport}, ${
 
   return (
     <div className="analysis-container">
-      {/* Header Banner */}
+            {/* Header Banner */}
       <section className="analysis-header-card">
         <div className="analysis-title-group">
           <div className="analysis-icon-badge">
@@ -393,7 +393,7 @@ ${analysisData.deviations.map((d) => `<div><h3>${d.title} (${d.sourceReport}, ${
           </div>
         </div>
 
-        <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
+        <div style={{display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
           {/* Period Selector */}
           <div style={{ display: 'flex', backgroundColor: 'var(--color-slate-100)', borderRadius: 'var(--radius-md)', padding: '2px' }}>
             <button
@@ -811,8 +811,8 @@ ${analysisData.deviations.map((d) => `<div><h3>${d.title} (${d.sourceReport}, ${
           </div>
         </div>
       </div>
-    </div>
-  );
+        </div>
+    );
 };
 
 export default Analysis;

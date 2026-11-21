@@ -33,7 +33,7 @@ interface CategoryBullets {
 }
 
 export const VoiceOrText: React.FC = () => {
-  const navigate = useNavigate();
+    const navigate = useNavigate();
   const { t } = useLanguage();
   const { activeProject } = useProjects();
   const userName = localStorage.getItem('userName') || t('role_site_manager');
@@ -289,7 +289,7 @@ Kategorisierte Stichpunkte:
 
   return (
     <div className="capture-container">
-      {/* Hidden audio element for actual recording playback */}
+            {/* Hidden audio element for actual recording playback */}
       {audioUrl && audioUrl !== 'simulated-audio' && (
         <audio ref={audioElementRef} src={audioUrl} />
       )}
@@ -401,7 +401,7 @@ Kategorisierte Stichpunkte:
                 <div style={{ fontSize: '15px', fontWeight: 700, color: isRecording ? '#dc2626' : 'var(--color-slate-900)' }}>
                   {isRecording ? `${t('cap_mic_active')} (${formatSeconds(recordingSeconds)})` : t('cap_mic_prompt')}
                 </div>
-                <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '4px' }}>
+                <div style={{fontSize: '12px', color: 'var(--text-muted)', marginTop: '4px' }}>
                   {isRecording
                     ? t('cap_playback_running')
                     : t('cap_mic_desc')}

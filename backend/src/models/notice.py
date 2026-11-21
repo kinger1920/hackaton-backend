@@ -6,14 +6,14 @@ from sqlmodel import Field, SQLModel
 
 class FormalNoticeBase(SQLModel):
     project_id: int = Field(foreign_key="project.id", index=True)
-    notice_type: str = Field(index=True)  # Behinderungsanzeige, Mehrkostenanmeldung, Bedenkenanmeldung, Mängelrüge
-    title: str
+    type: str = Field(index=True)  # delay, cost, defect, concern
+    title: Optional[str] = None
     recipient: Optional[str] = None
     subject: Optional[str] = None
-    content_markdown: str
+    body: str
     legal_disclaimer: str = Field(default="Entwurf zur Prüfung durch die Bauleitung - Keine Rechtsberatung")
     source_references: Optional[str] = None  # JSON string with IDs of cited notes/reports/tasks
-    status: str = Field(default="draft")  # draft, approved, exported
+    status: str = Field(default="Entwurf")  # Entwurf, Freigegeben, Exportiert
 
 
 class FormalNotice(FormalNoticeBase, table=True):

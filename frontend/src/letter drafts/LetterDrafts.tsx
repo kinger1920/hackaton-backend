@@ -1,18 +1,18 @@
-import React, { useState } from 'react';
+import React, {useState} from 'react';
 import {
-  Sparkles,
-  Clock,
-  AlertTriangle,
-  Coins,
-  ShieldAlert,
-  Copy,
-  Download,
-  Printer,
-  Save,
-  CheckCircle2,
-  Edit3
+    Sparkles,
+    Clock,
+    AlertTriangle,
+    Coins,
+    ShieldAlert,
+    Copy,
+    Download,
+    Printer,
+    Save,
+    CheckCircle2,
+    Edit3
 } from 'lucide-react';
-import { useProjects } from '../context/ProjectContext';
+import {useProjects} from '../context/ProjectContext';
 import { useLanguage } from '../context/LanguageContext';
 import '@frontend/src/index.css';
 import './LetterDrafts.css';
@@ -20,69 +20,69 @@ import './LetterDrafts.css';
 type LetterCategory = 'delay' | 'cost' | 'defect' | 'concern';
 
 interface LetterTypeConfig {
-  id: LetterCategory;
-  name: string;
-  paragraph: string;
-  desc: string;
-  icon: React.ReactNode;
+    id: LetterCategory;
+    name: string;
+    paragraph: string;
+    desc: string;
+    icon: React.ReactNode;
 }
 
 const LETTER_TYPES: LetterTypeConfig[] = [
-  {
-    id: 'delay',
-    name: 'Behinderungsanzeige',
-    paragraph: '§ 6 Abs. 1 VOB/B',
-    desc: 'Bei Behinderung durch fehlende Pläne, Vorunternehmer oder Witterung',
-    icon: <Clock size={18} color="var(--color-danger)" />
-  },
-  {
-    id: 'cost',
-    name: 'Mehrkostenanmeldung',
-    paragraph: '§ 2 Abs. 5 / § 2 Abs. 6 VOB/B',
-    desc: 'Bei Leistungsänderungen, Mehraufwand oder unvorhergesehenem Baugrund',
-    icon: <Coins size={18} color="var(--color-warning)" />
-  },
-  {
-    id: 'defect',
-    name: 'Mängelrüge',
-    paragraph: '§ 4 Abs. 7 / § 13 VOB/B',
-    desc: 'Bei vertragswidriger Ausführung oder Mängeln von Nachunternehmern',
-    icon: <AlertTriangle size={18} color="#dc2626" />
-  },
-  {
-    id: 'concern',
-    name: 'Bedenkenanmeldung',
-    paragraph: '§ 4 Abs. 3 VOB/B',
-    desc: 'Bei Bedenken gegen Vorgaben des Bauherrn oder Vorleistungen Dritter',
-    icon: <ShieldAlert size={18} color="#2563eb" />
-  }
+    {
+        id: 'delay',
+        name: 'Behinderungsanzeige',
+        paragraph: '§ 6 Abs. 1 VOB/B',
+        desc: 'Bei Behinderung durch fehlende Pläne, Vorunternehmer oder Witterung',
+        icon: <Clock size={18} color="var(--color-danger)"/>
+    },
+    {
+        id: 'cost',
+        name: 'Mehrkostenanmeldung',
+        paragraph: '§ 2 Abs. 5 / § 2 Abs. 6 VOB/B',
+        desc: 'Bei Leistungsänderungen, Mehraufwand oder unvorhergesehenem Baugrund',
+        icon: <Coins size={18} color="var(--color-warning)"/>
+    },
+    {
+        id: 'defect',
+        name: 'Mängelrüge',
+        paragraph: '§ 4 Abs. 7 / § 13 VOB/B',
+        desc: 'Bei vertragswidriger Ausführung oder Mängeln von Nachunternehmern',
+        icon: <AlertTriangle size={18} color="#dc2626"/>
+    },
+    {
+        id: 'concern',
+        name: 'Bedenkenanmeldung',
+        paragraph: '§ 4 Abs. 3 VOB/B',
+        desc: 'Bei Bedenken gegen Vorgaben des Bauherrn oder Vorleistungen Dritter',
+        icon: <ShieldAlert size={18} color="#2563eb"/>
+    }
 ];
 
 const PRESETS: Record<LetterCategory, string[]> = {
-  delay: [
-    'Kettenbagger stillgelegt, TGA-Schlitzpläne fehlen seit 3 Tagen, 3 Tiefbauer blockiert',
-    'Vorunternehmer Estrich hat Baufeld 1. OG nicht geräumt, Bodenbelagsarbeiten verzögert',
-    'Starkregen und Überflutung der Baugrube verhindert Betonage der Bodenplatte'
-  ],
-  cost: [
-    'Massiver Mehraushub Felsklasse 6 angetroffen statt vereinbarter Bodenklasse 4',
-    'Zusätzliche Kernbohrungen und Brandschottungen laut TGA-Revisionsplan R-04 erforderlich',
-    'Geänderte Statikauflagen erfordern zusätzliche Bewehrungszulagen in Unterzug U-12'
-  ],
-  defect: [
-    'Rissbildung und Unebenheiten in Stahlbeton-Sohle Bauteil C nach Ausschalung festgestellt',
-    'Dachabdichtung fehlerhaft verschweißt, Feuchtigkeitseintritt im Treppenhauskern 2',
-    'Trockenbau-Wände ohne vorgeschriebene Schallschutz-Dämmstreifen montiert'
-  ],
-  concern: [
-    'Bedenken gegen vorgesehene Dämmstoffstärke bei geplanten Auflasten im Dachaufbau',
-    'Vorleistung Rohbau weist Maßtoleranzen außerhalb DIN 18202 auf für geplante Fassade',
-    'Vom Auftraggeber gelieferte Beschichtungsstoffe ungeeignet für Witterungsbedingungen'
-  ]
+    delay: [
+        'Kettenbagger stillgelegt, TGA-Schlitzpläne fehlen seit 3 Tagen, 3 Tiefbauer blockiert',
+        'Vorunternehmer Estrich hat Baufeld 1. OG nicht geräumt, Bodenbelagsarbeiten verzögert',
+        'Starkregen und Überflutung der Baugrube verhindert Betonage der Bodenplatte'
+    ],
+    cost: [
+        'Massiver Mehraushub Felsklasse 6 angetroffen statt vereinbarter Bodenklasse 4',
+        'Zusätzliche Kernbohrungen und Brandschottungen laut TGA-Revisionsplan R-04 erforderlich',
+        'Geänderte Statikauflagen erfordern zusätzliche Bewehrungszulagen in Unterzug U-12'
+    ],
+    defect: [
+        'Rissbildung und Unebenheiten in Stahlbeton-Sohle Bauteil C nach Ausschalung festgestellt',
+        'Dachabdichtung fehlerhaft verschweißt, Feuchtigkeitseintritt im Treppenhauskern 2',
+        'Trockenbau-Wände ohne vorgeschriebene Schallschutz-Dämmstreifen montiert'
+    ],
+    concern: [
+        'Bedenken gegen vorgesehene Dämmstoffstärke bei geplanten Auflasten im Dachaufbau',
+        'Vorleistung Rohbau weist Maßtoleranzen außerhalb DIN 18202 auf für geplante Fassade',
+        'Vom Auftraggeber gelieferte Beschichtungsstoffe ungeeignet für Witterungsbedingungen'
+    ]
 };
 
 export const LetterDrafts: React.FC = () => {
-  const { t } = useLanguage();
+    const { t } = useLanguage();
   const { activeProject } = useProjects();
   const userName = localStorage.getItem('userName') || 'Max Mustermann';
   const userProfile = (() => {
@@ -94,18 +94,18 @@ export const LetterDrafts: React.FC = () => {
   })();
   const companyName = userProfile?.company || 'Baupartner AG & Co. KG';
 
-  const [selectedType, setSelectedType] = useState<LetterCategory>('delay');
-  const [recipient, setRecipient] = useState(activeProject.client || 'Städtisches Hochbauamt');
-  const [keywords, setKeywords] = useState('');
-  const [isGenerating, setIsGenerating] = useState(false);
-  const [copySuccess, setCopySuccess] = useState(false);
-  const [saveSuccess, setSaveSuccess] = useState(false);
+    const [selectedType, setSelectedType] = useState<LetterCategory>('delay');
+    const [recipient, setRecipient] = useState(activeProject.client || 'Städtisches Hochbauamt');
+    const [keywords, setKeywords] = useState('');
+    const [isGenerating, setIsGenerating] = useState(false);
+    const [copySuccess, setCopySuccess] = useState(false);
+    const [saveSuccess, setSaveSuccess] = useState(false);
 
-  // Editable letter content
-  const [subject, setSubject] = useState(
-    'Behinderungsanzeige gemäß § 6 Abs. 1 VOB/B — Fehlende Ausführungsplanung'
-  );
-  const [letterBody, setLetterBody] = useState(`Sehr geehrte Damen und Herren,
+    // Editable letter content
+    const [subject, setSubject] = useState(
+        'Behinderungsanzeige gemäß § 6 Abs. 1 VOB/B — Fehlende Ausführungsplanung'
+    );
+    const [letterBody, setLetterBody] = useState(`Sehr geehrte Damen und Herren,
 
 hiermit zeigen wir Ihnen gemäß § 6 Abs. 1 VOB/B an, dass die ordnungsgemäße Ausführung unserer vertraglich vereinbarten Bauleistungen im Bauvorhaben "${activeProject.name}" (Projekt-Nr. ${activeProject.number}) derzeit unverschuldet behindert und unterbrochen wird.
 
@@ -123,21 +123,21 @@ Mit freundlichen Grüßen,
 ${userName}
 ${userProfile?.role || 'Bauleiter'} • ${companyName}`);
 
-  const handleGenerate = () => {
-    if (!keywords.trim()) return;
+    const handleGenerate = () => {
+        if (!keywords.trim()) return;
 
-    setIsGenerating(true);
+        setIsGenerating(true);
 
-    setTimeout(() => {
-      const todayStr = new Date().toLocaleDateString('de-DE');
-      const kw = keywords.trim();
+        setTimeout(() => {
+            const todayStr = new Date().toLocaleDateString('de-DE');
+            const kw = keywords.trim();
 
-      let newSubject = '';
-      let newBody = '';
+            let newSubject = '';
+            let newBody = '';
 
-      if (selectedType === 'delay') {
-        newSubject = `Behinderungsanzeige gemäß § 6 Abs. 1 VOB/B — ${kw.slice(0, 45)}...`;
-        newBody = `Sehr geehrte Damen und Herren,
+            if (selectedType === 'delay') {
+                newSubject = `Behinderungsanzeige gemäß § 6 Abs. 1 VOB/B — ${kw.slice(0, 45)}...`;
+                newBody = `Sehr geehrte Damen und Herren,
 
 hiermit zeigen wir Ihnen gemäß § 6 Abs. 1 VOB/B an, dass die Ausführung unserer vertraglichen Leistungen im Bauvorhaben "${activeProject.name}" (Projekt-Nr. ${activeProject.number}) im Bereich ${activeProject.phase} behindert wird.
 
@@ -158,9 +158,9 @@ Die Geltendmachung von Entschädigungs- und Mehrkostenansprüchen (u.a. Stillsta
 Mit freundlichen Grüßen,
 ${userName}
 ${userProfile?.role || 'Bauleiter'} • ${companyName}`;
-      } else if (selectedType === 'cost') {
-        newSubject = `Mehrkostenanmeldung / Nachtragsankündigung gemäß § 2 Abs. 5 / § 2 Abs. 6 VOB/B`;
-        newBody = `Sehr geehrte Damen und Herren,
+            } else if (selectedType === 'cost') {
+                newSubject = `Mehrkostenanmeldung / Nachtragsankündigung gemäß § 2 Abs. 5 / § 2 Abs. 6 VOB/B`;
+                newBody = `Sehr geehrte Damen und Herren,
 
 zum Bauvorhaben "${activeProject.name}" (Projekt-Nr. ${activeProject.number}) kündigen wir Ihnen hiermit gemäß § 2 Abs. 5 bzw. § 2 Abs. 6 VOB/B einen Vergütungsanspruch für geänderte bzw. zusätzliche Leistungen an.
 
@@ -178,9 +178,9 @@ Wir bitten um kurzfristige schriftliche Beauftragung vor Weiterführung der betr
 Mit freundlichen Grüßen,
 ${userName}
 ${userProfile?.role || 'Bauleiter'} • ${companyName}`;
-      } else if (selectedType === 'defect') {
-        newSubject = `Mängelrüge gemäß § 4 Abs. 7 / § 13 VOB/B — Aufforderung zur Mängelbeseitigung`;
-        newBody = `Sehr geehrte Damen und Herren,
+            } else if (selectedType === 'defect') {
+                newSubject = `Mängelrüge gemäß § 4 Abs. 7 / § 13 VOB/B — Aufforderung zur Mängelbeseitigung`;
+                newBody = `Sehr geehrte Damen und Herren,
 
 bei der laufenden baubegleitenden Qualitätsprüfung im Bauvorhaben "${activeProject.name}" wurden bei Ihren Leistungen folgende Mängel bzw. Abweichungen von den anerkannten Regeln der Technik festgestellt:
 
@@ -198,9 +198,9 @@ Sollte die Mängelbeseitigung nicht innerhalb der gesetzten Frist erfolgen, werd
 Mit freundlichen Grüßen,
 ${userName}
 ${userProfile?.role || 'Bauleiter'} • ${companyName}`;
-      } else {
-        newSubject = `Bedenkenanmeldung gemäß § 4 Abs. 3 VOB/B`;
-        newBody = `Sehr geehrte Damen und Herren,
+            } else {
+                newSubject = `Bedenkenanmeldung gemäß § 4 Abs. 3 VOB/B`;
+                newBody = `Sehr geehrte Damen und Herren,
 
 im Rahmen unserer Prüf- und Hinweispflicht gemäß § 4 Abs. 3 VOB/B melden wir Ihnen für das Bauvorhaben "${activeProject.name}" (Projekt-Nr. ${activeProject.number}) hiermit formell folgende Bedenken an:
 
@@ -217,24 +217,24 @@ Wir bitten Sie um schnellstmögliche bauseitige Prüfung und schriftliche Weisun
 Mit freundlichen Grüßen,
 ${userName}
 ${userProfile?.role || 'Bauleiter'} • ${companyName}`;
-      }
+            }
 
-      setSubject(newSubject);
-      setLetterBody(newBody);
-      setIsGenerating(false);
-    }, 600);
-  };
+            setSubject(newSubject);
+            setLetterBody(newBody);
+            setIsGenerating(false);
+        }, 600);
+    };
 
-  const handleCopy = () => {
-    const fullText = `${subject}\n\n${letterBody}`;
-    navigator.clipboard.writeText(fullText);
-    setCopySuccess(true);
-    setTimeout(() => setCopySuccess(false), 2500);
-  };
+    const handleCopy = () => {
+        const fullText = `${subject}\n\n${letterBody}`;
+        navigator.clipboard.writeText(fullText);
+        setCopySuccess(true);
+        setTimeout(() => setCopySuccess(false), 2500);
+    };
 
-  const handleDownloadDocx = () => {
-    // Generate a Word-compatible HTML / DOC file
-    const content = `<!DOCTYPE html>
+    const handleDownloadDocx = () => {
+        // Generate a Word-compatible HTML / DOC file
+        const content = `<!DOCTYPE html>
 <html>
 <head>
 <meta charset="utf-8">
@@ -255,69 +255,69 @@ p { margin-bottom: 10pt; white-space: pre-wrap; }
 </body>
 </html>`;
 
-    const blob = new Blob([content], { type: 'application/msword;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `${selectedType}_${activeProject.number}_${new Date().toISOString().slice(0, 10)}.doc`;
-    link.click();
-    URL.revokeObjectURL(url);
-  };
-
-  const handlePrint = () => {
-    window.print();
-  };
-
-  const handleSaveToDrafts = () => {
-    const existing = (() => {
-      try {
-        return JSON.parse(localStorage.getItem('savedDrafts') || '[]');
-      } catch {
-        return [];
-      }
-    })();
-
-    const newDraft = {
-      id: `draft-${Date.now()}`,
-      type: selectedType,
-      subject,
-      body: letterBody,
-      project: activeProject.name,
-      projectNumber: activeProject.number,
-      date: new Date().toLocaleDateString('de-DE')
+        const blob = new Blob([content], {type: 'application/msword;charset=utf-8'});
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `${selectedType}_${activeProject.number}_${new Date().toISOString().slice(0, 10)}.doc`;
+        link.click();
+        URL.revokeObjectURL(url);
     };
 
-    localStorage.setItem('savedDrafts', JSON.stringify([newDraft, ...existing]));
-    setSaveSuccess(true);
-    setTimeout(() => setSaveSuccess(false), 2500);
-  };
+    const handlePrint = () => {
+        window.print();
+    };
 
-  return (
-    <div className="drafts-container">
-      {/* Header */}
-      <div className="drafts-header">
-        <div>
-          <h1>{t('drafts_title')}</h1>
+    const handleSaveToDrafts = () => {
+        const existing = (() => {
+            try {
+                return JSON.parse(localStorage.getItem('savedDrafts') || '[]');
+            } catch {
+                return [];
+            }
+        })();
+
+        const newDraft = {
+            id: `draft-${Date.now()}`,
+            type: selectedType,
+            subject,
+            body: letterBody,
+            project: activeProject.name,
+            projectNumber: activeProject.number,
+            date: new Date().toLocaleDateString('de-DE')
+        };
+
+        localStorage.setItem('savedDrafts', JSON.stringify([newDraft, ...existing]));
+        setSaveSuccess(true);
+        setTimeout(() => setSaveSuccess(false), 2500);
+    };
+
+    return (
+        <div className="drafts-container">
+            {/* Header */}
+            <div className="drafts-header">
+                <div>
+                    <h1>{t('drafts_title')}</h1>
           <p>{t('drafts_sub')}</p>
         </div>
 
-        {saveSuccess && (
-          <div className="toast-success">
-            <CheckCircle2 size={16} />
-            <span>{t('btn_save')}!</span>
-          </div>
-        )}
-      </div>
+                {saveSuccess && (
+                    <div className="toast-success">
+                        <CheckCircle2 size={16}/>
+                        <span>{t('btn_save')}!</span>
+                    </div>
+                )}
+            </div>
 
-      <div className="drafts-split-layout">
-        {/* Left Column: Form & Keyword Input */}
-        <div className="generator-card">
-          <div>
-            <label className="form-label" style={{ marginBottom: '8px' }}>
-              1. {t('drafts_title')}
-            </label>
-            <div className="type-selector-grid">
-              {LETTER_TYPES.map((lt) => {
+            <div className="drafts-split-layout">
+                {/* Left Column: Form & Keyword Input */}
+                <div className="generator-card">
+                    <div>
+                        <label className="form-label" style={{marginBottom: '8px'}}>
+                            1. {t('drafts_title')}
+                        </label>
+                        <div className="type-selector-grid">
+                            {LETTER_TYPES.map((lt) => {
                 const labelMap: Record<LetterCategory, string> = {
                   delay: t('drafts_type_delay'),
                   cost: t('drafts_type_cost'),
@@ -341,129 +341,131 @@ p { margin-bottom: 10pt; white-space: pre-wrap; }
                     <span className="type-btn-sub">{lt.desc}</span>
                   </button>
                 );
-              })}
-            </div>
-          </div>
+                            })}
+                        </div>
+                    </div>
 
-          <div className="form-group">
-            <label className="form-label" htmlFor="recipientInput">
-              2. {t('drafts_label_recipient')}
-            </label>
-            <input
-              id="recipientInput"
-              className="form-input"
-              type="text"
-              value={recipient}
-              onChange={(e) => setRecipient(e.target.value)}
-              placeholder={t('drafts_label_recipient')}
-            />
-          </div>
+                    <div className="form-group">
+                        <label className="form-label" htmlFor="recipientInput">
+                            2. {t('drafts_label_recipient')}
+                        </label>
+                        <input
+                            id="recipientInput"
+                            className="form-input"
+                            type="text"
+                            value={recipient}
+                            onChange={(e) => setRecipient(e.target.value)}
+                            placeholder={t('drafts_label_recipient')}
+                        />
+                    </div>
 
-          <div className="form-group">
-            <label className="form-label" htmlFor="keywordsInput">
-              3. {t('drafts_label_keywords')} *
-            </label>
-            <textarea
-              id="keywordsInput"
-              className="form-textarea"
-              rows={4}
-              placeholder="z. B.: Bagger stillgelegt, Freigabe fehlt..."
-              value={keywords}
-              onChange={(e) => setKeywords(e.target.value)}
-            />
+                    <div className="form-group">
+                        <label className="form-label" htmlFor="keywordsInput">
+                            3. {t('drafts_label_keywords')} *
+                        </label>
+                        <textarea
+                            id="keywordsInput"
+                            className="form-textarea"
+                            rows={4}
+                            placeholder="z. B.: Bagger stillgelegt, Freigabe fehlt..."
+                            value={keywords}
+                            onChange={(e) => setKeywords(e.target.value)}
+                        />
 
-            <div>
-              <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+                        <div>
+              <span style={{fontSize: '12px', color: 'var(--text-muted)'}}>
                 Beispiele:
               </span>
-              <div className="preset-chips">
-                {PRESETS[selectedType].map((preset, idx) => (
-                  <button
-                    key={idx}
-                    type="button"
-                    className="preset-chip"
-                    onClick={() => setKeywords(preset)}
-                  >
-                    + {preset.slice(0, 48)}...
-                  </button>
-                ))}
-              </div>
-            </div>
-          </div>
+                            <div className="preset-chips">
+                                {PRESETS[selectedType].map((preset, idx) => (
+                                    <button
+                                        key={idx}
+                                        type="button"
+                                        className="preset-chip"
+                                        onClick={() => setKeywords(preset)}
+                                    >
+                                        + {preset.slice(0, 48)}...
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+                    </div>
 
-          <button
-            type="button"
-            className="btn btn-primary"
-            style={{ width: '100%', padding: '13px' }}
-            disabled={!keywords.trim() || isGenerating}
-            onClick={handleGenerate}
-          >
-            <Sparkles size={18} />
-            <span>{isGenerating ? t('dash_btn_gen_draft') : t('drafts_btn_generate')}</span>
-          </button>
-        </div>
+                    <button
+                        type="button"
+                        className="btn btn-primary"
+                        style={{width: '100%', padding: '13px'}}
+                        disabled={!keywords.trim() || isGenerating}
+                        onClick={handleGenerate}
+                    >
+                        <Sparkles size={18}/>
+                        <span>{isGenerating ? t('dash_btn_gen_draft') : t('drafts_btn_generate')}</span>
+                    </button>
+                </div>
 
-        {/* Right Column: Letter Paper Preview & Human-in-the-Loop Editor */}
-        <div className="letter-paper-card">
-          <div className="paper-toolbar">
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <Edit3 size={16} color="var(--color-primary)" />
-              <span style={{ fontSize: '13px', fontWeight: 600 }}>
+                {/* Right Column: Letter Paper Preview & Human-in-the-Loop Editor */}
+                <div className="letter-paper-card">
+                    <div className="paper-toolbar">
+                        <div style={{display: 'flex', alignItems: 'center', gap: '8px'}}>
+                            <Edit3 size={16} color="var(--color-primary)"/>
+                            <span style={{fontSize: '13px', fontWeight: 600}}>
                 {t('drafts_paper_view_title')}
               </span>
-            </div>
+                        </div>
 
-            <div style={{ display: 'flex', gap: '8px' }}>
-              <button className="doc-btn" onClick={handleCopy} title={t('btn_copy')}>
-                <Copy size={14} />
-                <span>{copySuccess ? t('btn_copied') : t('btn_copy')}</span>
-              </button>
+                        <div style={{display: 'flex', gap: '8px'}}>
+                            <button className="doc-btn" onClick={handleCopy} title={t('btn_copy')}>
+                                <Copy size={14}/>
+                                <span>{copySuccess ? t('btn_copied') : t('btn_copy')}</span>
+                            </button>
 
-              <button className="doc-btn" onClick={handleDownloadDocx} title={t('btn_word_export')}>
-                <Download size={14} />
-                <span>{t('btn_word_export')}</span>
-              </button>
+                            <button className="doc-btn" onClick={handleDownloadDocx}
+                                    title={t('btn_word_export')}>
+                                <Download size={14}/>
+                                <span>{t('btn_word_export')}</span>
+                            </button>
 
-              <button className="doc-btn" onClick={handlePrint} title={t('btn_pdf_export')}>
-                <Printer size={14} />
-                <span>{t('btn_print')}</span>
-              </button>
+                            <button className="doc-btn" onClick={handlePrint} title={t('btn_pdf_export')}>
+                                <Printer size={14}/>
+                                <span>{t('btn_print')}</span>
+                            </button>
 
-              <button className="btn btn-primary" style={{ padding: '6px 12px', fontSize: '13px' }} onClick={handleSaveToDrafts}>
-                <Save size={14} />
-                <span>{t('btn_save')}</span>
-              </button>
-            </div>
-          </div>
+                            <button className="btn btn-primary" style={{padding: '6px 12px', fontSize: '13px'}}
+                                    onClick={handleSaveToDrafts}>
+                                <Save size={14}/>
+                                <span>{t('btn_save')}</span>
+                            </button>
+                        </div>
+                    </div>
 
-          {/* Paper View */}
-          <div className="paper-content">
-            <div className="paper-header">
-              <div>
-                <strong>{companyName}</strong>
-                <div>{t('role_site_manager')}: {userName}</div>
-                <div>{t('drafts_label_project')}: {activeProject.name} ({activeProject.number})</div>
-              </div>
-              <div style={{ textAlign: 'right' }}>
-                <div>{t('drafts_label_date')}: {new Date().toLocaleDateString('de-DE')}</div>
-                <div>{t('drafts_label_recipient')}: <strong>{recipient}</strong></div>
-                <div>Standort: {activeProject.location}</div>
-              </div>
-            </div>
+                    {/* Paper View */}
+                    <div className="paper-content">
+                        <div className="paper-header">
+                            <div>
+                                <strong>{companyName}</strong>
+                                <div>{t('role_site_manager')}: {userName}</div>
+                                <div>{t('drafts_label_project')}: {activeProject.name} ({activeProject.number})</div>
+                            </div>
+                            <div style={{textAlign: 'right'}}>
+                                <div>{t('drafts_label_date')}: {new Date().toLocaleDateString('de-DE')}</div>
+                                <div>{t('drafts_label_recipient')}: <strong>{recipient}</strong></div>
+                                <div>Standort: {activeProject.location}</div>
+                            </div>
+                        </div>
 
-            <input
-              type="text"
-              className="letter-subject"
-              value={subject}
-              onChange={(e) => setSubject(e.target.value)}
-              title="Subject"
-              style={{
-                width: '100%',
-                border: 'none',
-                outline: 'none',
-                backgroundColor: 'transparent'
-              }}
-            />
+                        <input
+                            type="text"
+                            className="letter-subject"
+                            value={subject}
+                            onChange={(e) => setSubject(e.target.value)}
+                            title="Subject"
+                            style={{
+                                width: '100%',
+                                border: 'none',
+                                outline: 'none',
+                                backgroundColor: 'transparent'
+                            }}
+                        />
 
             <textarea
               className="letter-body-editable"
@@ -472,17 +474,17 @@ p { margin-bottom: 10pt; white-space: pre-wrap; }
             />
           </div>
 
-          {/* Legal Disclaimer / Constraint Banner */}
-          <div className="legal-notice-banner">
-            <AlertTriangle size={16} style={{ flexShrink: 0 }} />
-            <span>
+                    {/* Legal Disclaimer / Constraint Banner */}
+                    <div className="legal-notice-banner">
+                        <AlertTriangle size={16} style={{flexShrink: 0}}/>
+                        <span>
               {t('drafts_legal_disclaimer')}
             </span>
-          </div>
+                    </div>
+                </div>
+            </div>
         </div>
-      </div>
-    </div>
-  );
+    );
 };
 
 export default LetterDrafts;

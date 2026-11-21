@@ -10,6 +10,10 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from src.database import init_db
 
+from src.routers.notes import router as notes_router
+from src.routers.plans import router as plans_router
+from src.routers.ai import router as ai_router
+from src.routers.notices import router as notices_router
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -25,6 +29,10 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+app.include_router(notes_router)
+app.include_router(plans_router)
+app.include_router(ai_router)
+app.include_router(notices_router)
 
 @app.get("/")
 async def root():
