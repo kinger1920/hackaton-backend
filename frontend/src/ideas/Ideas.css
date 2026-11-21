@@ -259,6 +259,39 @@
   padding: 0 16px 10px;
 }
 
+.chat-mic-recording {
+  background: #dc2626;
+  border-color: #dc2626;
+  color: #ffffff;
+}
+
+.chat-mic-recording:hover:not(:disabled) {
+  background: #b91c1c;
+}
+
+.chat-audio-hint {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 0 12px 8px;
+  padding: 6px 10px;
+  border-radius: var(--radius-md, 8px);
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  color: #b91c1c;
+  font-size: 12px;
+}
+
+.chat-audio-hint button {
+  border: none;
+  background: transparent;
+  color: inherit;
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+}
+
 /* Baufortschritt (Grundriss) */
 .progress-layout {
   display: grid;

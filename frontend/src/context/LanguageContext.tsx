@@ -28,7 +28,7 @@ export const TRANSLATIONS: Record<LanguageCode, Record<string, string>> = {
     nav_capture_voice: 'Spracherfassung',
     nav_capture_text: 'Schreiberfassung',
     nav_reports: 'Bautagesberichte',
-    nav_termin: 'Terminplaner & Kalender',
+    nav_termin: 'Terminplaner',
     nav_drafts: 'Brief- & Mängelentwürfe',
     nav_summary: 'Zusammenfassungen',
     nav_projects: 'Projekte',
@@ -38,7 +38,7 @@ export const TRANSLATIONS: Record<LanguageCode, Record<string, string>> = {
     nav_profile: 'Mein Profil',
     nav_logout: 'Abmelden',
     nav_group_daily: 'Tagesgeschäft',
-    nav_group_letters: 'Schriftverkehr & Fristen',
+    nav_group_letters: 'Dokumente',
     nav_group_project: 'Projekt',
     nav_aria: 'Hauptnavigation',
     hdr_sidebar_collapse: 'Seitenleiste einklappen',
@@ -74,6 +74,7 @@ export const TRANSLATIONS: Record<LanguageCode, Record<string, string>> = {
     login_subtitle: 'Intelligente Bauleitung, Bautagesberichte & VOB-Schriftverkehr',
     login_name_label: 'Ihr Vor- und Nachname',
     login_btn: 'Zum Bauleiter-Dashboard',
+    login_btn_target: 'Weiter zu',
     role_site_manager: 'Bauleiter',
 
     // Dashboard
@@ -117,7 +118,7 @@ export const TRANSLATIONS: Record<LanguageCode, Record<string, string>> = {
     cap_btn_to_report: 'In Bautagesbericht übernehmen',
 
     // Daily Reports
-    rep_title: 'Bautagesbericht & Tagebucheintrag',
+    rep_title: 'Bautagesbericht',
     rep_sub: 'Aktives Projekt:',
     rep_author: 'Verfasser:',
     rep_history_title: 'Letzte Einträge',
@@ -423,6 +424,9 @@ export const TRANSLATIONS: Record<LanguageCode, Record<string, string>> = {
     pf_preview: 'So erscheint es im Brief',
     pf_preview_note: 'Absenderzeile und Unterschrift werden in alle neuen Briefentwürfe übernommen.',
     pf_confirm_reset: 'Profil auf die Standardwerte zurücksetzen?',
+    pf_sec_start_tab: 'Starttab',
+    pf_start_tab: 'Starttab nach Anmeldung',
+    pf_start_tab_hint: 'Bestimmt, welcher Bereich direkt nach dem Anmelden geöffnet wird.',
 
     // Terminplaner & Kalender
   },
@@ -437,7 +441,7 @@ export const TRANSLATIONS: Record<LanguageCode, Record<string, string>> = {
     nav_capture_voice: 'Voice Capture',
     nav_capture_text: 'Text Capture',
     nav_reports: 'Daily Site Reports',
-    nav_termin: 'Schedule & Calendar',
+    nav_termin: 'Schedule',
     nav_drafts: 'Letter & Defect Drafts',
     nav_summary: 'Summaries',
     nav_projects: 'Projects',
@@ -447,7 +451,7 @@ export const TRANSLATIONS: Record<LanguageCode, Record<string, string>> = {
     nav_profile: 'My Profile',
     nav_logout: 'Log Out',
     nav_group_daily: 'Daily work',
-    nav_group_letters: 'Letters & deadlines',
+    nav_group_letters: 'Documents',
     nav_group_project: 'Project',
     nav_aria: 'Main navigation',
     hdr_sidebar_collapse: 'Collapse sidebar',
@@ -483,6 +487,7 @@ export const TRANSLATIONS: Record<LanguageCode, Record<string, string>> = {
     login_subtitle: 'Intelligent Site Management, Daily Reports & VOB Correspondence',
     login_name_label: 'Your Full Name',
     login_btn: 'Enter Site Manager Dashboard',
+    login_btn_target: 'Continue to',
     role_site_manager: 'Site Manager',
 
     // Dashboard
@@ -832,6 +837,9 @@ export const TRANSLATIONS: Record<LanguageCode, Record<string, string>> = {
     pf_preview: 'How it appears in letters',
     pf_preview_note: 'Sender line and signature are used in all new letter drafts.',
     pf_confirm_reset: 'Reset the profile to the default values?',
+    pf_sec_start_tab: 'Start tab',
+    pf_start_tab: 'Start tab after login',
+    pf_start_tab_hint: 'Determines which section opens directly after logging in.',
 
     // Schedule & Calendar
   },
@@ -845,7 +853,7 @@ export const TRANSLATIONS: Record<LanguageCode, Record<string, string>> = {
     nav_capture_voice: 'Rejestracja głosu',
     nav_capture_text: 'Rejestracja tekstu',
     nav_reports: 'Dziennik budowy / Raporty',
-    nav_termin: 'Harmonogram i Kalendarz',
+    nav_termin: 'Harmonogram',
     nav_drafts: 'Szkice pism i zgłoszenia wad',
     nav_summary: 'Podsumowania',
     nav_projects: 'Projekty budowlane',
@@ -981,7 +989,7 @@ export const TRANSLATIONS: Record<LanguageCode, Record<string, string>> = {
     nav_capture_voice: 'Sesli Kayıt',
     nav_capture_text: 'Yazılı Kayıt',
     nav_reports: 'Günlük Şantiye Raporları',
-    nav_termin: 'İş Programı ve Takvim',
+    nav_termin: 'İş Programı',
     nav_drafts: 'Yazı ve Kusur Taslakları',
     nav_summary: 'Özetler',
     nav_projects: 'İnşaat Projeleri',
@@ -1117,7 +1125,7 @@ export const TRANSLATIONS: Record<LanguageCode, Record<string, string>> = {
     nav_capture_voice: 'Înregistrare vocală',
     nav_capture_text: 'Înregistrare text',
     nav_reports: 'Jurnal de șantier / Rapoarte',
-    nav_termin: 'Programator & Calendar',
+    nav_termin: 'Programator',
     nav_drafts: 'Ciorne scrisori și defecte',
     nav_summary: 'Rezumate',
     nav_projects: 'Proiecte',
@@ -1251,7 +1259,7 @@ export const TRANSLATIONS: Record<LanguageCode, Record<string, string>> = {
     nav_dashboard: 'Головна панель',
     nav_capture: 'Голосове та швидке введення',
     nav_reports: 'Щоденні звіти з будови',
-    nav_termin: 'Графік та Календар',
+    nav_termin: 'Графік',
     nav_drafts: 'Чернетки листів та дефекти',
     nav_summary: 'Підсумки',
     nav_projects: 'Будівельні проєкти',

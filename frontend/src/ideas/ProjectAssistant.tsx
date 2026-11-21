@@ -1,7 +1,8 @@
 import React, {useEffect, useRef, useState} from 'react';
-import {MessageSquare, Send, Sparkles} from 'lucide-react';
+import {MessageSquare, Mic, Send, Sparkles, Square} from 'lucide-react';
 import {useProjects} from '../context/ProjectContext';
 import {api} from '../services/api';
+import {useAudioRecorder} from '../utils/useAudioRecorder';
 import {ComingSoonBadge, ComingSoonNote, isNotImplemented} from '../components/ComingSoon';
 import './Ideas.css';
 
@@ -34,8 +35,39 @@ export const ProjectAssistant: React.FC = () => {
     ]);
     const [input, setInput] = useState('');
     const [busy, setBusy] = useState(false);
+    const [transcribing, setTranscribing] = useState(false);
+    const [audioHint, setAudioHint] = useState<string | null>(null);
     const [backendMissing, setBackendMissing] = useState(false);
     const endRef = useRef<HTMLDivElement>(null);
+
+    const recorder = useAudioRecorder(async (blob) => {
+        setTranscribing(true);
+        setAudioHint(null);
+        try {
+            const res = await api.transcribeAudio(blob, 'de');
+            const text = res?.text?.trim();
+            if (text) {
+                setInput((prev) => (prev.trim() ? `${prev.trim()} ${text}` : text));
+            } else {
+                setAudioHint('Spracherkennung ist aktuell nicht verfügbar (KI offline) – bitte Frage eintippen.');
+            }
+        } catch (err) {
+            setAudioHint(`Audio-Transkription fehlgeschlagen: ${(err as Error)?.message ?? err}`);
+        } finally {
+            setTranscribing(false);
+        }
+    });
+
+    const handleToggleAudio = async () => {
+        setAudioHint(null);
+        if (recorder.isRecording) {
+            recorder.stop();
+            return;
+        }
+        if (!(await recorder.start())) {
+            setAudioHint('Mikrofon nicht verfügbar (Berechtigung fehlt oder kein HTTPS). Bitte Frage eintippen.');
+        }
+    };
 
     useEffect(() => {
         endRef.current?.scrollIntoView({behavior: 'smooth', block: 'end'});
@@ -45,6 +77,7 @@ export const ProjectAssistant: React.FC = () => {
         const q = question.trim();
         if (!q || busy) return;
         setInput('');
+        setAudioHint(null);
         setBusy(true);
         setMessages((m) => [...m, {role: 'user', text: q}, {role: 'assistant', text: '…', pending: true}]);
         let reply: Message;
@@ -103,6 +136,13 @@ export const ProjectAssistant: React.FC = () => {
                         ))}
                     </div>
 
+                    {audioHint && (
+                        <div className="chat-audio-hint">
+                            <span>{audioHint}</span>
+                            <button type="button" onClick={() => setAudioHint(null)} aria-label="Hinweis schließen">×</button>
+                        </div>
+                    )}
+
                     <form
                         className="chat-input-row"
                         onSubmit={(e) => {
@@ -113,11 +153,24 @@ export const ProjectAssistant: React.FC = () => {
                         <input
                             className="form-input"
                             style={{flex: 1}}
-                            placeholder="Frage zum Projekt stellen…"
+                            placeholder={recorder.isRecording ? 'Aufnahme läuft – bitte sprechen…' : 'Frage zum Projekt stellen…'}
                             value={input}
                             onChange={(e) => setInput(e.target.value)}
                         />
-                        <button type="submit" className="btn btn-primary" disabled={busy || !input.trim()}>
+                        <button
+                            type="button"
+                            className={`btn ${recorder.isRecording ? 'chat-mic-recording' : 'btn-secondary'}`}
+                            onClick={handleToggleAudio}
+                            disabled={busy || transcribing}
+                            title={recorder.isRecording ? 'Aufnahme stoppen' : 'Frage per Audio aufnehmen'}
+                            aria-label={recorder.isRecording ? 'Aufnahme stoppen' : 'Frage per Audio aufnehmen'}
+                        >
+                            {recorder.isRecording ? <Square size={14}/> : <Mic size={14}/>}
+                            <span>
+                                {transcribing ? 'Transkribiere…' : recorder.isRecording ? 'Stopp' : 'Audio'}
+                            </span>
+                        </button>
+                        <button type="submit" className="btn btn-primary" disabled={busy || transcribing || !input.trim()}>
                             <Send size={14}/> <span>Fragen</span>
                         </button>
                     </form>

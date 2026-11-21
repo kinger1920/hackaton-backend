@@ -1,22 +1,54 @@
-import React, {useState} from 'react';
+import React, {useEffect, useState} from 'react';
 import {useNavigate} from 'react-router-dom';
 import {HardHat, ArrowRight} from 'lucide-react';
 import { useLanguage } from '../context/LanguageContext';
 import LanguageSwitcher from '../components/LanguageSwitcher';
+import {api} from '../services/api';
+import {loadProfile, normalizeStartTab, START_TAB_OPTIONS} from '../profile/profileStore';
 import '@frontend/src/index.css';
 
 export const Login: React.FC = () => {
     const [name, setName] = useState('');
+    const [startTab, setStartTab] = useState<string>(() => loadProfile().startTab);
     const navigate = useNavigate();
   const { t } = useLanguage();
+
+    useEffect(() => {
+        let cancelled = false;
+        let hasLocalStartTab = false;
+        try {
+            const raw = JSON.parse(localStorage.getItem('userProfile') || 'null');
+            hasLocalStartTab = Boolean(raw && typeof raw === 'object' && raw.startTab);
+        } catch {
+            hasLocalStartTab = false;
+        }
+        if (hasLocalStartTab) return;
+
+        api.getProfile()
+            .then((remote) => {
+                if (!cancelled && remote.startTab) {
+                    setStartTab(normalizeStartTab(remote.startTab));
+                }
+            })
+            .catch(() => undefined);
+        return () => {
+            cancelled = true;
+        };
+    }, []);
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
         if (name.trim()) {
             localStorage.setItem('userName', name.trim());
-            navigate('/dashboard');
+            navigate(normalizeStartTab(startTab));
         }
     };
+
+    const startTabMeta = START_TAB_OPTIONS.find((opt) => opt.path === startTab);
+    const ctaLabel =
+        startTab === '/dashboard' || !startTabMeta
+            ? t('login_btn')
+            : `${t('login_btn_target', 'Weiter zu')}: ${t(startTabMeta.labelKey, startTabMeta.fallback)}`;
 
     return (
         <div
@@ -101,7 +133,7 @@ export const Login: React.FC = () => {
                 </div>
 
                 <button type="submit" className="btn btn-primary" style={{width: '100%', padding: '13px'}}>
-                    <span>{t('login_btn')}</span>
+                    <span>{ctaLabel}</span>
                     <ArrowRight size={18}/>
                 </button>
             </form>

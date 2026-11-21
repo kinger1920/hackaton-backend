@@ -1,5 +1,5 @@
 import React, {useEffect, useState} from 'react';
-import {useLocation} from 'react-router-dom';
+import {useLocation, useNavigate} from 'react-router-dom';
 import {
     Building2,
     FileText,
@@ -13,7 +13,10 @@ import {
     UploadCloud,
     RefreshCw,
     Sparkles,
-    ListTree
+    ListTree,
+    CheckCircle2,
+    PauseCircle,
+    BookOpen
 } from 'lucide-react';
 import PlanTasksPanel from './PlanTasksPanel';
 import {formatDe} from '../utils/dates';
@@ -306,13 +309,26 @@ interface ContractForm {
     trade: string;
     planned_workforce: string;
     vob_notes: string;
+    is_active: boolean;
     file: File | null;
 }
 
-const EMPTY_CONTRACT: ContractForm = {title: '', contractor_name: '', trade: '', planned_workforce: '', vob_notes: '', file: null};
+const EMPTY_CONTRACT: ContractForm = {
+    title: '',
+    contractor_name: '',
+    trade: '',
+    planned_workforce: '',
+    vob_notes: '',
+    is_active: true,
+    file: null
+};
+
+type ContractStatusFilter = 'all' | 'active' | 'inactive';
 
 const ContractsTab: React.FC<{ projectId: number; onError: (msg: string) => void }> = ({projectId, onError}) => {
+    const navigate = useNavigate();
     const [contracts, setContracts] = useState<Contract[]>([]);
+    const [statusFilter, setStatusFilter] = useState<ContractStatusFilter>('all');
     const [loading, setLoading] = useState(false);
     const [form, setForm] = useState<ContractForm | null>(null);
     const [editingId, setEditingId] = useState<number | null>(null);
@@ -367,6 +383,7 @@ const ContractsTab: React.FC<{ projectId: number; onError: (msg: string) => void
             trade: c.trade ?? '',
             planned_workforce: c.planned_workforce != null ? String(c.planned_workforce) : '',
             vob_notes: c.vob_notes ?? '',
+            is_active: c.is_active !== false,
             file: null
         });
     };
@@ -383,7 +400,8 @@ const ContractsTab: React.FC<{ projectId: number; onError: (msg: string) => void
                     contractor_name: form.contractor_name.trim() || null,
                     trade: form.trade.trim() || null,
                     planned_workforce: workforce ?? null,
-                    vob_notes: form.vob_notes.trim() || null
+                    vob_notes: form.vob_notes.trim() || null,
+                    is_active: form.is_active
                 });
             } else {
                 if (!form.file) {
@@ -397,7 +415,8 @@ const ContractsTab: React.FC<{ projectId: number; onError: (msg: string) => void
                     contractor_name: form.contractor_name.trim() || undefined,
                     trade: form.trade.trim() || undefined,
                     planned_workforce: workforce,
-                    vob_notes: form.vob_notes.trim() || undefined
+                    vob_notes: form.vob_notes.trim() || undefined,
+                    is_active: form.is_active
                 });
             }
             setForm(null);
@@ -407,6 +426,16 @@ const ContractsTab: React.FC<{ projectId: number; onError: (msg: string) => void
             onError(err?.message || 'Vertrag konnte nicht gespeichert werden');
         } finally {
             setSaving(false);
+        }
+    };
+
+    const handleToggleActive = async (c: Contract) => {
+        const nextActive = c.is_active === false;
+        try {
+            await api.updateContract(c.id, {is_active: nextActive});
+            load();
+        } catch (err: any) {
+            onError(err?.message || 'Vertragsstatus konnte nicht geändert werden');
         }
     };
 
@@ -436,12 +465,99 @@ const ContractsTab: React.FC<{ projectId: number; onError: (msg: string) => void
         }
     };
 
+    const activeContracts = contracts.filter((c) => c.is_active !== false);
+    const inactiveContracts = contracts.filter((c) => c.is_active === false);
+
+    const renderContractRow = (c: Contract) => {
+        const isActive = c.is_active !== false;
+        return (
+            <div key={c.id} className={`masterdata-row ${isActive ? '' : 'is-inactive'}`}>
+                <div className="masterdata-row-main">
+                    <div className="masterdata-row-title">
+                        <span>{c.title}</span>
+                        <span className={`contract-status-badge ${isActive ? 'active' : 'inactive'}`}>
+                            {isActive ? <CheckCircle2 size={11}/> : <PauseCircle size={11}/>}
+                            <span>{isActive ? 'Aktiv' : 'Inaktiv'}</span>
+                        </span>
+                    </div>
+                    <div className="masterdata-row-meta">
+                        {[c.contractor_name, c.trade, c.planned_workforce != null ? `Soll ${c.planned_workforce} Arbeiter` : null]
+                            .filter(Boolean).join(' • ') || '–'}
+                    </div>
+                    <div className="masterdata-row-meta">
+                        📎 {c.file_name || 'ohne Datei'} • {c.file_name ? 'hochgeladen' : 'angelegt'} {formatDate(c.uploaded_at)}
+                        {c.extracted_text ? ` • ${c.extracted_text.length.toLocaleString('de-DE')} Zeichen ausgelesen` : ' • kein Text erkannt'}
+                    </div>
+                    {c.vob_notes && <div className="masterdata-row-meta">⚖️ {c.vob_notes}</div>}
+                </div>
+                <div className="masterdata-row-actions">
+                    <button
+                        className="btn btn-primary contract-summary-btn"
+                        onClick={() => navigate('/summary', {state: {contractId: c.id, contractTitle: c.title}})}
+                        title="Vertrag im Zusammenfassungs-Tab zusammenfassen"
+                    >
+                        <BookOpen size={14}/> <span>Vertrag zusammenfassen</span>
+                    </button>
+                    <button
+                        className="btn btn-secondary"
+                        onClick={() => handleToggleActive(c)}
+                        title={isActive ? 'Vertrag als inaktiv markieren' : 'Vertrag wieder aktivieren'}
+                    >
+                        {isActive ? <PauseCircle size={14}/> : <CheckCircle2 size={14}/>}
+                    </button>
+                    <button
+                        className="btn btn-secondary"
+                        onClick={() => handleParse(c)}
+                        disabled={parsingId === c.id || !c.extracted_text}
+                        title={c.extracted_text
+                            ? 'Sollstärke, Firma, Gewerk und Fristen per KI auslesen'
+                            : c.file_name
+                                ? 'Kein Text im PDF (Scan?)'
+                                : 'Keine Datei hinterlegt – zum Auslesen den Vertrag als PDF hochladen'}
+                    >
+                        {parsingId === c.id ? <RefreshCw size={14}/> : <Sparkles size={14}/>}
+                    </button>
+                    <button className="btn btn-secondary" onClick={() => handleShowText(c)} title="Ausgelesenen Text anzeigen"><Eye size={14}/></button>
+                    <button className="btn btn-secondary" onClick={() => handleDownload(c)} disabled={!c.file_name}
+                            title={c.file_name ? 'PDF herunterladen' : 'Keine Datei hinterlegt (z. B. Demo- oder Projektformular-Vertrag)'}><Download size={14}/></button>
+                    <button className="btn btn-secondary" onClick={() => startEdit(c)} title="Bearbeiten"><Pencil size={14}/></button>
+                    <button className="btn btn-danger" onClick={() => handleDelete(c)} title="Löschen"><Trash2 size={14}/></button>
+                </div>
+            </div>
+        );
+    };
+
     return (
         <div className="card masterdata-card">
             <div className="masterdata-toolbar">
-                <span className="masterdata-hint">
-                    Hochgeladene Verträge werden automatisch ausgelesen und stehen der KI als Kontext (Sollstärke, VOB-Regeln) zur Verfügung.
-                </span>
+                <div style={{display: 'flex', flexDirection: 'column', gap: '8px'}}>
+                    <div className="masterdata-filter-pills" role="tablist" aria-label="Vertragsstatus filtern">
+                        <button
+                            type="button"
+                            className={`masterdata-filter-pill ${statusFilter === 'all' ? 'active' : ''}`}
+                            onClick={() => setStatusFilter('all')}
+                        >
+                            Alle ({contracts.length})
+                        </button>
+                        <button
+                            type="button"
+                            className={`masterdata-filter-pill ${statusFilter === 'active' ? 'active' : ''}`}
+                            onClick={() => setStatusFilter('active')}
+                        >
+                            Aktive Verträge ({activeContracts.length})
+                        </button>
+                        <button
+                            type="button"
+                            className={`masterdata-filter-pill ${statusFilter === 'inactive' ? 'active' : ''}`}
+                            onClick={() => setStatusFilter('inactive')}
+                        >
+                            Inaktive Verträge ({inactiveContracts.length})
+                        </button>
+                    </div>
+                    <span className="masterdata-hint">
+                        Aktive Verträge werden automatisch ausgelesen und stehen der KI (Sollstärke, VOB-Regeln) als Kontext zur Verfügung.
+                    </span>
+                </div>
                 <div style={{display: 'flex', gap: '8px'}}>
                     <button className="btn btn-secondary" onClick={load} disabled={loading} title="Neu laden">
                         <RefreshCw size={14}/>
@@ -474,6 +590,17 @@ const ContractsTab: React.FC<{ projectId: number; onError: (msg: string) => void
                             <input className="form-input" type="number" min={0} value={form.planned_workforce}
                                    onChange={(e) => setForm({...form, planned_workforce: e.target.value})}/>
                         </div>
+                        <div className="form-group">
+                            <label className="form-label">Status</label>
+                            <select
+                                className="form-input"
+                                value={form.is_active ? 'active' : 'inactive'}
+                                onChange={(e) => setForm({...form, is_active: e.target.value === 'active'})}
+                            >
+                                <option value="active">Aktiver Vertrag</option>
+                                <option value="inactive">Inaktiver Vertrag</option>
+                            </select>
+                        </div>
                         <div className="form-group" style={{gridColumn: 'span 2'}}>
                             <label className="form-label">VOB-Besonderheiten</label>
                             <textarea className="form-textarea" rows={2} value={form.vob_notes} onChange={(e) => setForm({...form, vob_notes: e.target.value})}/>
@@ -496,42 +623,34 @@ const ContractsTab: React.FC<{ projectId: number; onError: (msg: string) => void
             {contracts.length === 0 && !loading ? (
                 <div className="masterdata-empty">Für dieses Projekt sind noch keine Verträge hinterlegt.</div>
             ) : (
-                <div className="masterdata-list">
-                    {contracts.map((c) => (
-                        <div key={c.id} className="masterdata-row">
-                            <div className="masterdata-row-main">
-                                <div className="masterdata-row-title">{c.title}</div>
-                                <div className="masterdata-row-meta">
-                                    {[c.contractor_name, c.trade, c.planned_workforce != null ? `Soll ${c.planned_workforce} Arbeiter` : null]
-                                        .filter(Boolean).join(' • ') || '–'}
-                                </div>
-                                <div className="masterdata-row-meta">
-                                    📎 {c.file_name || 'ohne Datei'} • {c.file_name ? 'hochgeladen' : 'angelegt'} {formatDate(c.uploaded_at)}
-                                    {c.extracted_text ? ` • ${c.extracted_text.length.toLocaleString('de-DE')} Zeichen ausgelesen` : ' • kein Text erkannt'}
-                                </div>
-                                {c.vob_notes && <div className="masterdata-row-meta">⚖️ {c.vob_notes}</div>}
+                <div className="masterdata-contract-sections">
+                    {(statusFilter === 'all' || statusFilter === 'active') && (
+                        <div className="masterdata-section">
+                            <div className="masterdata-section-header">
+                                <span>Aktive Verträge</span>
+                                <span className="count">{activeContracts.length}</span>
                             </div>
-                            <div className="masterdata-row-actions">
-                                <button
-                                    className="btn btn-secondary"
-                                    onClick={() => handleParse(c)}
-                                    disabled={parsingId === c.id || !c.extracted_text}
-                                    title={c.extracted_text
-                                        ? 'Sollstärke, Firma, Gewerk und Fristen per KI auslesen'
-                                        : c.file_name
-                                            ? 'Kein Text im PDF (Scan?)'
-                                            : 'Keine Datei hinterlegt – zum Auslesen den Vertrag als PDF hochladen'}
-                                >
-                                    {parsingId === c.id ? <RefreshCw size={14}/> : <Sparkles size={14}/>}
-                                </button>
-                                <button className="btn btn-secondary" onClick={() => handleShowText(c)} title="Ausgelesenen Text anzeigen"><Eye size={14}/></button>
-                                <button className="btn btn-secondary" onClick={() => handleDownload(c)} disabled={!c.file_name}
-                                        title={c.file_name ? 'PDF herunterladen' : 'Keine Datei hinterlegt (z. B. Demo- oder Projektformular-Vertrag)'}><Download size={14}/></button>
-                                <button className="btn btn-secondary" onClick={() => startEdit(c)} title="Bearbeiten"><Pencil size={14}/></button>
-                                <button className="btn btn-danger" onClick={() => handleDelete(c)} title="Löschen"><Trash2 size={14}/></button>
-                            </div>
+                            {activeContracts.length === 0 ? (
+                                <div className="masterdata-empty">Keine aktiven Verträge vorhanden.</div>
+                            ) : (
+                                <div className="masterdata-list">{activeContracts.map(renderContractRow)}</div>
+                            )}
                         </div>
-                    ))}
+                    )}
+
+                    {(statusFilter === 'all' || statusFilter === 'inactive') && (
+                        <div className="masterdata-section">
+                            <div className="masterdata-section-header">
+                                <span>Inaktive Verträge</span>
+                                <span className="count">{inactiveContracts.length}</span>
+                            </div>
+                            {inactiveContracts.length === 0 ? (
+                                <div className="masterdata-empty">Keine inaktiven Verträge vorhanden.</div>
+                            ) : (
+                                <div className="masterdata-list">{inactiveContracts.map(renderContractRow)}</div>
+                            )}
+                        </div>
+                    )}
                 </div>
             )}
 

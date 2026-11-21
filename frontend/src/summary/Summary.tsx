@@ -1,5 +1,5 @@
-import React, {useRef, useState} from 'react';
-import {useNavigate} from 'react-router-dom';
+import React, {useEffect, useRef, useState} from 'react';
+import {useLocation, useNavigate} from 'react-router-dom';
 import {
     Sparkles,
     AlertTriangle,
@@ -14,12 +14,18 @@ import {
     Check,
     CalendarRange,
     Info,
-    BookOpen
+    BookOpen,
+    Users,
+    MapPin,
+    ClipboardList,
+    UserCheck,
+    Phone,
+    Loader2
 } from 'lucide-react';
 import {useProjects} from '../context/ProjectContext';
 import {useLanguage} from '../context/LanguageContext';
 import {extractTextFromFile} from '../utils/fileExtractor';
-import {api, saveBlob, SummaryResponse, SummaryActionItem, SummaryVobRisk} from '../services/api';
+import {api, Contract, saveBlob, SummaryResponse, SummaryActionItem, SummaryVobRisk} from '../services/api';
 import {todayIso} from '../utils/dates';
 import '@frontend/src/index.css';
 import './Summary.css';
@@ -28,7 +34,7 @@ import './Summary.css';
  * Zusammenfassungen
  * One text box (paste anything: protocol, e-mail, notes) + optional Word/PDF upload underneath.
  * The backend AI (POST /api/summarize) recognises the kind of text by itself.
- * Or: summarise this week / month from the project's reports, notes and letters.
+ * Or: summarise today / week / month or a contract from the project's data.
  * Without the server nothing is invented – a clear message is shown instead.
  */
 
@@ -68,6 +74,7 @@ const noticeName = (link: NoticeLink | null | undefined) =>
 
 export const Summary: React.FC = () => {
     const navigate = useNavigate();
+    const location = useLocation();
     const {t} = useLanguage();
     const {activeProject} = useProjects();
     const fileInputRef = useRef<HTMLInputElement>(null);
@@ -78,9 +85,13 @@ export const Summary: React.FC = () => {
     const [isExtracting, setIsExtracting] = useState(false);
     const [isDragOver, setIsDragOver] = useState(false);
 
+    // --- contracts ---
+    const [contracts, setContracts] = useState<Contract[]>([]);
+    const [selectedContractId, setSelectedContractId] = useState('');
+
     // --- result ---
     const [summary, setSummary] = useState<SummaryResponse | null>(null);
-    const [busy, setBusy] = useState<null | 'text' | 'day' | 'week' | 'month'>(null);
+    const [busy, setBusy] = useState<null | 'text' | 'day' | 'week' | 'month' | 'contract'>(null);
     const [error, setError] = useState<string | null>(null);
     const [doneIds, setDoneIds] = useState<Set<string>>(new Set());
     const [copyDone, setCopyDone] = useState(false);
@@ -94,6 +105,24 @@ export const Summary: React.FC = () => {
         setToast(msg);
         setTimeout(() => setToast(null), 2800);
     };
+
+    /* ---------------- contracts & navigation state ---------------- */
+
+    useEffect(() => {
+        let cancelled = false;
+        api.listContracts(Number(activeProject.id))
+            .then((list) => {
+                if (cancelled) return;
+                setContracts(list);
+                setSelectedContractId((prev) => (prev && list.some((c) => String(c.id) === prev) ? prev : list[0] ? String(list[0].id) : ''));
+            })
+            .catch(() => {
+                if (!cancelled) setContracts([]);
+            });
+        return () => {
+            cancelled = true;
+        };
+    }, [activeProject.id]);
 
     /* ---------------- input: file ---------------- */
 
@@ -151,6 +180,29 @@ export const Summary: React.FC = () => {
         }
     };
 
+    const handleSummarizeContract = async (contractId: number) => {
+        if (!contractId) return;
+        setBusy('contract');
+        setError(null);
+        try {
+            applyResult(await api.summarize({contract_id: contractId, project_id: Number(activeProject.id)}));
+        } catch (err) {
+            setError(`${t('su_failed')} ${String((err as Error)?.message ?? '')}`.trim());
+        } finally {
+            setBusy(null);
+        }
+    };
+
+    useEffect(() => {
+        const navState = location.state as { contractId?: number } | null;
+        if (navState?.contractId) {
+            const cid = Number(navState.contractId);
+            setSelectedContractId(String(cid));
+            handleSummarizeContract(cid);
+            navigate('/summary', {replace: true, state: {}});
+        }
+    }, [location.state]);
+
     /* ---------------- open items: done / Terminplaner / letter ---------------- */
 
     const toggleDone = (id: string) =>
@@ -195,10 +247,32 @@ export const Summary: React.FC = () => {
 
     /* ---------------- export ---------------- */
 
-    const resultAsText = (s: SummaryResponse) =>
-        [
+    const resultAsText = (s: SummaryResponse) => {
+        const cf = s.contractFacts;
+        const contractBlock = cf
+            ? [
+                '',
+                'VERTRAGSÜBERSICHT',
+                `• Vertrag: ${cf.contractTitle} (${cf.statusLabel})${cf.contractorName ? ` – ${cf.contractorName}` : ''}${cf.trade ? ` [${cf.trade}]` : ''}`,
+                `• Gestellte Personen (Sollstärke): ${cf.workforce || '–'}`,
+                `• Wo (Einsatzort): ${cf.location || '–'}`,
+                `• Wann (Zeitraum): ${cf.schedule || '–'}`,
+                `• Was (Leistungsumfang): ${cf.scope || '–'}`,
+                `• Projektverantwortliche: ${cf.projectLeads.length ? cf.projectLeads.join('; ') : '–'}`,
+                ...(cf.contacts.length
+                    ? [
+                        '• Ansprechpartner bei Fragen:',
+                        ...cf.contacts.map((c) => `  - ${c.name}${c.role ? ` (${c.role})` : ''}${c.company ? `, ${c.company}` : ''}${c.phone ? ` | Tel: ${c.phone}` : ''}${c.email ? ` | ${c.email}` : ''}${c.note ? ` – ${c.note}` : ''}`)
+                    ]
+                    : ['• Ansprechpartner bei Fragen: –']),
+                ...(cf.vobNotes ? [`• VOB-Hinweise: ${cf.vobNotes}`] : [])
+            ]
+            : [];
+
+        return [
             s.title,
             `${t('drafts_label_project')}: ${activeProject.name} (${activeProject.number})`,
+            ...contractBlock,
             '',
             t('su_sec_summary').toUpperCase(),
             ...s.executiveSummary.map((x) => `• ${x}`),
@@ -216,6 +290,7 @@ export const Summary: React.FC = () => {
             '',
             s.traceabilityNotes
         ].join('\n');
+    };
 
     const handleCopy = () => {
         if (!summary) return;
@@ -227,7 +302,21 @@ export const Summary: React.FC = () => {
     const handleWord = () => {
         if (!summary) return;
         const s = summary;
+        const cf = s.contractFacts;
         const li = (items: string[]) => items.length ? `<ul>${items.map((x) => `<li>${escapeHtml(x)}</li>`).join('')}</ul>` : `<p>– ${escapeHtml(t('su_none'))}</p>`;
+        const contractHtml = cf
+            ? `<h2>Vertragsübersicht</h2>
+<table>
+<tr><th>Vertrag / Status</th><td>${escapeHtml(cf.contractTitle)} (${escapeHtml(cf.statusLabel)})${cf.contractorName ? ` – ${escapeHtml(cf.contractorName)}` : ''}${cf.trade ? ` · ${escapeHtml(cf.trade)}` : ''}</td></tr>
+<tr><th>Gestellte Personen (Sollstärke)</th><td>${escapeHtml(cf.workforce || '–')}</td></tr>
+<tr><th>Einsatzort (Wo)</th><td>${escapeHtml(cf.location || '–')}</td></tr>
+<tr><th>Zeitraum (Wann)</th><td>${escapeHtml(cf.schedule || '–')}</td></tr>
+<tr><th>Leistungsumfang (Was)</th><td>${escapeHtml(cf.scope || '–')}</td></tr>
+<tr><th>Projektverantwortliche</th><td>${cf.projectLeads.length ? cf.projectLeads.map(escapeHtml).join('<br/>') : '–'}</td></tr>
+<tr><th>Kontakt bei Fragen</th><td>${cf.contacts.length ? cf.contacts.map((c) => `<strong>${escapeHtml(c.name)}</strong>${c.role ? ` (${escapeHtml(c.role)})` : ''}${c.company ? ` · ${escapeHtml(c.company)}` : ''}${c.phone ? ` · Tel: ${escapeHtml(c.phone)}` : ''}${c.email ? ` · ${escapeHtml(c.email)}` : ''}${c.note ? `<br/><em>${escapeHtml(c.note)}</em>` : ''}`).join('<br/><br/>') : '–'}</td></tr>
+${cf.vobNotes ? `<tr><th>VOB-Hinweise</th><td>${escapeHtml(cf.vobNotes)}</td></tr>` : ''}
+</table>`
+            : '';
         const html = `<!DOCTYPE html>
 <html>
 <head>
@@ -246,6 +335,7 @@ th { background-color: #f3efe7; }
 <body>
 <h1>${escapeHtml(s.title)}</h1>
 <p class="meta">${escapeHtml(t('drafts_label_project'))}: ${escapeHtml(activeProject.name)} (${escapeHtml(activeProject.number)}) · ${new Date().toLocaleDateString('de-DE')}</p>
+${contractHtml}
 <h2>${escapeHtml(t('su_sec_summary'))}</h2>
 ${li(s.executiveSummary)}
 <h2>${escapeHtml(t('su_sec_decisions'))}</h2>
@@ -420,6 +510,38 @@ ${s.vobRisks.length ? s.vobRisks.map((r) => `<p><strong>${escapeHtml(r.title)}</
                                 <span>{busy === 'month' ? t('su_busy') : t('su_btn_month')}</span>
                             </button>
                         </div>
+
+                        {contracts.length > 0 && (
+                            <div className="su-contract-picker">
+                                <label className="su-contract-picker-label" htmlFor="su-contract-select">
+                                    Vertrag aus Stammdaten zusammenfassen
+                                </label>
+                                <div className="su-contract-picker-row">
+                                    <select
+                                        id="su-contract-select"
+                                        className="form-input"
+                                        value={selectedContractId}
+                                        onChange={(e) => setSelectedContractId(e.target.value)}
+                                        disabled={busy !== null}
+                                    >
+                                        {contracts.map((c) => (
+                                            <option key={c.id} value={String(c.id)}>
+                                                {c.title}{c.contractor_name ? ` (${c.contractor_name})` : ''}{c.is_active === false ? ' [Inaktiv]' : ''}
+                                            </option>
+                                        ))}
+                                    </select>
+                                    <button
+                                        type="button"
+                                        className="btn btn-secondary"
+                                        onClick={() => handleSummarizeContract(Number(selectedContractId))}
+                                        disabled={!selectedContractId || busy !== null}
+                                    >
+                                        <FileText size={15}/>
+                                        <span>{busy === 'contract' ? t('su_busy') : 'Vertrag'}</span>
+                                    </button>
+                                </div>
+                            </div>
+                        )}
                     </section>
                 </div>
 
@@ -461,7 +583,12 @@ ${s.vobRisks.length ? s.vobRisks.map((r) => `<p><strong>${escapeHtml(r.title)}</
                         </div>
                     )}
 
-                    {!summary ? (
+                    {busy !== null && !summary ? (
+                        <div className="su-empty">
+                            <Loader2 size={34} className="su-spin"/>
+                            <p>{t('su_busy')}</p>
+                        </div>
+                    ) : !summary ? (
                         <div className="su-empty">
                             <FileText size={34}/>
                             <p>{t('su_empty')}</p>
@@ -482,6 +609,77 @@ ${s.vobRisks.length ? s.vobRisks.map((r) => `<p><strong>${escapeHtml(r.title)}</
                                         {summary.periodFrom ? new Date(summary.periodFrom).toLocaleDateString('de-DE') : '?'} – {summary.periodTo ? new Date(summary.periodTo).toLocaleDateString('de-DE') : '?'}
                                     </span>
                                 </div>
+                            )}
+
+                            {summary.contractFacts && (
+                                <section className="su-section su-contract-overview">
+                                    <div className="su-contract-head">
+                                        <h3 className="su-section-title">Vertragsübersicht für die Bauleitung</h3>
+                                        <span className={`su-contract-badge ${summary.contractFacts.statusLabel === 'Inaktiv' ? 'inactive' : 'active'}`}>
+                                            {summary.contractFacts.statusLabel}
+                                        </span>
+                                    </div>
+                                    <div className="su-contract-submeta">
+                                        {summary.contractFacts.contractorName && <span><strong>Vertragspartner:</strong> {summary.contractFacts.contractorName}</span>}
+                                        {summary.contractFacts.trade && <span><strong>Gewerk:</strong> {summary.contractFacts.trade}</span>}
+                                    </div>
+
+                                    <div className="su-contract-grid">
+                                        <div className="su-contract-box">
+                                            <div className="su-contract-box-title"><Users size={15}/> Gestellte Personen (Sollstärke)</div>
+                                            <p>{summary.contractFacts.workforce || '–'}</p>
+                                        </div>
+                                        <div className="su-contract-box">
+                                            <div className="su-contract-box-title"><MapPin size={15}/> Wo (Einsatzort)</div>
+                                            <p>{summary.contractFacts.location || '–'}</p>
+                                        </div>
+                                        <div className="su-contract-box">
+                                            <div className="su-contract-box-title"><CalendarRange size={15}/> Wann (Zeitraum &amp; Fristen)</div>
+                                            <p>{summary.contractFacts.schedule || '–'}</p>
+                                        </div>
+                                        <div className="su-contract-box">
+                                            <div className="su-contract-box-title"><ClipboardList size={15}/> Was (Leistungsumfang)</div>
+                                            <p>{summary.contractFacts.scope || '–'}</p>
+                                        </div>
+                                    </div>
+
+                                    <div className="su-contract-box">
+                                        <div className="su-contract-box-title"><UserCheck size={15}/> Projektverantwortliche</div>
+                                        {summary.contractFacts.projectLeads.length > 0 ? (
+                                            <ul className="su-list">
+                                                {summary.contractFacts.projectLeads.map((lead, idx) => <li key={idx}>{lead}</li>)}
+                                            </ul>
+                                        ) : <p className="su-none">Keine Projektverantwortlichen hinterlegt.</p>}
+                                    </div>
+
+                                    <div className="su-contract-box">
+                                        <div className="su-contract-box-title"><Phone size={15}/> Wen bei Fragen kontaktieren (Bauleitung)</div>
+                                        {summary.contractFacts.contacts.length > 0 ? (
+                                            <div className="su-contacts-list">
+                                                {summary.contractFacts.contacts.map((c, idx) => (
+                                                    <div key={idx} className="su-contact-card">
+                                                        <div className="su-contact-top">
+                                                            <strong>{c.name}</strong>
+                                                            {c.role && <span className="su-chip">{c.role}</span>}
+                                                            {c.company && <span className="su-contact-company">{c.company}</span>}
+                                                        </div>
+                                                        <div className="su-contact-reach">
+                                                            {c.phone && <a href={`tel:${c.phone.replace(/\s+/g, '')}`} className="su-contact-link"><Phone size={12}/> {c.phone}</a>}
+                                                            {c.email && <a href={`mailto:${c.email}`} className="su-contact-link"><Mail size={12}/> {c.email}</a>}
+                                                        </div>
+                                                        {c.note && <div className="su-contact-note">{c.note}</div>}
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        ) : <p className="su-none">Keine Kontaktdaten hinterlegt (in Stammdaten → Firmen oder Vertrags-PDF ergänzen).</p>}
+                                    </div>
+
+                                    {summary.contractFacts.vobNotes && (
+                                        <div className="su-contract-vob">
+                                            <strong>VOB-/Vertragsbesonderheiten:</strong> {summary.contractFacts.vobNotes}
+                                        </div>
+                                    )}
+                                </section>
                             )}
 
                             {/* 1. Kurzfassung */}

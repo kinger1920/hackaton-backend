@@ -58,8 +58,7 @@ export interface SiteAppointment {
     isUrgent?: boolean;
 }
 
-type View = 'day' | 'week' | 'month' | 'year' | 'all' | 'deadlines';
-type Layer = 'tasks' | 'appointments' | 'report' | 'defect' | 'note' | 'notice' | 'progress' | 'alert' | 'photos';
+type View = 'day' | 'week' | 'month' | 'year' | 'deadlines';
 
 type Appt = ScheduleAppointment;
 
@@ -82,20 +81,7 @@ const VIEWS: { id: View; label: string }[] = [
     {id: 'week', label: 'Woche'},
     {id: 'month', label: 'Monat'},
     {id: 'year', label: 'Jahr'},
-    {id: 'all', label: 'Gesamt'},
     {id: 'deadlines', label: 'Fristen'}
-];
-
-const LAYERS: { id: Layer; label: string; color: string }[] = [
-    {id: 'tasks', label: 'Arbeiten (Plan)', color: '#2563eb'},
-    {id: 'appointments', label: 'Termine', color: '#7c3aed'},
-    {id: 'report', label: 'Berichte', color: '#0f766e'},
-    {id: 'defect', label: 'Mängel', color: '#dc2626'},
-    {id: 'notice', label: 'Briefe', color: '#b45309'},
-    {id: 'note', label: 'Notizen', color: '#475569'},
-    {id: 'progress', label: 'Fortschritt', color: '#16a34a'},
-    {id: 'alert', label: 'Warnungen', color: '#ea580c'},
-    {id: 'photos', label: 'Fotos', color: '#0891b2'}
 ];
 
 const CATEGORY: Record<AppointmentCategory, { label: string; color: string }> = {
@@ -119,7 +105,7 @@ const isDefect = (it: TimelineItem) => /m[äa]ngel/i.test(`${it.title} ${it.summ
 const warningCount = (d: DayInfo) =>
     d.alerts.length + [...d.reports, ...d.notes].filter((it) => it.severity === 'warning' || it.severity === 'critical').length;
 
-function rangeFor(view: View, anchor: Date, projectStart: Date, projectEnd: Date): [Date, Date] {
+function rangeFor(view: View, anchor: Date): [Date, Date] {
     switch (view) {
         case 'day':
             return [anchor, anchor];
@@ -134,8 +120,6 @@ function rangeFor(view: View, anchor: Date, projectStart: Date, projectEnd: Date
         }
         case 'year':
             return [new Date(anchor.getFullYear(), 0, 1), new Date(anchor.getFullYear(), 11, 31)];
-        case 'all':
-            return [projectStart, projectEnd];
         case 'deadlines':
             return [anchor, anchor]; // Fristen-Ansicht lädt ihre Daten selbst
     }
@@ -166,7 +150,9 @@ export const Termin: React.FC = () => {
     const [view, setView] = useState<View>(navView && VIEWS.some((v) => v.id === navView) ? navView : 'month');
     const [anchor, setAnchor] = useState<Date>(today);
     const [selected, setSelected] = useState<string>(todayIso);
-    const [layers, setLayers] = useState<Set<Layer>>(new Set(LAYERS.map((l) => l.id)));
+    const [visibleCategories, setVisibleCategories] = useState<Set<AppointmentCategory>>(
+        () => new Set(Object.keys(CATEGORY) as AppointmentCategory[])
+    );
     const [search, setSearch] = useState('');
 
     // Daten (akkumuliert über alle geladenen Zeiträume)
@@ -193,16 +179,7 @@ export const Termin: React.FC = () => {
     });
     const [form, setForm] = useState<SiteAppointment>(emptyForm(todayIso));
 
-    // Projektzeitraum für "Gesamt" (Projekt-Start/-Ende, sonst ±6 Monate um heute; max. 2 Jahre)
-    const [projectStart, projectEnd] = useMemo(() => {
-        const s = activeProject.start_date ? parseIso(activeProject.start_date) : addDays(today, -180);
-        let e = activeProject.end_date ? parseIso(activeProject.end_date) : addDays(today, 180);
-        if (e < s) e = addDays(s, 180);
-        if (daysBetween(s, e) > 730) e = addDays(s, 730);
-        return [s, e];
-    }, [activeProject.start_date, activeProject.end_date, today]);
-
-    const [rangeFrom, rangeTo] = rangeFor(view, anchor, projectStart, projectEnd);
+    const [rangeFrom, rangeTo] = rangeFor(view, anchor);
     const rangeKey = `${iso(rangeFrom)}:${iso(rangeTo)}`;
 
     // Projektwechsel → alles zurücksetzen & ggf. noch vorhandene alte localStorage-Termine einmalig ins Backend migrieren
@@ -368,44 +345,23 @@ export const Termin: React.FC = () => {
         return map;
     }, [photosById]);
 
-    /** Alles zu einem Tag, gefiltert nach Ebenen + Suche */
+    /** Alles zu einem Tag, gefiltert nach Termin-Kategorie + Suche */
     const dayData: DayDataFn = (d) => {
         const its = (itemsByDay[d] ?? []).filter((it) => matches(`${it.title} ${it.summary}`));
-        const defectsOn = layers.has('defect');
-        const pick = (type: TimelineItem['type'], layer: Layer) =>
-            layers.has(layer) ? its.filter((it) => it.type === type && !(defectsOn && isDefect(it))) : [];
+        const pick = (type: TimelineItem['type']) =>
+            its.filter((it) => it.type === type && !isDefect(it));
         return {
-            tasks: layers.has('tasks') ? (tasksByDay[d] ?? []).filter((tk) => matches(`${tk.title} ${tk.trade ?? ''} ${tk.company ?? ''}`)) : [],
-            appts: layers.has('appointments') ? (apptsByDay[d] ?? []).filter((a) => matches(`${a.title} ${a.description ?? ''}`)) : [],
-            reports: pick('report', 'report'),
-            notes: pick('note', 'note'),
-            notices: pick('notice', 'notice'),
-            progress: pick('progress', 'progress'),
-            alerts: pick('alert', 'alert'),
-            defects: defectsOn ? its.filter(isDefect) : [],
-            photos: layers.has('photos') ? (photosByDay[d] ?? []).filter((p) => matches(`${p.caption} ${p.diary_text} ${p.issues.join(' ')}`)) : []
+            tasks: (tasksByDay[d] ?? []).filter((tk) => matches(`${tk.title} ${tk.trade ?? ''} ${tk.company ?? ''}`)),
+            appts: (apptsByDay[d] ?? []).filter((a) => visibleCategories.has(a.category) && matches(`${a.title} ${a.description ?? ''}`)),
+            reports: pick('report'),
+            notes: pick('note'),
+            notices: pick('notice'),
+            progress: pick('progress'),
+            alerts: pick('alert'),
+            defects: its.filter(isDefect),
+            photos: (photosByDay[d] ?? []).filter((p) => matches(`${p.caption} ${p.diary_text} ${p.issues.join(' ')}`))
         };
     };
-
-    // Kennzahlen für den sichtbaren Zeitraum
-    const stats = useMemo(() => {
-        let reports = 0, defects = 0, warnings = 0, appts = 0, photos = 0;
-        const taskIds = new Set<number>();
-        const overdue = new Set<number>();
-        for (let d = rangeFrom; d <= rangeTo; d = addDays(d, 1)) {
-            const dd = dayData(iso(d));
-            reports += dd.reports.length;
-            defects += dd.defects.length;
-            warnings += warningCount(dd);
-            appts += dd.appts.length;
-            photos += dd.photos.length;
-            dd.tasks.forEach((tk) => {
-                taskIds.add(tk.taskId);
-                if (tk.isOverdue) overdue.add(tk.taskId);
-            });
-        }
-        return {reports, defects, warnings, appts, photos, tasks: taskIds.size, overdue: overdue.size};
-    }, [itemsByDay, tasksByDay, apptsByDay, photosByDay, layers, q, rangeKey]);
 
     // ---------- Navigation ----------
     const shift = (dir: -1 | 1) => {
@@ -433,7 +389,7 @@ export const Termin: React.FC = () => {
 
     const changeView = (v: View) => {
         setView(v);
-        if (v !== 'all' && v !== 'deadlines') setAnchor(parseIso(selected));
+        if (v !== 'deadlines') setAnchor(parseIso(selected));
     };
 
     const rangeLabel = (() => {
@@ -448,17 +404,15 @@ export const Termin: React.FC = () => {
                 return String(anchor.getFullYear());
             case 'deadlines':
                 return 'Fristen aus Briefen, Bauzeitenplan und Terminen';
-            case 'all':
-                return `Projektlaufzeit ${fmt(projectStart, {month: '2-digit', year: 'numeric'})} – ${fmt(projectEnd, {month: '2-digit', year: 'numeric'})}`;
         }
     })();
 
     // ---------- Aktionen ----------
-    const toggleLayer = (l: Layer) => {
-        setLayers((prev) => {
+    const toggleCategory = (c: AppointmentCategory) => {
+        setVisibleCategories((prev) => {
             const next = new Set(prev);
-            if (next.has(l)) next.delete(l);
-            else next.add(l);
+            if (next.has(c)) next.delete(c);
+            else next.add(c);
             return next;
         });
     };
@@ -612,7 +566,7 @@ export const Termin: React.FC = () => {
                 <div className="tp-title-group">
                     <div className="tp-title-icon"><CalendarIcon size={22}/></div>
                     <div>
-                        <h1 className="tp-title">{t('nav_termin', 'Terminplaner & Kalender')}</h1>
+                        <h1 className="tp-title">{t('nav_termin', 'Terminplaner')}</h1>
                         <p className="tp-sub">
                             Rückblick (Berichte, Mängel, Fotos) und Planung (Arbeiten je Tag, Termine) • <strong>{activeProject.name}</strong>
                         </p>
@@ -633,6 +587,23 @@ export const Termin: React.FC = () => {
                 </div>
             </div>
 
+            {/* Kategorien-Farblegende */}
+            {view !== 'deadlines' && (
+                <div className="tp-layers">
+                    {(Object.entries(CATEGORY) as [AppointmentCategory, { label: string; color: string }][]).map(([cat, info]) => (
+                        <button
+                            key={cat}
+                            className={`tp-layer ${visibleCategories.has(cat) ? 'on' : ''}`}
+                            style={{'--layer': info.color} as React.CSSProperties}
+                            onClick={() => toggleCategory(cat)}
+                            title={`${info.label} ein-/ausblenden`}
+                        >
+                            <i/>{info.label}
+                        </button>
+                    ))}
+                </div>
+            )}
+
             {/* Steuerleiste */}
             <div className="tp-toolbar">
                 <div className="tp-segment" role="tablist" aria-label="Zeitraum">
@@ -643,7 +614,7 @@ export const Termin: React.FC = () => {
                     ))}
                 </div>
                 <div className="tp-nav">
-                    {view !== 'all' && view !== 'deadlines' && (
+                    {view !== 'deadlines' && (
                         <>
                             <button className="tp-icon-btn" onClick={() => shift(-1)} aria-label="Zurück"><ChevronLeft size={16}/></button>
                             <button className="tp-btn" onClick={goToday}>Heute</button>
@@ -663,32 +634,6 @@ export const Termin: React.FC = () => {
             {view === 'deadlines' && <DeadlineRadar embedded/>}
 
             {view !== 'deadlines' && <>
-            {/* Ebenen */}
-            <div className="tp-layers">
-                {LAYERS.map((l) => (
-                    <button
-                        key={l.id}
-                        className={`tp-layer ${layers.has(l.id) ? 'on' : ''}`}
-                        style={{'--layer': l.color} as React.CSSProperties}
-                        onClick={() => toggleLayer(l.id)}
-                        title={`${l.label} ein-/ausblenden`}
-                    >
-                        <i/>{l.label}
-                    </button>
-                ))}
-            </div>
-
-            {/* Kennzahlen für den Zeitraum */}
-            <div className="tp-kpis">
-                <Kpi icon={<FileText size={15}/>} label="Bautagesberichte" value={stats.reports}/>
-                <Kpi icon={<Wrench size={15}/>} label="Mängel" value={stats.defects} tone={stats.defects > 0 ? 'danger' : undefined}/>
-                <Kpi icon={<AlertTriangle size={15}/>} label="Warnungen" value={stats.warnings} tone={stats.warnings > 0 ? 'warning' : undefined}/>
-                <Kpi icon={<ClipboardList size={15}/>} label="Vorgänge geplant" value={stats.tasks}/>
-                <Kpi icon={<Flag size={15}/>} label="Überfällig" value={stats.overdue} tone={stats.overdue > 0 ? 'danger' : undefined}/>
-                <Kpi icon={<CalendarIcon size={15}/>} label="Termine" value={stats.appts}/>
-                <Kpi icon={<Camera size={15}/>} label="Fotos" value={stats.photos}/>
-            </div>
-
             {error && <div className="tp-error">{error}</div>}
 
             <div className="tp-body">
@@ -713,11 +658,6 @@ export const Termin: React.FC = () => {
                                       setAnchor(new Date(anchor.getFullYear(), m, 1));
                                       setView('month');
                                   }}/>
-                    )}
-                    {view === 'all' && (
-                        <ProjectGantt from={rangeFrom} to={rangeTo} today={today} tasksByDay={tasksByDay}
-                                      itemsByDay={itemsByDay} showTasks={layers.has('tasks')} matches={matches}
-                                      onSelect={(d) => selectDay(d)}/>
                     )}
                 </div>
 
@@ -936,16 +876,6 @@ export const Termin: React.FC = () => {
 // Teil-Komponenten
 // =====================================================================
 
-const Kpi: React.FC<{ icon: React.ReactNode; label: string; value: number; tone?: 'danger' | 'warning' }> = ({icon, label, value, tone}) => (
-    <div className={`tp-kpi ${tone ?? ''}`}>
-        <div className="tp-kpi-icon">{icon}</div>
-        <div>
-            <div className="tp-kpi-value">{value}</div>
-            <div className="tp-kpi-label">{label}</div>
-        </div>
-    </div>
-);
-
 /** Kleine Markierungen für eine Tageszelle */
 const DayBadges: React.FC<{ d: DayInfo; compact?: boolean }> = ({d, compact}) => {
     const warn = warningCount(d);
@@ -1130,121 +1060,6 @@ const YearGrid: React.FC<{
         </div>
     </div>
 );
-
-/** Gesamt: Balkenplan aller Vorgänge über die Projektlaufzeit + Aktivität je Monat */
-const ProjectGantt: React.FC<{
-    from: Date; to: Date; today: Date;
-    tasksByDay: Record<string, DayTask[]>; itemsByDay: Record<string, TimelineItem[]>;
-    showTasks: boolean; matches: (s: string) => boolean; onSelect: (d: string) => void;
-}> = ({from, to, today, tasksByDay, itemsByDay, showTasks, matches, onSelect}) => {
-    const total = Math.max(1, daysBetween(from, to) + 1);
-    const frac = (d: Date) => Math.min(Math.max(daysBetween(from, d), 0), total) / total;
-    const pct = (d: Date) => `${frac(d) * 100}%`;
-
-    const bars = useMemo(() => {
-        const map = new Map<number, { t: DayTask; start: string; end: string; last: DayTask }>();
-        Object.entries(tasksByDay).forEach(([date, tasks]) => {
-            tasks.forEach((tk) => {
-                const cur = map.get(tk.taskId);
-                if (!cur) map.set(tk.taskId, {t: tk, start: date, end: date, last: tk});
-                else {
-                    if (date < cur.start) cur.start = date;
-                    if (date > cur.end) {
-                        cur.end = date;
-                        cur.last = tk;
-                    }
-                }
-            });
-        });
-        return Array.from(map.values())
-            .filter((b) => matches(`${b.t.title} ${b.t.trade ?? ''} ${b.t.company ?? ''}`))
-            .sort((a, b) => a.start.localeCompare(b.start));
-    }, [tasksByDay, matches]);
-
-    const months: Date[] = [];
-    for (let m = new Date(from.getFullYear(), from.getMonth(), 1); m <= to; m = new Date(m.getFullYear(), m.getMonth() + 1, 1)) months.push(m);
-
-    const activity = months.map((m) => {
-        let reports = 0, problems = 0;
-        const end = new Date(m.getFullYear(), m.getMonth() + 1, 0);
-        for (let d = m; d <= end; d = addDays(d, 1)) {
-            (itemsByDay[iso(d)] ?? []).forEach((it) => {
-                if (it.type === 'report') reports++;
-                if (it.type === 'alert' || isDefect(it)) problems++;
-            });
-        }
-        return {reports, problems};
-    });
-    const maxAct = Math.max(1, ...activity.map((a) => Math.max(a.reports, a.problems)));
-    const todayFrac = frac(today);
-
-    return (
-        <div className="tp-gantt">
-            <div className="tp-gantt-row scale">
-                <div className="tp-gantt-label"/>
-                <div className="tp-gantt-track">
-                    {months.map((m) => (
-                        <span key={m.toISOString()} className="tp-gantt-month" style={{left: pct(m)}}>{fmt(m, {month: 'short', year: '2-digit'})}</span>
-                    ))}
-                    <div className="tp-gantt-today" style={{left: `${todayFrac * 100}%`}} title="Heute"/>
-                </div>
-            </div>
-
-            <div className="tp-gantt-row activity">
-                <div className="tp-gantt-label"><strong>Aktivität</strong><span>Berichte / Probleme je Monat</span></div>
-                <div className="tp-gantt-track">
-                    {months.map((m, idx) => {
-                        const next = new Date(m.getFullYear(), m.getMonth() + 1, 1);
-                        const end = next < to ? next : addDays(to, 1);
-                        const a = activity[idx];
-                        return (
-                            <div key={m.toISOString()} className="tp-act" style={{left: pct(m), width: `${(frac(end) - frac(m)) * 100}%`}}
-                                 title={`${fmt(m, {month: 'long', year: 'numeric'})}: ${a.reports} Berichte, ${a.problems} Warnungen/Mängel`}>
-                                <div className="tp-act-bar report" style={{height: `${(a.reports / maxAct) * 100}%`}}/>
-                                <div className="tp-act-bar problem" style={{height: `${(a.problems / maxAct) * 100}%`}}/>
-                            </div>
-                        );
-                    })}
-                    <div className="tp-gantt-today" style={{left: `${todayFrac * 100}%`}}/>
-                </div>
-            </div>
-
-            {showTasks && bars.length === 0 && (
-                <div className="tp-empty">Keine Vorgänge im Bauzeitenplan (Stammdaten → Bauzeitenpläne).</div>
-            )}
-            {showTasks && bars.map((b) => {
-                const s = parseIso(b.start);
-                const e = addDays(parseIso(b.end), 1);
-                return (
-                    <div key={b.t.taskId} className="tp-gantt-row">
-                        <div className="tp-gantt-label" title={b.t.title}>
-                            <strong>{b.t.code ? `${b.t.code} ` : ''}{b.t.title}</strong>
-                            <span>{b.last.company || b.t.trade || ''}</span>
-                        </div>
-                        <div className="tp-gantt-track">
-                            <button
-                                className={`tp-gantt-bar ${b.last.isOverdue ? 'overdue' : b.last.status}`}
-                                style={{left: pct(s), width: `max(4px, ${(frac(e) - frac(s)) * 100}%)`}}
-                                onClick={() => onSelect(b.start)}
-                                title={`${b.t.title}: ${fmt(s, {day: '2-digit', month: '2-digit'})} – ${fmt(parseIso(b.end), {day: '2-digit', month: '2-digit', year: 'numeric'})} • Ist ${b.last.actualPercent} %`}
-                            >
-                                <span className="tp-gantt-fill" style={{width: `${Math.min(100, b.last.actualPercent)}%`}}/>
-                            </button>
-                            <div className="tp-gantt-today" style={{left: `${todayFrac * 100}%`}}/>
-                        </div>
-                    </div>
-                );
-            })}
-            <div className="tp-legend">
-                <span><i style={{background: '#3b82f6'}}/>im Plan</span>
-                <span><i style={{background: '#f59e0b'}}/>Achtung</span>
-                <span><i style={{background: '#dc2626'}}/>Verzug / Restarbeiten</span>
-                <span><i style={{background: '#0f172a', width: '2px'}}/>Heute</span>
-                <span>Dunkle Füllung = Ist-Fortschritt</span>
-            </div>
-        </div>
-    );
-};
 
 const TYPE_ICON: Record<TimelineItem['type'], React.ReactNode> = {
     report: <FileText size={12}/>,
@@ -1497,8 +1312,8 @@ const DayDetail: React.FC<{
                 {onOpenDay && <button className="tp-link" onClick={onOpenDay}>Tagesansicht →</button>}
             </div>
             <div className={large ? 'tp-detail-cols' : 'tp-detail-stack'}>
-                {rel === 'future' ? plan : past}
-                {rel !== 'future' && plan}
+                {plan}
+                {rel !== 'future' && past}
             </div>
         </div>
     );

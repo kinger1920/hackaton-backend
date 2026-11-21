@@ -5,7 +5,6 @@ import {
   Calendar,
   CloudSun,
   Users,
-  Mic,
   Copy,
   Plus,
   CheckCircle2,
@@ -25,7 +24,6 @@ import {
 } from 'lucide-react';
 import { ComingSoonNote, isNotImplemented } from '../components/ComingSoon';
 import { addDays, deToIso, isoToDe, toIsoDate as dateToIso, todayIso } from '../utils/dates';
-import { useAudioRecorder } from '../utils/useAudioRecorder';
 import { useProjects } from '../context/ProjectContext';
 import {
   getDiaryEntriesForProject,
@@ -95,8 +93,6 @@ export const DailyReports: React.FC = () => {
   const [newTradeInput, setNewTradeInput] = useState('');
   const [progressText, setProgressText] = useState('');
 
-  // Dictation state (echte Aufnahme → /api/transcribe → /api/reports/{date}/fill)
-  const [isProcessingDictation, setIsProcessingDictation] = useState(false);
   const [savedSuccessMsg, setSavedSuccessMsg] = useState(false);
 
   // Abschluss-Status (finalized = kein "ENTWURF"-Wasserzeichen im Export)
@@ -499,73 +495,6 @@ export const DailyReports: React.FC = () => {
     setTrades(trades.filter((t) => t !== tradeToRemove));
   };
 
-  // Diktat-Text → /api/reports/{date}/fill (KI ordnet Felder + Fortschritt je Vorgang zu)
-  const applyDictation = async (dictatedText: string) => {
-    setIsProcessingDictation(true);
-    try {
-      const iso = toIsoDate(reportDate);
-      const res = await api.fillReport(iso, {
-        text: dictatedText,
-        project_id: Number(activeProject.id)
-      });
-      if (res) {
-        const nextProgress = res.work_completed ?? progressText;
-        const nextTrades = res.trades && res.trades.length > 0 ? res.trades : trades;
-        const nextWeather = res.weather ?? weather;
-        const nextWorkforce = res.workforce_count ?? workforceCount;
-
-        if (res.work_completed) setProgressText(res.work_completed);
-        if (res.trades && res.trades.length > 0) setTrades(res.trades);
-        if (res.weather) setWeather(res.weather);
-        if (res.workforce_count) setWorkforceCount(res.workforce_count);
-        setDayAnalysis(null);
-
-        setCommittedReport((prev) => ({
-          ...prev,
-          hasSavedReport: true,
-          reportDate,
-          workCompleted: nextProgress,
-          trades: nextTrades,
-          weather: nextWeather,
-          workforceCount: nextWorkforce
-        }));
-      }
-    } catch (err) {
-      console.warn('Backend fillReport Fallback:', err);
-      setProgressText((prev) => (prev ? `${prev}\n[Diktat]: ${dictatedText}` : dictatedText));
-    } finally {
-      setIsProcessingDictation(false);
-    }
-  };
-
-  const askForTypedDictation = () => {
-    const typed = window.prompt('Diktat als Text eingeben (wird per KI in den Bericht übernommen):');
-    if (typed && typed.trim()) applyDictation(typed.trim());
-  };
-
-  // Aufnahme → /api/transcribe → fill (gemeinsamer Hook utils/useAudioRecorder)
-  const recorder = useAudioRecorder(async (blob) => {
-    setIsProcessingDictation(true);
-    let text = '';
-    try {
-      text = (await api.transcribeAudio(blob, 'de')).text.trim();
-    } catch (err) {
-      console.warn('Transkription fehlgeschlagen:', err);
-    }
-    setIsProcessingDictation(false);
-    if (text) applyDictation(text);
-    else askForTypedDictation();
-  });
-  const isRecording = recorder.isRecording;
-
-  const handleToggleMic = async () => {
-    if (isRecording) {
-      recorder.stop();
-      return;
-    }
-    if (!(await recorder.start())) askForTypedDictation();
-  };
-
   // Export: GET /api/reports/{date}/pdf|docx (Bericht wird vorher gespeichert, sonst 404)
   const handleExport = async (format: 'pdf' | 'docx') => {
     setExporting(format);
@@ -830,18 +759,6 @@ export const DailyReports: React.FC = () => {
               </div>
 
               <div className="editor-toolbar">
-                <button
-                  type="button"
-                  className={`history-btn-small ${isRecording ? 'recording-active' : ''}`}
-                  onClick={handleToggleMic}
-                  disabled={isProcessingDictation}
-                >
-                  <Mic size={13} />
-                  <span>
-                    {isProcessingDictation ? 'KI übernimmt Diktat…' : isRecording ? t('dash_mic_running') : t('dash_mic_start')}
-                  </span>
-                </button>
-
                 <button
                   type="button"
                   className="history-btn-small"

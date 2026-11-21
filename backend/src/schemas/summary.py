@@ -19,9 +19,9 @@ LinkType = Literal["delay", "cost", "defect"]  # Brieftyp für „Entwurf erstel
 
 
 class SummarizeRequest(BaseModel):
-    """Body für POST /api/summarize. Genau ein Modus: `text` ODER `period` + `project_id`.
+    """Body für POST /api/summarize. Genau ein Modus: `text`, `period` + `project_id` ODER `contract_id`.
 
-    Pydantic prüft das; bei beidem oder keinem Modus antwortet FastAPI mit 422.
+    Pydantic prüft das; bei mehreren oder keinem Modus antwortet FastAPI mit 422.
     """
 
     # Text-Modus
@@ -33,12 +33,16 @@ class SummarizeRequest(BaseModel):
     period: Literal["day", "week", "month"] | None = Field(default=None, description="Heute, Woche oder Monat")
     ref_date: dt.date | None = Field(default=None, description="Ein Tag im gewünschten Zeitraum (Default: heute)")
 
+    # Vertrags-Modus
+    contract_id: int | None = Field(default=None, description="Vertrag aus Stammdaten zusammenfassen")
+
     @model_validator(mode="after")
     def _exactly_one_mode(self) -> "SummarizeRequest":
         has_text = bool(self.text and self.text.strip())
         has_period = self.period is not None
-        if has_text == has_period:
-            raise ValueError("Entweder 'text' ODER 'period' (+ 'project_id') angeben.")
+        has_contract = self.contract_id is not None
+        if sum((has_text, has_period, has_contract)) != 1:
+            raise ValueError("Genau einen Modus angeben: 'text', 'period' (+ 'project_id') oder 'contract_id'.")
         if has_period and self.project_id is None:
             raise ValueError("Im Zeitraum-Modus ist 'project_id' Pflicht.")
         return self
@@ -77,6 +81,33 @@ class SummaryStats(BaseModel):
     noticesByStatus: dict[str, int]
 
 
+class ContractContact(BaseModel):
+    """Ansprechpartner aus Vertrag / Stammdaten für Rückfragen der Bauleitung."""
+
+    name: str
+    role: str = ""
+    company: str = ""
+    phone: str = ""
+    email: str = ""
+    note: str = ""
+
+
+class ContractFacts(BaseModel):
+    """Strukturierte Eckdaten eines Vertrags (Personal, Wo, Wann, Was, Verantwortliche, Kontakte)."""
+
+    contractTitle: str
+    contractorName: str = ""
+    trade: str = ""
+    statusLabel: str = "Aktiv"
+    workforce: str = ""
+    location: str = ""
+    schedule: str = ""
+    scope: str = ""
+    projectLeads: list[str] = Field(default_factory=list)
+    contacts: list[ContractContact] = Field(default_factory=list)
+    vobNotes: str = ""
+
+
 class SummaryResponse(BaseModel):
     """Antwort von POST /api/summarize (Frontend: DocumentSummary + Zusätze)."""
 
@@ -93,4 +124,5 @@ class SummaryResponse(BaseModel):
     periodFrom: dt.date | None = None
     periodTo: dt.date | None = None
     stats: SummaryStats | None = None
+    contractFacts: ContractFacts | None = None
     mode: Literal["ai", "offline"]

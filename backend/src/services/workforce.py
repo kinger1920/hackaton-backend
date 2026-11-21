@@ -67,9 +67,9 @@ def store_attendance(report: DailyReport, items: list[AttendanceItem]) -> None:
 
 
 def contracts_with_target(session: Session, project_id: int) -> list[Contract]:
-    """Verträge des Projekts mit hinterlegter Sollstärke."""
+    """Aktive Verträge des Projekts mit hinterlegter Sollstärke."""
     return [c for c in session.exec(select(Contract).where(Contract.project_id == project_id)
-                                     .order_by(Contract.id)).all() if c.planned_workforce]
+                                     .order_by(Contract.id)).all() if c.planned_workforce and c.is_active is not False]
 
 
 def _unique(candidates: list[Contract]) -> Contract | None:

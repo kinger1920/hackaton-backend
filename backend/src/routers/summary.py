@@ -10,7 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlmodel import Session
 
 from src.database import get_session
-from src.models import Project
+from src.models import Contract, Project
 from src.schemas.summary import SummarizeRequest, SummaryResponse
 from src.services import summary
 
@@ -25,14 +25,23 @@ async def summarize(req: SummarizeRequest, session: Session = Depends(get_sessio
       - Zeitraum: {project_id, period: "day"|"week"|"month", ref_date?}  → Tag/Woche/Monat aus Tagesberichten,
         Tagebuchnotizen und Briefen des Projekts.
       - Text:     {text, source_type?, project_id?}                  → E-Mail, Protokoll, Tagebuchauszug.
+      - Vertrag:  {contract_id, project_id?}                         → Vertrag inkl. Personal, Ort, Zeitraum, Kontakten.
     Output: Format `DocumentSummary` des Frontends + Quellen, Kennzahlen, Zeitraum, Modus.
-    Fehler: 404, wenn `project_id` unbekannt ist.
+    Fehler: 404, wenn `project_id` oder `contract_id` unbekannt ist.
     """
     project = None
     if req.project_id is not None:
         project = session.get(Project, req.project_id)
         if project is None:
             raise HTTPException(status_code=404, detail=f"Projekt {req.project_id} nicht gefunden")
+
+    if req.contract_id is not None:
+        contract = session.get(Contract, req.contract_id)
+        if contract is None:
+            raise HTTPException(status_code=404, detail=f"Vertrag {req.contract_id} nicht gefunden")
+        if project is None:
+            project = session.get(Project, contract.project_id)
+        return await summary.summarize_contract(session, contract, project)
 
     if req.period is not None:
         return await summary.summarize_period(session, project, req.period, req.ref_date or dt.date.today())

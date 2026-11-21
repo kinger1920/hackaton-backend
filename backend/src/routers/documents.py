@@ -58,6 +58,26 @@ class UserPermissions(BaseModel):
     claims: bool = False
 
 
+ALLOWED_START_TABS = {
+    "/dashboard",
+    "/capture/voice",
+    "/capture/text",
+    "/termin",
+    "/reports",
+    "/drafts",
+    "/summary",
+    "/fortschritt",
+    "/assistent",
+    "/projects",
+    "/stammdaten",
+}
+
+
+def _normalize_start_tab(value: str | None) -> str:
+    cleaned = (value or "").strip()
+    return cleaned if cleaned in ALLOWED_START_TABS else "/dashboard"
+
+
 class UserProfilePayload(BaseModel):
     fullName: str = "Max Mustermann"
     email: str = "m.mustermann@bau-ag.de"
@@ -66,6 +86,7 @@ class UserProfilePayload(BaseModel):
     role: str = "Bauleiter"
     officeLocation: str = "Niederlassung Berlin-Brandenburg"
     workplaceType: str = "Baustellencontainer vor Ort"
+    startTab: str = "/dashboard"
     permissions: UserPermissions = UserPermissions()
 
 
@@ -262,6 +283,7 @@ def _to_profile_payload(prof: UserProfile) -> UserProfilePayload:
         role=prof.role,
         officeLocation=prof.office_location,
         workplaceType=prof.workplace_type,
+        startTab=_normalize_start_tab(prof.start_tab),
         permissions=perms,
     )
 
@@ -283,6 +305,7 @@ def put_profile(payload: UserProfilePayload, session: Session = Depends(get_sess
     prof.role = payload.role.strip() or "Bauleiter"
     prof.office_location = payload.officeLocation.strip()
     prof.workplace_type = payload.workplaceType.strip()
+    prof.start_tab = _normalize_start_tab(payload.startTab)
     prof.permissions_json = json.dumps(payload.permissions.model_dump(), ensure_ascii=False)
     prof.updated_at = dt.datetime.now(dt.timezone.utc)
     session.add(prof)

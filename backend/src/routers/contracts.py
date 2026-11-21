@@ -24,12 +24,16 @@ def _get_or_404(session: Session, contract_id: int) -> Contract:
 @router.get("", response_model=list[ContractRead])
 def list_contracts(
     project_id: int | None = None,
+    is_active: bool | None = None,
     session: Session = Depends(get_session),
 ):
     statement = select(Contract)
     if project_id is not None:
         statement = statement.where(Contract.project_id == project_id)
-    return session.exec(statement).all()
+    contracts = session.exec(statement).all()
+    if is_active is not None:
+        contracts = [c for c in contracts if (c.is_active is not False) is is_active]
+    return contracts
 
 
 @router.get("/{contract_id}", response_model=ContractRead)
@@ -85,6 +89,7 @@ async def upload_contract(
     trade: str | None = Form(None),
     planned_workforce: int | None = Form(None),
     vob_notes: str | None = Form(None),
+    is_active: bool = Form(True),
     file: UploadFile = File(..., description="Vertrags-PDF"),
     session: Session = Depends(get_session),
 ):
@@ -119,6 +124,7 @@ async def upload_contract(
         trade=trade,
         planned_workforce=planned_workforce,
         vob_notes=vob_notes,
+        is_active=is_active,
         file_name=safe_name,
         file_path=str(dest_path),
         extracted_text=extracted_text,

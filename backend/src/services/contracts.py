@@ -63,9 +63,12 @@ def get_project_contracts_context(session: Session, project_id: int, max_chars_p
     Kann in weiteren Schritten direkt an `services/extraction.py` oder `services/review.py`
     übergeben werden, um z. B. Sollstärke oder firmenspezifische VOB-Klauseln abzugleichen.
     """
-    contracts = session.exec(
-        select(Contract).where(Contract.project_id == project_id).order_by(Contract.id)
-    ).all()
+    contracts = [
+        c for c in session.exec(
+            select(Contract).where(Contract.project_id == project_id).order_by(Contract.id)
+        ).all()
+        if c.is_active is not False
+    ]
     if not contracts:
         return ""
 

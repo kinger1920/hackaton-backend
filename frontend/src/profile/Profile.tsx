@@ -6,10 +6,12 @@ import {api, Company} from '../services/api';
 import {
     DEFAULT_PROFILE,
     ROLES,
+    START_TAB_OPTIONS,
     SignAs,
     UserProfile,
     findOwnCompany,
     loadProfile,
+    normalizeStartTab,
     saveProfile,
     senderCompany,
     senderLine,
@@ -41,6 +43,20 @@ export const Profile: React.FC = () => {
                 setCompaniesLoaded('ok');
             })
             .catch(() => setCompaniesLoaded('offline'));
+
+        api.getProfile()
+            .then((remote) => {
+                if (!remote.startTab) return;
+                try {
+                    const stored = JSON.parse(localStorage.getItem('userProfile') || 'null');
+                    if (!stored || !stored.startTab) {
+                        setProfile((prev) => ({...prev, startTab: normalizeStartTab(remote.startTab)}));
+                    }
+                } catch {
+                    setProfile((prev) => ({...prev, startTab: normalizeStartTab(remote.startTab)}));
+                }
+            })
+            .catch(() => undefined);
     }, []);
 
     const set = <K extends keyof UserProfile>(key: K, value: UserProfile[K]) =>
@@ -53,7 +69,11 @@ export const Profile: React.FC = () => {
     const handleSave = (e: React.FormEvent) => {
         e.preventDefault();
         // remember the Stammdaten choice explicitly (also when it was picked automatically)
-        const toSave = {...profile, companyId: selectedOwn?.id ?? profile.companyId};
+        const toSave = {
+            ...profile,
+            companyId: selectedOwn?.id ?? profile.companyId,
+            startTab: normalizeStartTab(profile.startTab)
+        };
         saveProfile(toSave);
         setProfile(toSave);
         setSavedSuccess(true);
@@ -215,6 +235,29 @@ export const Profile: React.FC = () => {
                                 <label className="form-label" htmlFor="pfClosing">{t('pf_closing')}</label>
                                 <input id="pfClosing" className="form-input" type="text" value={profile.closing}
                                        onChange={(e) => set('closing', e.target.value)}/>
+                            </div>
+                        </section>
+
+                        {/* 4 · Starttab */}
+                        <section className="pf-step">
+                            <h2 className="pf-step-title"><span className="pf-step-num">4</span>{t('pf_sec_start_tab', 'Starttab')}</h2>
+                            <div className="form-group">
+                                <label className="form-label" htmlFor="pfStartTab">{t('pf_start_tab', 'Starttab nach Anmeldung')}</label>
+                                <select
+                                    id="pfStartTab"
+                                    className="form-input"
+                                    value={normalizeStartTab(profile.startTab)}
+                                    onChange={(e) => set('startTab', normalizeStartTab(e.target.value))}
+                                >
+                                    {START_TAB_OPTIONS.map((opt) => (
+                                        <option key={opt.path} value={opt.path}>
+                                            {t(opt.labelKey, opt.fallback)}
+                                        </option>
+                                    ))}
+                                </select>
+                                <span className="pf-field-hint">
+                                    {t('pf_start_tab_hint', 'Bestimmt, welcher Bereich direkt nach dem Anmelden geöffnet wird.')}
+                                </span>
                             </div>
                         </section>
 

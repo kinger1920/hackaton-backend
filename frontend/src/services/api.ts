@@ -308,6 +308,7 @@ export interface UserProfilePayload {
   role: string;
   officeLocation: string;
   workplaceType: string;
+  startTab?: string;
   permissions: {
     dailyReports: boolean;
     vobLetters: boolean;
@@ -370,6 +371,7 @@ export interface SummarizeRequest {
   project_id?: number;
   period?: 'day' | 'week' | 'month';
   ref_date?: string;
+  contract_id?: number;
 }
 
 export interface SummaryActionItem {
@@ -390,6 +392,29 @@ export interface SummaryVobRisk {
   source?: string;
 }
 
+export interface ContractContact {
+  name: string;
+  role: string;
+  company: string;
+  phone: string;
+  email: string;
+  note: string;
+}
+
+export interface ContractFacts {
+  contractTitle: string;
+  contractorName: string;
+  trade: string;
+  statusLabel: string;
+  workforce: string;
+  location: string;
+  schedule: string;
+  scope: string;
+  projectLeads: string[];
+  contacts: ContractContact[];
+  vobNotes: string;
+}
+
 export interface SummaryResponse {
   title: string;
   executiveSummary: string[];
@@ -401,6 +426,7 @@ export interface SummaryResponse {
   sources?: string[];
   periodFrom?: string | null;
   periodTo?: string | null;
+  contractFacts?: ContractFacts | null;
   mode: 'ai' | 'offline';
 }
 
@@ -443,6 +469,7 @@ export interface Contract {
   trade?: string | null;
   planned_workforce?: number | null;
   vob_notes?: string | null;
+  is_active?: boolean | null;
   file_name?: string | null;
   file_path?: string | null;
   extracted_text?: string | null;
@@ -457,9 +484,10 @@ export interface ContractUpload {
   trade?: string;
   planned_workforce?: number;
   vob_notes?: string;
+  is_active?: boolean;
 }
 
-export type ContractUpdate = Partial<Pick<Contract, 'title' | 'contractor_name' | 'trade' | 'planned_workforce' | 'vob_notes'>>;
+export type ContractUpdate = Partial<Pick<Contract, 'title' | 'contractor_name' | 'trade' | 'planned_workforce' | 'vob_notes' | 'is_active'>>;
 
 export interface ContractText {
   id: number;
@@ -1046,6 +1074,7 @@ export const api = {
     if (data.trade) form.append('trade', data.trade);
     if (data.planned_workforce != null) form.append('planned_workforce', String(data.planned_workforce));
     if (data.vob_notes) form.append('vob_notes', data.vob_notes);
+    if (data.is_active !== undefined) form.append('is_active', String(data.is_active));
     const res = await fetch(`${API_BASE_URL}/contracts`, { method: 'POST', body: form });
     return handleResponse<Contract>(res, 'Fehler beim Hochladen des Vertrags');
   },

@@ -14,6 +14,7 @@ class ContractBase(SQLModel):
     file_name: Optional[str] = None
     file_path: Optional[str] = None
     extracted_text: Optional[str] = None  # Extrahierter PDF-Volltext für KI-Abgleich
+    is_active: Optional[bool] = Field(default=True)  # Aktiver vs. inaktiver Vertrag
 
 
 class Contract(ContractBase, table=True):
@@ -31,6 +32,7 @@ class ContractUpdate(SQLModel):
     trade: Optional[str] = None
     planned_workforce: Optional[int] = None
     vob_notes: Optional[str] = None
+    is_active: Optional[bool] = None
 
 
 class ContractRead(ContractBase):

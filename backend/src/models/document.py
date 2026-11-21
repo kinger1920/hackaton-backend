@@ -37,4 +37,5 @@ class UserProfile(SQLModel, table=True):
     permissions_json: str = Field(
         default='{"dailyReports": true, "vobLetters": true, "defectNotices": true, "claims": false}'
     )
+    start_tab: Optional[str] = Field(default="/dashboard")
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))

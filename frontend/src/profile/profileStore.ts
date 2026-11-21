@@ -7,6 +7,31 @@ import {api, Company} from '../services/api';
 
 export type SignAs = 'iA' | 'iV' | 'none';
 
+export interface StartTabOption {
+    path: string;
+    labelKey: string;
+    fallback: string;
+}
+
+export const START_TAB_OPTIONS: StartTabOption[] = [
+    {path: '/dashboard', labelKey: 'nav_dashboard', fallback: 'Dashboard'},
+    {path: '/capture/voice', labelKey: 'nav_capture_voice', fallback: 'Spracherfassung'},
+    {path: '/capture/text', labelKey: 'nav_capture_text', fallback: 'Schreiberfassung'},
+    {path: '/termin', labelKey: 'nav_termin', fallback: 'Terminplaner'},
+    {path: '/reports', labelKey: 'nav_reports', fallback: 'Bautagesberichte'},
+    {path: '/drafts', labelKey: 'nav_drafts', fallback: 'Brief- & Mängelentwürfe'},
+    {path: '/summary', labelKey: 'nav_summary', fallback: 'Zusammenfassungen'},
+    {path: '/fortschritt', labelKey: 'nav_progress_map', fallback: 'Baufortschritt'},
+    {path: '/assistent', labelKey: 'nav_assistant', fallback: 'Projekt-Assistent'},
+    {path: '/projects', labelKey: 'nav_projects', fallback: 'Projekte'},
+    {path: '/stammdaten', labelKey: 'nav_masterdata', fallback: 'Stammdaten'}
+];
+
+export const normalizeStartTab = (value?: string | null): string => {
+    const cleaned = (value || '').trim();
+    return START_TAB_OPTIONS.some((opt) => opt.path === cleaned) ? cleaned : '/dashboard';
+};
+
 export interface UserProfile {
     fullName: string;
     role: string;
@@ -18,6 +43,7 @@ export interface UserProfile {
     companyAddress: string;     // fallback address
     signAs: SignAs;
     closing: string;
+    startTab: string;
 }
 
 export const ROLES = ['Bauleiter', 'Oberbauleiter', 'Projektleiter', 'Polier'];
@@ -32,7 +58,8 @@ export const DEFAULT_PROFILE: UserProfile = {
     company: 'Baupartner AG & Co. KG',
     companyAddress: '',
     signAs: 'iA',
-    closing: 'Mit freundlichen Grüßen'
+    closing: 'Mit freundlichen Grüßen',
+    startTab: '/dashboard'
 };
 
 const STORAGE_KEY = 'userProfile';
@@ -57,21 +84,24 @@ export const loadProfile = (): UserProfile => {
         company: raw.company ?? DEFAULT_PROFILE.company,
         companyAddress: raw.companyAddress ?? '',
         signAs: raw.signAs === 'iV' || raw.signAs === 'none' ? raw.signAs : 'iA',
-        closing: raw.closing || DEFAULT_PROFILE.closing
+        closing: raw.closing || DEFAULT_PROFILE.closing,
+        startTab: normalizeStartTab(raw.startTab)
     };
 };
 
 export const saveProfile = (p: UserProfile) => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(p));
-    if (p.fullName.trim()) localStorage.setItem('userName', p.fullName.trim());
+    const normalized: UserProfile = {...p, startTab: normalizeStartTab(p.startTab)};
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(normalized));
+    if (normalized.fullName.trim()) localStorage.setItem('userName', normalized.fullName.trim());
     api.saveProfile({
-        fullName: p.fullName,
-        email: p.email,
-        phone: p.mobile || p.phone,
-        company: p.company,
-        role: p.role,
-        officeLocation: p.companyAddress,
+        fullName: normalized.fullName,
+        email: normalized.email,
+        phone: normalized.mobile || normalized.phone,
+        company: normalized.company,
+        role: normalized.role,
+        officeLocation: normalized.companyAddress,
         workplaceType: 'Baustellencontainer vor Ort',
+        startTab: normalized.startTab,
         permissions: {dailyReports: true, vobLetters: true, defectNotices: true, claims: false}
     }).catch(() => undefined);
     window.dispatchEvent(new Event('profile-updated'));

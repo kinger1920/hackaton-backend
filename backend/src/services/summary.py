@@ -20,9 +20,27 @@ from typing import Literal
 from pydantic import BaseModel
 from sqlmodel import Session, select
 
-from src.models import DailyReport, FormalNotice, Project, SiteNote
-from src.schemas.summary import ActionItem, LinkType, SummaryResponse, SummaryStats, VobRisk
-from src.services import llm, offline_rules
+from src.models import (
+    Company,
+    ConstructionPlan,
+    Contract,
+    DailyReport,
+    FormalNotice,
+    PlanTask,
+    Project,
+    SiteNote,
+    UserProfile,
+)
+from src.schemas.summary import (
+    ActionItem,
+    ContractContact,
+    ContractFacts,
+    LinkType,
+    SummaryResponse,
+    SummaryStats,
+    VobRisk,
+)
+from src.services import contract_parse, llm, offline_rules
 from src.services.letters import TYPE_NAMES
 
 # ~12.000 Zeichen ≈ 3.500 Tokens: bleibt mit Antwort unter Groqs 8.000 Tokens/Minute.
@@ -363,3 +381,557 @@ async def summarize_text(text: str, source_type: str | None, project: Project | 
     if len(text.strip()) > MAX_CONTEXT_CHARS:
         trace += f" Nur die ersten {MAX_CONTEXT_CHARS} Zeichen ausgewertet."
     return SummaryResponse(title=title, traceabilityNotes=trace, sources=[label], mode=mode, **content)
+
+
+# ---------------------------------------------------------------- Vertrag zusammenfassen
+
+class _LLMContractContact(BaseModel):
+    name: str
+    role: str
+    company: str
+    phone: str
+    email: str
+    note: str
+
+
+class _LLMContractSummary(BaseModel):
+    workforce: str
+    location: str
+    schedule: str
+    scope: str
+    projectLeads: list[str]
+    contacts: list[_LLMContractContact]
+    vobNotes: str
+    executiveSummary: list[str]
+    keyDecisions: list[_LLMDecision]
+    actionItems: list[_LLMAction]
+    vobRisks: list[_LLMRisk]
+
+
+CONTRACT_SYSTEM_PROMPT = """Du bist Assistent eines deutschen Bauleiters und fasst einen Bauvertrag bzw. Nachunternehmervertrag strukturiert zusammen.
+Jeder Block im Input beginnt mit seinem Quellen-Label in eckigen Klammern, z. B. [Vertragstext], [Vertragsdaten], [Stammdaten], [Bauzeitenplan].
+
+Beantworte auf Deutsch, sachlich, präzise und knapp:
+- workforce: Wie viele Personen / Arbeitskräfte sind gestellt (Sollstärke, Kolonnenstärke, Mindestbesetzung)?
+- location: WO wird gearbeitet (Baustelle, Bauvorhaben, Bauteil, Haus, Achse, Geschoss, Adresse)?
+- schedule: WANN (Ausführungsbeginn, Fertigstellung, Meilensteine, Reaktions-/Anzeigefristen)?
+- scope: WAS ist geschuldet (Gewerk, Leistungsumfang, zentrale Aufgaben/Lieferungen)?
+- projectLeads: Wer sind die Projektverantwortlichen (Auftraggeber, Projektleitung, Bauleitung, Bauüberwachung, verantwortliche Bau-/Projektleiter der Firma)?
+- contacts: Wen muss der Bauleiter bei Fragen kontaktieren (Name, Rolle, Firma, Telefon, E-Mail, wofür zuständig)?
+- vobNotes: Wichtige VOB/B- oder Vertragsbesonderheiten (z. B. Anzeigefristen für Behinderung/Mängel, Vertragsstrafen).
+- executiveSummary: 3–5 prägnante Kernaussagen für den Bauleiter (je 1 Satz).
+- keyDecisions: Zentrale vertragliche Festlegungen (z. B. Sollstärke, Termine, Abnahmen) mit source.
+- actionItems: Wichtige Pflichten / Fristen / Rücksprachen für die Bauleitung mit responsible, deadline, priority, source.
+- vobRisks: VOB-/Termin-/Personalrisiken aus dem Vertrag (linkType: delay | cost | defect | none) mit source.
+
+Regeln:
+- source ist IMMER genau ein Quellen-Label aus dem Input (ohne eckige Klammern).
+- Erfinde NICHTS: Keine Personen, Telefonnummern, E-Mails, Zahlen oder Daten erfinden. Wenn etwas nicht im Input steht, lasse das Feld leer ("" oder []).
+- Keine Rechtsberatung."""
+
+_LOC_LINE_RE = re.compile(
+    r"\b(?:Baustelle|Bauvorhaben|Einsatzort|Standort|Leistungsort|Ausführungsort|Bauteil|Achse|Haus\s+[A-Z0-9]|Geschoss)\b",
+    re.IGNORECASE,
+)
+_SCOPE_LINE_RE = re.compile(
+    r"\b(?:Leistungsgegenstand|Leistungsumfang|Vertragsgegenstand|Gegenstand des Vertrags|Gewerk|Ausführungsleistungen|Auftragsumfang)\b",
+    re.IGNORECASE,
+)
+_LEAD_LINE_RE = re.compile(
+    r"\b(?:Projektleiter|Projektleitung|Oberbauleiter|Bauleiter|Bauleitung|Bauüberwachung|Auftraggeber|Bauherr|Verantwortlich(?:er|e)?|Geschäftsführer)\b",
+    re.IGNORECASE,
+)
+_CONTACT_LINE_RE = re.compile(
+    r"\b(?:Ansprechpartner|Kontakt|Rückfragen|Erreichbar|Polier|Vorarbeiter|Koordinator|Tel\.?|Telefon|Mobil|E-?Mail)\b",
+    re.IGNORECASE,
+)
+_EMAIL_RE = re.compile(r"[\w.+-]+@[\w-]+\.[\w.-]+")
+_PHONE_RE = re.compile(r"(?:\+?\d[\d\s/\-()]{6,}\d)")
+
+
+def _dedupe_strs(items: list[str]) -> list[str]:
+    seen: set[str] = set()
+    out: list[str] = []
+    for item in items:
+        s = item.strip()
+        key = s.lower()
+        if s and key not in seen:
+            seen.add(key)
+            out.append(s)
+    return out
+
+
+def _matching_companies(session: Session, contract: Contract) -> tuple[Company | None, Company | None, Company | None]:
+    """Findet (Nachunternehmer-Firma, Auftraggeber-Firma, Eigenes Unternehmen) aus den Stammdaten."""
+    companies = list(session.exec(select(Company)).all())
+    cname = (contract.contractor_name or "").strip().lower()
+    ctrade = (contract.trade or "").strip().lower()
+    contractor_co: Company | None = None
+    client_co: Company | None = None
+    own_co: Company | None = None
+
+    for c in companies:
+        if c.company_type == "client" and client_co is None:
+            client_co = c
+        elif c.company_type == "own" and own_co is None:
+            own_co = c
+        if cname and c.name.strip().lower() == cname:
+            contractor_co = c
+    if contractor_co is None and cname:
+        for c in companies:
+            if cname in c.name.strip().lower() or c.name.strip().lower() in cname:
+                contractor_co = c
+                break
+    if contractor_co is None and ctrade:
+        for c in companies:
+            if c.company_type == "subcontractor" and c.trade and ctrade in c.trade.strip().lower():
+                contractor_co = c
+                break
+    return contractor_co, client_co, own_co
+
+
+def _matching_plan_tasks(session: Session, contract: Contract) -> list[PlanTask]:
+    plans = list(session.exec(select(ConstructionPlan).where(ConstructionPlan.project_id == contract.project_id)).all())
+    if not plans:
+        return []
+    plan_ids = [p.id for p in plans if p.id is not None]
+    tasks = list(session.exec(select(PlanTask).where(PlanTask.plan_id.in_(plan_ids))).all())
+    if contract.trade:
+        ct = contract.trade.strip().lower()
+        matched = [t for t in tasks if t.trade and (ct in t.trade.lower() or t.trade.lower() in ct)]
+        if matched:
+            return matched
+    return tasks
+
+
+def _extract_lines(text: str, rx: re.Pattern[str], limit: int = 3) -> list[str]:
+    hits: list[str] = []
+    for raw in text.splitlines():
+        line = re.sub(r"\s+", " ", raw).strip()
+        if not line or len(line) < 4:
+            continue
+        if rx.search(line):
+            hits.append(line[:220])
+            if len(hits) >= limit:
+                break
+    return hits
+
+
+def _extract_contacts_from_text(text: str, fallback_company: str) -> list[ContractContact]:
+    contacts: list[ContractContact] = []
+    seen: set[str] = set()
+    for raw in text.splitlines():
+        line = re.sub(r"\s+", " ", raw).strip()
+        if not line:
+            continue
+        if not (_CONTACT_LINE_RE.search(line) or _EMAIL_RE.search(line) or _LEAD_LINE_RE.search(line)):
+            continue
+        email_m = _EMAIL_RE.search(line)
+        phone_m = _PHONE_RE.search(line)
+        if not (email_m or phone_m or "ansprechpartner" in line.lower() or "rückfragen" in line.lower() or "bauleiter" in line.lower() or "projektleiter" in line.lower()):
+            continue
+        email = email_m.group(0) if email_m else ""
+        phone = phone_m.group(0).strip() if phone_m else ""
+        # Label vor ':' oder ohne Tel/Mail als Name/Rolle verwenden
+        cleaned = line
+        if email:
+            cleaned = cleaned.replace(email, "")
+        if phone:
+            cleaned = cleaned.replace(phone, "")
+        cleaned = re.sub(r"\b(?:Tel\.?|Telefon|Mobil|E-?Mail|Mail)\s*:?", "", cleaned, flags=re.IGNORECASE)
+        cleaned = re.sub(r"[,;|•]+", " ", cleaned).strip(" :-")
+        role = ""
+        name = cleaned
+        if ":" in cleaned:
+            left, right = cleaned.split(":", 1)
+            if left.strip() and right.strip():
+                role, name = left.strip()[:60], right.strip()[:80]
+        if not name and not email and not phone:
+            continue
+        key = f"{name.lower()}|{email.lower()}|{phone}"
+        if key in seen:
+            continue
+        seen.add(key)
+        contacts.append(ContractContact(
+            name=name[:80] or "Ansprechpartner laut Vertrag",
+            role=role,
+            company=fallback_company,
+            phone=phone,
+            email=email,
+            note="Aus Vertragstext",
+        ))
+        if len(contacts) >= 5:
+            break
+    return contacts
+
+
+def _merge_contacts(primary: list[ContractContact], secondary: list[ContractContact]) -> list[ContractContact]:
+    out: list[ContractContact] = []
+    seen: set[tuple[str, str, str]] = set()
+    for c in [*primary, *secondary]:
+        name = (c.name or "").strip()
+        email = (c.email or "").strip()
+        phone = (c.phone or "").strip()
+        if not (name or email or phone):
+            continue
+        key = (name.lower(), email.lower(), re.sub(r"\D", "", phone))
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(ContractContact(
+            name=name or c.company or "Kontakt",
+            role=(c.role or "").strip(),
+            company=(c.company or "").strip(),
+            phone=phone,
+            email=email,
+            note=(c.note or "").strip(),
+        ))
+    return out
+
+
+def _build_contract_fallback_facts(
+    contract: Contract,
+    project: Project | None,
+    contractor_co: Company | None,
+    client_co: Company | None,
+    own_co: Company | None,
+    tasks: list[PlanTask],
+    profile: UserProfile | None,
+) -> tuple[ContractFacts, dict[str, contract_parse.ParsedField]]:
+    text = (contract.extracted_text or "").strip()
+    parsed = contract_parse.offline_parse(text) if text else {}
+
+    # 1. Gestellte Personen / Sollstärke
+    pw = contract.planned_workforce
+    if pw is None and "planned_workforce" in parsed:
+        pw = int(parsed["planned_workforce"].value)
+    if pw is not None:
+        workforce = f"{pw} Person(en) / Arbeitskräfte (vertragliche Sollstärke)"
+    else:
+        wf_lines = _extract_lines(text, re.compile(r"\b(?:Sollstärke|Mindestbesetzung|Arbeitskräfte|Personal|Monteure|Personen)\b", re.IGNORECASE), 1)
+        workforce = wf_lines[0] if wf_lines else "Keine Personenanzahl / Sollstärke im Vertrag angegeben"
+
+    # 2. Wo
+    loc_parts: list[str] = []
+    if text:
+        loc_parts.extend(_extract_lines(text, _LOC_LINE_RE, 2))
+    task_locs = _dedupe_strs([t.location for t in tasks if t.location])
+    if task_locs:
+        loc_parts.append("Bauabschnitte / Bereiche (Bauzeitenplan): " + ", ".join(task_locs))
+    if project and project.location:
+        loc_parts.append(f"Projektstandort: {project.location}")
+    location = " | ".join(_dedupe_strs(loc_parts)) or "Kein Einsatzort angegeben"
+
+    # 3. Wann
+    sched_parts: list[str] = []
+    start_s = parsed["execution_start"].value if "execution_start" in parsed else None
+    end_s = parsed["execution_end"].value if "execution_end" in parsed else None
+    if start_s or end_s:
+        sched_parts.append(f"Vertraglicher Zeitraum: {start_s or '?'} – {end_s or '?'}")
+    task_starts = [t.planned_start for t in tasks if t.planned_start]
+    task_ends = [t.planned_end for t in tasks if t.planned_end]
+    if task_starts or task_ends:
+        s_min = _de(min(task_starts)) if task_starts else "?"
+        e_max = _de(max(task_ends)) if task_ends else "?"
+        sched_parts.append(f"Laut Bauzeitenplan ({len(tasks)} Vorgänge): {s_min} – {e_max}")
+    elif project and (project.start_date or project.end_date):
+        sched_parts.append(f"Projektlaufzeit: {project.start_date or '?'} – {project.end_date or '?'}")
+    if contract.vob_notes:
+        sched_parts.append(f"Fristen/Hinweise: {contract.vob_notes}")
+    schedule = " | ".join(_dedupe_strs(sched_parts)) or "Kein Ausführungszeitraum angegeben"
+
+    # 4. Was
+    scope_parts: list[str] = []
+    if contract.trade:
+        scope_parts.append(f"Gewerk: {contract.trade}")
+    if text:
+        scope_parts.extend(_extract_lines(text, _SCOPE_LINE_RE, 2))
+    if tasks:
+        task_titles = [f"{t.task_code + ' ' if t.task_code else ''}{t.title}" for t in tasks[:5]]
+        scope_parts.append("Vorgänge: " + ", ".join(task_titles) + (f" (+{len(tasks) - 5} weitere)" if len(tasks) > 5 else ""))
+    if not scope_parts:
+        scope_parts.append(contract.title)
+    scope = " | ".join(_dedupe_strs(scope_parts))
+
+    # 5. Projektverantwortliche
+    leads: list[str] = []
+    if text:
+        leads.extend(_extract_lines(text, _LEAD_LINE_RE, 4))
+    if project and project.client:
+        leads.append(f"Auftraggeber / Bauherr: {project.client}" + (f" (Ansprechpartner: {client_co.contact_person})" if client_co and client_co.contact_person else ""))
+    if contract.contractor_name:
+        leads.append(f"Auftragnehmer / Firma: {contract.contractor_name}" + (f" ({contractor_co.contact_person})" if contractor_co and contractor_co.contact_person else ""))
+    if profile and profile.full_name:
+        leads.append(f"Eigene Bauleitung: {profile.full_name}" + (f" ({profile.company})" if profile.company else ""))
+    elif own_co:
+        leads.append(f"Eigenes Unternehmen: {own_co.name}" + (f" ({own_co.contact_person})" if own_co.contact_person else ""))
+    leads = _dedupe_strs(leads)
+
+    # 6. Kontakte bei Fragen für den Bauleiter
+    db_contacts: list[ContractContact] = []
+    if contractor_co and (contractor_co.contact_person or contractor_co.phone or contractor_co.email):
+        db_contacts.append(ContractContact(
+            name=contractor_co.contact_person or contractor_co.name,
+            role=f"Ansprechpartner {contract.trade or 'Nachunternehmer'}",
+            company=contractor_co.name,
+            phone=contractor_co.phone or "",
+            email=contractor_co.email or "",
+            note="Bei Rückfragen zur Ausführung & Personalgestellung (Stammdaten)",
+        ))
+    elif contract.contractor_name:
+        db_contacts.append(ContractContact(
+            name=contract.contractor_name,
+            role=f"Vertragspartner ({contract.trade or 'Gewerk'})",
+            company=contract.contractor_name,
+            note="Vertragspartner laut Vertragsdaten (Details ggf. in Stammdaten → Firmen ergänzen)",
+        ))
+    if client_co and (client_co.contact_person or client_co.phone or client_co.email):
+        db_contacts.append(ContractContact(
+            name=client_co.contact_person or client_co.name,
+            role="Auftraggeber / Bauherr",
+            company=client_co.name,
+            phone=client_co.phone or "",
+            email=client_co.email or "",
+            note="Bei Rückfragen zu Plänen, Freigaben & Nachträgen",
+        ))
+    elif project and project.client:
+        db_contacts.append(ContractContact(
+            name=project.client,
+            role="Auftraggeber / Bauherr",
+            company=project.client,
+            note="Ansprechpartner Bauherrseite (Projektstammdaten)",
+        ))
+
+    text_contacts = _extract_contacts_from_text(text, contract.contractor_name or "") if text else []
+    contacts = _merge_contacts(text_contacts, db_contacts)
+
+    facts = ContractFacts(
+        contractTitle=contract.title,
+        contractorName=contract.contractor_name or (contractor_co.name if contractor_co else ""),
+        trade=contract.trade or (contractor_co.trade if contractor_co and contractor_co.trade else ""),
+        statusLabel="Aktiv" if contract.is_active is not False else "Inaktiv",
+        workforce=workforce,
+        location=location,
+        schedule=schedule,
+        scope=scope,
+        projectLeads=leads,
+        contacts=contacts,
+        vobNotes=contract.vob_notes or (contractor_co.vob_rules if contractor_co and contractor_co.vob_rules else ""),
+    )
+    return facts, parsed
+
+
+async def summarize_contract(session: Session, contract: Contract, project: Project | None) -> SummaryResponse:
+    """Fasst einen Vertrag inkl. Stammdaten & Bauzeitenplan für die Bauleitung zusammen."""
+    contractor_co, client_co, own_co = _matching_companies(session, contract)
+    tasks = _matching_plan_tasks(session, contract)
+    profile = session.exec(select(UserProfile).order_by(UserProfile.id)).first()
+
+    fallback_facts, parsed = _build_contract_fallback_facts(
+        contract, project, contractor_co, client_co, own_co, tasks, profile
+    )
+
+    # Kontext-Blöcke für das LLM bauen
+    blocks: list[tuple[str, str]] = []
+    meta_parts = [
+        f"Vertragstitel: {contract.title}",
+        f"Status: {'Aktiv' if contract.is_active is not False else 'Inaktiv'}",
+    ]
+    if contract.contractor_name:
+        meta_parts.append(f"Vertragspartner: {contract.contractor_name}")
+    if contract.trade:
+        meta_parts.append(f"Gewerk: {contract.trade}")
+    if contract.planned_workforce is not None:
+        meta_parts.append(f"Vertragliche Sollstärke: {contract.planned_workforce} Personen/Arbeitskräfte")
+    if contract.vob_notes:
+        meta_parts.append(f"VOB-Hinweise: {contract.vob_notes}")
+    blocks.append(("Vertragsdaten", " | ".join(meta_parts)))
+
+    master_parts: list[str] = []
+    if project:
+        master_parts.append(f"Projekt: {project.name}" + (f" ({project.number})" if project.number else ""))
+        if project.location:
+            master_parts.append(f"Projektstandort: {project.location}")
+        if project.client:
+            master_parts.append(f"Auftraggeber/Bauherr: {project.client}")
+        if project.start_date or project.end_date:
+            master_parts.append(f"Projektbauzeit: {project.start_date or '?'} – {project.end_date or '?'}")
+    if contractor_co:
+        master_parts.append(
+            f"Firma (Stammdaten): {contractor_co.name}"
+            + (f", Ansprechpartner: {contractor_co.contact_person}" if contractor_co.contact_person else "")
+            + (f", Tel: {contractor_co.phone}" if contractor_co.phone else "")
+            + (f", E-Mail: {contractor_co.email}" if contractor_co.email else "")
+            + (f", Adresse: {contractor_co.address}" if contractor_co.address else "")
+        )
+    if client_co:
+        master_parts.append(
+            f"Auftraggeber-Kontakt: {client_co.name}"
+            + (f", Ansprechpartner: {client_co.contact_person}" if client_co.contact_person else "")
+            + (f", Tel: {client_co.phone}" if client_co.phone else "")
+            + (f", E-Mail: {client_co.email}" if client_co.email else "")
+        )
+    if profile and profile.full_name:
+        master_parts.append(f"Eigene Bauleitung: {profile.full_name} ({profile.role or 'Bauleiter'})")
+    if master_parts:
+        blocks.append(("Stammdaten", " | ".join(master_parts)))
+
+    if tasks:
+        task_lines = [
+            f"{t.task_code or ''} {t.title} ({t.trade or 'ohne Gewerk'}, Ort: {t.location or 'k. A.'}, Zeitraum: {t.planned_start or '?'} bis {t.planned_end or '?'})"
+            for t in tasks[:12]
+        ]
+        blocks.append(("Bauzeitenplan", " ; ".join(task_lines)))
+
+    has_pdf_text = bool(contract.extracted_text and contract.extracted_text.strip())
+    if has_pdf_text:
+        blocks.append(("Vertragstext", contract_parse.excerpt(contract.extracted_text.strip())))
+
+    labels = [lbl for lbl, _ in blocks]
+    label_set = set(labels)
+
+    llm_res: _LLMContractSummary | None = None
+    if has_pdf_text:
+        llm_res = await llm.complete_json(CONTRACT_SYSTEM_PROMPT, _fit(blocks), _LLMContractSummary, max_tokens=1600)
+
+    if llm_res is not None:
+        mode: Literal["ai", "offline"] = "ai"
+        llm_contacts = [
+            ContractContact(
+                name=c.name.strip(),
+                role=c.role.strip(),
+                company=c.company.strip(),
+                phone=c.phone.strip(),
+                email=c.email.strip(),
+                note=c.note.strip(),
+            )
+            for c in llm_res.contacts
+            if c.name.strip() or c.phone.strip() or c.email.strip()
+        ]
+        facts = ContractFacts(
+            contractTitle=contract.title,
+            contractorName=contract.contractor_name or fallback_facts.contractorName,
+            trade=contract.trade or fallback_facts.trade,
+            statusLabel=fallback_facts.statusLabel,
+            workforce=llm_res.workforce.strip() or fallback_facts.workforce,
+            location=llm_res.location.strip() or fallback_facts.location,
+            schedule=llm_res.schedule.strip() or fallback_facts.schedule,
+            scope=llm_res.scope.strip() or fallback_facts.scope,
+            projectLeads=_dedupe_strs([*llm_res.projectLeads, *fallback_facts.projectLeads]),
+            contacts=_merge_contacts(llm_contacts, fallback_facts.contacts),
+            vobNotes=llm_res.vobNotes.strip() or fallback_facts.vobNotes,
+        )
+        ok = lambda s: _clean_source(s) in label_set  # noqa: E731
+        decisions = [d for d in llm_res.keyDecisions if ok(d.source)]
+        actions = [a for a in llm_res.actionItems if ok(a.source)]
+        risks = [r for r in llm_res.vobRisks if ok(r.source)]
+        executive = [s.strip() for s in llm_res.executiveSummary if s.strip()][:5]
+        if not executive:
+            executive = [
+                f"Personal / Sollstärke: {facts.workforce}",
+                f"Einsatzort & Zeitraum: {facts.location} • {facts.schedule}",
+                f"Leistungsumfang: {facts.scope}",
+            ]
+        key_decisions = [d.text.strip() for d in decisions]
+        key_decision_sources = [_clean_source(d.source) for d in decisions]
+        action_items = [
+            ActionItem(
+                id=f"act-{i + 1}",
+                task=a.task.strip(),
+                responsible=a.responsible.strip(),
+                deadline=a.deadline.strip(),
+                priority=a.priority,
+                source=_clean_source(a.source),
+            )
+            for i, a in enumerate(actions)
+        ]
+        vob_risks = [
+            VobRisk(
+                title=r.title.strip(),
+                description=r.description.strip(),
+                linkType=None if r.linkType == "none" else r.linkType,
+                recommendation=RECOMMENDATIONS[None if r.linkType == "none" else r.linkType],
+                source=_clean_source(r.source),
+            )
+            for r in risks
+        ]
+    else:
+        mode = "offline"
+        facts = fallback_facts
+        executive = [
+            f"Vertrag: {facts.contractTitle} ({facts.statusLabel})"
+            + (f" mit {facts.contractorName}" if facts.contractorName else "")
+            + (f" – Gewerk {facts.trade}" if facts.trade else ""),
+            f"Gestellte Personen: {facts.workforce}",
+            f"Wo & Wann: {facts.location} | {facts.schedule}",
+            f"Leistungsumfang (Was): {facts.scope}",
+        ]
+        if facts.contacts:
+            first_c = facts.contacts[0]
+            contact_str = ", ".join(p for p in (first_c.name, first_c.role, first_c.phone, first_c.email) if p)
+            executive.append(f"Ansprechpartner bei Fragen: {contact_str}")
+
+        key_decisions = []
+        key_decision_sources = []
+        if contract.planned_workforce is not None:
+            key_decisions.append(f"Vertragliche Sollstärke: {contract.planned_workforce} Arbeitskräfte")
+            key_decision_sources.append("Vertragsdaten")
+        if "execution_start" in parsed or "execution_end" in parsed:
+            s_val = parsed.get("execution_start").value if "execution_start" in parsed else "?"
+            e_val = parsed.get("execution_end").value if "execution_end" in parsed else "?"
+            key_decisions.append(f"Vereinbarter Ausführungszeitraum: {s_val} bis {e_val}")
+            key_decision_sources.append("Vertragstext")
+        if facts.vobNotes:
+            key_decisions.append(facts.vobNotes)
+            key_decision_sources.append("Vertragsdaten")
+
+        action_items = []
+        if contract.planned_workforce is not None:
+            action_items.append(ActionItem(
+                id="act-1",
+                task=f"Tägliche Anwesenheit gegen Sollstärke ({contract.planned_workforce} Personen) im Bautagesbericht prüfen",
+                responsible="Bauleitung",
+                deadline="",
+                priority="Mittel",
+                source="Vertragsdaten",
+            ))
+        if facts.vobNotes:
+            action_items.append(ActionItem(
+                id=f"act-{len(action_items) + 1}",
+                task=f"Vertrags-/VOB-Vorgabe beachten: {facts.vobNotes}",
+                responsible="Bauleitung",
+                deadline="",
+                priority="Hoch" if "frist" in facts.vobNotes.lower() or "binnen" in facts.vobNotes.lower() else "Mittel",
+                source="Vertragsdaten",
+            ))
+
+        vob_risks = []
+        combined_text = "\n".join(filter(None, [contract.vob_notes or "", contract.extracted_text or ""]))
+        link = _detect_link(combined_text)
+        if link or facts.vobNotes:
+            vob_risks.append(VobRisk(
+                title="Vertragliche VOB-/Fristenregelung beachten",
+                description=facts.vobNotes or "Im Vertragstext sind VOB- oder Fristenhinweise enthalten.",
+                linkType=link,
+                recommendation=RECOMMENDATIONS[link],
+                source="Vertragsdaten" if facts.vobNotes else "Vertragstext",
+            ))
+
+    title = f"Vertragszusammenfassung: {contract.title}" + (f" • {project.name}" if project else "")
+    trace = (
+        f"Ausgewertet: {', '.join(labels)}."
+        + (f" Vertragstext ({len(contract.extracted_text.strip())} Zeichen)." if has_pdf_text else " Kein PDF-Volltext hinterlegt – Zusammenfassung basiert auf Vertragsdaten, Stammdaten und Bauzeitenplan.")
+    )
+    return SummaryResponse(
+        title=title,
+        executiveSummary=executive,
+        keyDecisions=key_decisions,
+        keyDecisionSources=key_decision_sources,
+        actionItems=action_items,
+        vobRisks=vob_risks,
+        traceabilityNotes=trace,
+        sources=labels,
+        contractFacts=facts,
+        mode=mode,
+    )
+

@@ -1,4 +1,4 @@
-import React, {useState} from 'react';
+import React, {useEffect, useState} from 'react';
 import {
     Plus,
     Building2,
@@ -19,7 +19,8 @@ import {
     ShieldCheck,
     ShieldOff,
     Pencil,
-    FolderKanban
+    FolderKanban,
+    ChevronRight
 } from 'lucide-react';
 import {useProjects, Project, Contractor} from '@/context/ProjectContext';
 import {useLanguage} from '../context/LanguageContext';
@@ -132,7 +133,21 @@ export const Projects: React.FC = () => {
     const [showCreateForm, setShowCreateForm] = useState(false);
     // null = neues Projekt anlegen, sonst ID des Projekts, das bearbeitet wird (PATCH)
     const [editingId, setEditingId] = useState<number | null>(null);
+    const [selectedProjectId, setSelectedProjectId] = useState<number | null>(null);
     const [formData, setFormData] = useState<ProjectForm>(EMPTY_FORM);
+
+    const selectedProject = selectedProjectId !== null
+        ? projects.find((p) => p.id === selectedProjectId) ?? null
+        : null;
+
+    useEffect(() => {
+        if (selectedProjectId === null) return;
+        const onKeyDown = (e: KeyboardEvent) => {
+            if (e.key === 'Escape') setSelectedProjectId(null);
+        };
+        window.addEventListener('keydown', onKeyDown);
+        return () => window.removeEventListener('keydown', onKeyDown);
+    }, [selectedProjectId]);
 
     const set = <K extends keyof ProjectForm>(key: K, value: ProjectForm[K]) =>
         setFormData((prev) => ({...prev, [key]: value}));
@@ -252,7 +267,14 @@ export const Projects: React.FC = () => {
 
                 <button
                     className="btn btn-primary"
-                    onClick={() => (showCreateForm ? closeForm() : setShowCreateForm(true))}
+                    onClick={() => {
+                        if (showCreateForm) {
+                            closeForm();
+                        } else {
+                            setSelectedProjectId(null);
+                            setShowCreateForm(true);
+                        }
+                    }}
                 >
                     {showCreateForm ? <X size={18}/> : <Plus size={18}/>}
                     <span>{showCreateForm ? t('btn_cancel') : t('proj_btn_create')}</span>
@@ -608,111 +630,260 @@ export const Projects: React.FC = () => {
             )}
 
             {/* Projects Grid */}
-            <div className="projects-grid">
-                {projects.map((proj) => {
-                    const isActive = proj.id === activeProjectId;
-                    const contractors = proj.contractors ?? [];
-                    const requiredWorkers = contractors.reduce((sum, c) => sum + (c.required_workers ?? 0), 0);
-                    const volume = formatEur(proj.construction_volume_eur);
-                    const budget = formatEur(proj.budget_eur);
-                    const area = formatNumber(proj.gross_floor_area_m2);
-                    const cubic = formatNumber(proj.gross_volume_m3);
-                    const start = formatDate(proj.start_date);
-                    const end = formatDate(proj.end_date);
+            {!showCreateForm && (
+                <div className="projects-grid">
+                    {projects.map((proj) => {
+                        const isActive = proj.id === activeProjectId;
 
-                    return (
-                        <div key={proj.id} className={`project-card ${isActive ? 'active-project' : ''}`}>
-                            <div>
-                                <div className="project-top-row">
-                                    <div className="project-badges">
-                                        <span className="badge badge-info">{proj.status}</span>
-                                        {proj.construction_type && (
-                                            <span className="badge project-badge-neutral">{proj.construction_type}</span>
+                        return (
+                            <div
+                                key={proj.id}
+                                className={`project-card interactive-card ${isActive ? 'active-project' : ''}`}
+                                role="button"
+                                tabIndex={0}
+                                onClick={() => setSelectedProjectId(proj.id)}
+                                onKeyDown={(e) => {
+                                    if (e.key === 'Enter' || e.key === ' ') {
+                                        e.preventDefault();
+                                        setSelectedProjectId(proj.id);
+                                    }
+                                }}
+                            >
+                                <div>
+                                    <div className="project-top-row">
+                                        <div className="project-badges">
+                                            <span className="badge badge-info">{proj.status}</span>
+                                        </div>
+                                        {isActive && (
+                                            <span className="project-badge-active">
+                                                <CheckCircle2 size={12}/>
+                                                <span>{t('proj_btn_active')}</span>
+                                            </span>
                                         )}
                                     </div>
-                                    {isActive && (
-                                        <span className="project-badge-active">
-                                            <CheckCircle2 size={12}/>
-                                            <span>{t('proj_btn_active')}</span>
-                                        </span>
-                                    )}
+
+                                    <h3 className="project-name">{proj.name}</h3>
+
+                                    <div className="project-meta-list">
+                                        <div className="project-meta-item">
+                                            <Hash size={15} color="var(--color-slate-400)"/>
+                                            <span>{proj.number}</span>
+                                        </div>
+                                        <div className="project-meta-item">
+                                            <Briefcase size={15} color="var(--color-slate-400)"/>
+                                            <span>{proj.client}</span>
+                                        </div>
+                                        <div className="project-meta-item">
+                                            <MapPin size={15} color="var(--color-slate-400)"/>
+                                            <span>{proj.location}</span>
+                                        </div>
+                                        <div className="project-meta-item">
+                                            <Activity size={15} color="var(--color-slate-400)"/>
+                                            <span>Phase: {proj.phase}</span>
+                                        </div>
+                                    </div>
+
+                                    <div className="project-detail-hint">
+                                        <span>Details anzeigen</span>
+                                        <ChevronRight size={14}/>
+                                    </div>
                                 </div>
 
-                                <h3 className="project-name">{proj.name}</h3>
-
-                                <div className="project-meta-list">
-                                    <div className="project-meta-item">
-                                        <Hash size={15} color="var(--color-slate-400)"/>
-                                        <span>{proj.number}</span>
-                                    </div>
-                                    <div className="project-meta-item">
-                                        <Briefcase size={15} color="var(--color-slate-400)"/>
-                                        <span>{proj.client}</span>
-                                    </div>
-                                    <div className="project-meta-item">
-                                        <MapPin size={15} color="var(--color-slate-400)"/>
-                                        <span>{proj.location}</span>
-                                    </div>
-                                    <div className="project-meta-item">
-                                        <Activity size={15} color="var(--color-slate-400)"/>
-                                        <span>Phase: {proj.phase}</span>
-                                    </div>
-                                    {(start || end) && (
-                                        <div className="project-meta-item">
-                                            <CalendarRange size={15} color="var(--color-slate-400)"/>
-                                            <span>{t('proj_card_period')}: {start ?? '?'} – {end ?? '?'}</span>
-                                        </div>
+                                <div className="project-card-footer" onClick={(e) => e.stopPropagation()}>
+                                    {isActive ? (
+                                        <span className="select-active-btn current">✓ {t('proj_btn_active')}</span>
+                                    ) : (
+                                        <button
+                                            type="button"
+                                            className="select-active-btn"
+                                            onClick={() => setActiveProjectId(proj.id)}
+                                        >
+                                            {t('proj_btn_set_active')}
+                                        </button>
                                     )}
-                                    {proj.contract_type && (
-                                        <div className="project-meta-item">
-                                            {proj.vob_b_agreed === false
-                                                ? <ShieldOff size={15} color="var(--color-slate-400)"/>
-                                                : <ShieldCheck size={15} color="var(--color-success-dark)"/>}
-                                            <span>
-                                                {proj.contract_type}
-                                                {proj.vob_b_agreed === false ? ` · ${t('proj_card_no_vob')}` : ' · VOB/B'}
+
+                                    <div className="project-card-actions">
+                                        <button
+                                            type="button"
+                                            className="btn btn-secondary"
+                                            style={{padding: '6px 10px', fontSize: '12px'}}
+                                            title={t('proj_btn_edit')}
+                                            aria-label={t('proj_btn_edit')}
+                                            onClick={() => startEdit(proj)}
+                                        >
+                                            <Pencil size={14}/>
+                                        </button>
+                                        <button
+                                            type="button"
+                                            className="btn btn-danger"
+                                            style={{padding: '6px 10px', fontSize: '12px'}}
+                                            title="Projekt löschen"
+                                            onClick={async () => {
+                                                if (window.confirm(`Möchten Sie das Projekt "${proj.name}" wirklich löschen?`)) {
+                                                    try {
+                                                        if (selectedProjectId === proj.id) setSelectedProjectId(null);
+                                                        await deleteProject(proj.id);
+                                                    } catch (err) {
+                                                        console.error(err);
+                                                        alert('Projekt konnte nicht gelöscht werden. Läuft das Backend?');
+                                                    }
+                                                }
+                                            }}
+                                        >
+                                            <Trash2 size={14}/>
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        );
+                    })}
+                </div>
+            )}
+
+            {/* Project Details Modal */}
+            {!showCreateForm && selectedProject && (() => {
+                const isActive = selectedProject.id === activeProjectId;
+                const contractors = selectedProject.contractors ?? [];
+                const requiredWorkers = contractors.reduce((sum, c) => sum + (c.required_workers ?? 0), 0);
+                const volume = formatEur(selectedProject.construction_volume_eur);
+                const budget = formatEur(selectedProject.budget_eur);
+                const area = formatNumber(selectedProject.gross_floor_area_m2);
+                const cubic = formatNumber(selectedProject.gross_volume_m3);
+                const start = formatDate(selectedProject.start_date);
+                const end = formatDate(selectedProject.end_date);
+
+                return (
+                    <div className="proj-modal-overlay" onClick={() => setSelectedProjectId(null)}>
+                        <div
+                            className="proj-modal-content"
+                            role="dialog"
+                            aria-modal="true"
+                            aria-labelledby="proj-detail-title"
+                            onClick={(e) => e.stopPropagation()}
+                        >
+                            <div className="proj-modal-header">
+                                <div style={{minWidth: 0}}>
+                                    <div className="project-badges" style={{marginBottom: '8px'}}>
+                                        <span className="badge badge-info">{selectedProject.status}</span>
+                                        {selectedProject.construction_type && (
+                                            <span className="badge project-badge-neutral">{selectedProject.construction_type}</span>
+                                        )}
+                                        {isActive && (
+                                            <span className="project-badge-active">
+                                                <CheckCircle2 size={12}/>
+                                                <span>{t('proj_btn_active')}</span>
                                             </span>
+                                        )}
+                                    </div>
+                                    <h2 id="proj-detail-title" className="proj-modal-title">{selectedProject.name}</h2>
+                                    <div className="proj-modal-sub">
+                                        {selectedProject.number} • {selectedProject.client} • {selectedProject.location}
+                                    </div>
+                                </div>
+
+                                <button
+                                    type="button"
+                                    className="proj-modal-close"
+                                    onClick={() => setSelectedProjectId(null)}
+                                    title={t('btn_close')}
+                                    aria-label={t('btn_close')}
+                                >
+                                    <X size={20}/>
+                                </button>
+                            </div>
+
+                            <div className="proj-modal-body">
+                                {selectedProject.description && (
+                                    <div className="proj-detail-section">
+                                        <div className="proj-detail-section-title">{t('proj_form_desc')}</div>
+                                        <p className="proj-detail-desc">{selectedProject.description}</p>
+                                    </div>
+                                )}
+
+                                <div className="proj-detail-section">
+                                    <div className="proj-detail-section-title">Stammdaten, Bauzeit &amp; Vertrag</div>
+                                    <div className="project-meta-list" style={{margin: 0}}>
+                                        <div className="project-meta-item">
+                                            <Hash size={15} color="var(--color-slate-400)"/>
+                                            <span>{selectedProject.number}</span>
+                                        </div>
+                                        <div className="project-meta-item">
+                                            <Briefcase size={15} color="var(--color-slate-400)"/>
+                                            <span>{selectedProject.client}</span>
+                                        </div>
+                                        <div className="project-meta-item">
+                                            <MapPin size={15} color="var(--color-slate-400)"/>
+                                            <span>{selectedProject.location}</span>
+                                        </div>
+                                        <div className="project-meta-item">
+                                            <Activity size={15} color="var(--color-slate-400)"/>
+                                            <span>Phase: {selectedProject.phase}</span>
+                                        </div>
+                                        {(start || end) && (
+                                            <div className="project-meta-item">
+                                                <CalendarRange size={15} color="var(--color-slate-400)"/>
+                                                <span>{t('proj_card_period')}: {start ?? '?'} – {end ?? '?'}</span>
+                                            </div>
+                                        )}
+                                        {selectedProject.contract_type && (
+                                            <div className="project-meta-item">
+                                                {selectedProject.vob_b_agreed === false
+                                                    ? <ShieldOff size={15} color="var(--color-slate-400)"/>
+                                                    : <ShieldCheck size={15} color="var(--color-success-dark)"/>}
+                                                <span>
+                                                    {selectedProject.contract_type}
+                                                    {selectedProject.vob_b_agreed === false ? ` · ${t('proj_card_no_vob')}` : ' · VOB/B'}
+                                                </span>
+                                            </div>
+                                        )}
+                                    </div>
+                                    {selectedProject.vob_notes && (
+                                        <div className="proj-detail-vob-notes">
+                                            <strong>{t('proj_form_vob_notes')}:</strong> {selectedProject.vob_notes}
                                         </div>
                                     )}
                                 </div>
 
                                 {(volume || budget || area || cubic) && (
-                                    <div className="project-figures">
-                                        {volume && (
-                                            <div className="project-figure">
-                                                <span className="project-figure-label">{t('proj_form_volume')}</span>
-                                                <span className="project-figure-value">{volume}</span>
-                                            </div>
-                                        )}
-                                        {budget && (
-                                            <div className="project-figure">
-                                                <span className="project-figure-label">{t('proj_form_budget')}</span>
-                                                <span className="project-figure-value">{budget}</span>
-                                            </div>
-                                        )}
-                                        {area && (
-                                            <div className="project-figure">
-                                                <span className="project-figure-label"><Ruler size={11}/> BGF</span>
-                                                <span className="project-figure-value">{area} m²</span>
-                                            </div>
-                                        )}
-                                        {cubic && (
-                                            <div className="project-figure">
-                                                <span className="project-figure-label"><Ruler size={11}/> BRI</span>
-                                                <span className="project-figure-value">{cubic} m³</span>
-                                            </div>
-                                        )}
+                                    <div className="proj-detail-section">
+                                        <div className="proj-detail-section-title">{t('proj_sec_figures')}</div>
+                                        <div className="project-figures" style={{marginBottom: 0}}>
+                                            {volume && (
+                                                <div className="project-figure">
+                                                    <span className="project-figure-label">{t('proj_form_volume')}</span>
+                                                    <span className="project-figure-value">{volume}</span>
+                                                </div>
+                                            )}
+                                            {budget && (
+                                                <div className="project-figure">
+                                                    <span className="project-figure-label">{t('proj_form_budget')}</span>
+                                                    <span className="project-figure-value">{budget}</span>
+                                                </div>
+                                            )}
+                                            {area && (
+                                                <div className="project-figure">
+                                                    <span className="project-figure-label"><Ruler size={11}/> BGF</span>
+                                                    <span className="project-figure-value">{area} m²</span>
+                                                </div>
+                                            )}
+                                            {cubic && (
+                                                <div className="project-figure">
+                                                    <span className="project-figure-label"><Ruler size={11}/> BRI</span>
+                                                    <span className="project-figure-value">{cubic} m³</span>
+                                                </div>
+                                            )}
+                                        </div>
                                     </div>
                                 )}
 
                                 {contractors.length > 0 && (
-                                    <div className="project-contractors">
+                                    <div className="project-contractors" style={{marginBottom: 0}}>
                                         <div className="project-contractors-head">
                                             <span><HardHat size={13}/> {contractors.length} {t('proj_card_contractors')}</span>
                                             <span><Users size={13}/> {requiredWorkers} {t('proj_card_workers')}</span>
                                         </div>
                                         <ul>
-                                            {contractors.slice(0, 3).map((c, i) => (
+                                            {contractors.map((c, i) => (
                                                 <li key={i}>
                                                     <span className="project-contractor-name">
                                                         {c.name}{c.trade && <em> · {c.trade}</em>}
@@ -727,56 +898,51 @@ export const Projects: React.FC = () => {
                                                     </span>
                                                 </li>
                                             ))}
-                                            {contractors.length > 3 && (
-                                                <li className="project-contractor-more">+ {contractors.length - 3} …</li>
-                                            )}
                                         </ul>
                                     </div>
                                 )}
                             </div>
 
-                            <div className="project-card-footer">
-                                {isActive ? (
-                                    <span className="select-active-btn current">✓ {t('proj_btn_active')}</span>
-                                ) : (
-                                    <button className="select-active-btn" onClick={() => setActiveProjectId(proj.id)}>
-                                        {t('proj_btn_set_active')}
-                                    </button>
-                                )}
+                            <div className="proj-modal-footer">
+                                <div>
+                                    {isActive ? (
+                                        <span className="select-active-btn current">✓ {t('proj_btn_active')}</span>
+                                    ) : (
+                                        <button
+                                            type="button"
+                                            className="select-active-btn"
+                                            onClick={() => setActiveProjectId(selectedProject.id)}
+                                        >
+                                            {t('proj_btn_set_active')}
+                                        </button>
+                                    )}
+                                </div>
 
                                 <div className="project-card-actions">
-                                <button
-                                    className="btn btn-secondary"
-                                    style={{padding: '6px 10px', fontSize: '12px'}}
-                                    title={t('proj_btn_edit')}
-                                    aria-label={t('proj_btn_edit')}
-                                    onClick={() => startEdit(proj)}
-                                >
-                                    <Pencil size={14}/>
-                                </button>
-                                <button
-                                    className="btn btn-danger"
-                                    style={{padding: '6px 10px', fontSize: '12px'}}
-                                    title="Projekt löschen"
-                                    onClick={async () => {
-                                        if (window.confirm(`Möchten Sie das Projekt "${proj.name}" wirklich löschen?`)) {
-                                            try {
-                                                await deleteProject(proj.id);
-                                            } catch (err) {
-                                                console.error(err);
-                                                alert('Projekt konnte nicht gelöscht werden. Läuft das Backend?');
-                                            }
-                                        }
-                                    }}
-                                >
-                                    <Trash2 size={14}/>
-                                </button>
+                                    <button
+                                        type="button"
+                                        className="btn btn-secondary"
+                                        onClick={() => {
+                                            setSelectedProjectId(null);
+                                            startEdit(selectedProject);
+                                        }}
+                                    >
+                                        <Pencil size={14}/>
+                                        <span>{t('proj_btn_edit')}</span>
+                                    </button>
+                                    <button
+                                        type="button"
+                                        className="btn btn-primary"
+                                        onClick={() => setSelectedProjectId(null)}
+                                    >
+                                        <span>{t('btn_close')}</span>
+                                    </button>
                                 </div>
                             </div>
                         </div>
-                    );
-                })}
-            </div>
+                    </div>
+                );
+            })()}
         </div>
     );
 };

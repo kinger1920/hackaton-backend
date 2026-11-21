@@ -160,3 +160,68 @@ def test_llm_items_with_unknown_source_are_dropped(client, engine, monkeypatch):
     assert [a["task"] for a in data["actionItems"]] == ["Leitungspläne anfordern"]
     assert data["actionItems"][0]["source"] == "Tagesbericht 17.11.2026"  # Klammern entfernt
     assert data["vobRisks"][0]["recommendation"] == summary.RECOMMENDATIONS["delay"]
+
+
+def test_contract_summary_offline_and_404(client, engine):
+    from src.models import Company, ConstructionPlan, Contract, PlanTask
+
+    with Session(engine) as s:
+        p = Project(name="Schulzentrum Nord", client="Bezirksamt Pankow", location="Berliner Str. 42, Berlin")
+        s.add(p)
+        s.flush()
+        s.add(Company(
+            name="Erdbau Krause GmbH",
+            company_type="subcontractor",
+            trade="Erdbau",
+            contact_person="Herr Krause",
+            phone="+49 30 123456",
+            email="krause@erdbau.de",
+        ))
+        plan = ConstructionPlan(project_id=p.id, title="Rohbau", version="1.0")
+        s.add(plan)
+        s.flush()
+        s.add(PlanTask(
+            plan_id=plan.id,
+            task_code="B-200",
+            title="Aushub Achse B",
+            trade="Erdbau",
+            location="Achse B (Haus C)",
+            planned_start=dt.date(2026, 11, 16),
+            planned_end=dt.date(2026, 11, 20),
+        ))
+        c = Contract(
+            project_id=p.id,
+            title="NU-Vertrag Erdarbeiten",
+            contractor_name="Erdbau Krause GmbH",
+            trade="Erdbau",
+            planned_workforce=4,
+            vob_notes="Behinderungen binnen 2 Arbeitstagen melden.",
+            extracted_text=(
+                "Bauvorhaben: Schulzentrum Nord, Achse B\n"
+                "Mindestpersonal: 4 Arbeitskräfte\n"
+                "Ausführungsbeginn: 16.11.2026\n"
+                "Fertigstellung: 20.11.2026\n"
+                "Projektleiter: Max Beispiel, Tel: 030 987654, max@erdbau.de\n"
+            ),
+        )
+        s.add(c)
+        s.commit()
+        s.refresh(c)
+        cid, pid = c.id, p.id
+
+    r = client.post("/api/summarize", json={"contract_id": cid, "project_id": pid})
+    assert r.status_code == 200
+    data = r.json()
+    assert data["mode"] == "offline"
+    facts = data["contractFacts"]
+    assert facts["contractTitle"] == "NU-Vertrag Erdarbeiten"
+    assert "4" in facts["workforce"]
+    assert "Achse B" in facts["location"]
+    assert "16.11.2026" in facts["schedule"]
+    assert "Aushub Achse B" in facts["scope"]
+    assert any("Bezirksamt Pankow" in lead for lead in facts["projectLeads"])
+    assert any(ct["email"] == "krause@erdbau.de" or ct["email"] == "max@erdbau.de" for ct in facts["contacts"])
+
+    r404 = client.post("/api/summarize", json={"contract_id": 99999})
+    assert r404.status_code == 404
+

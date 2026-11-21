@@ -58,14 +58,14 @@ const NAV_GROUPS: NavGroup[] = [
             {path: '/dashboard', icon: <LayoutDashboard size={19}/>, labelKey: 'nav_dashboard'},
             {path: '/capture/voice', icon: <Mic size={19}/>, labelKey: 'nav_capture_voice', fallback: 'Spracherfassung'},
             {path: '/capture/text', icon: <PenLine size={19}/>, labelKey: 'nav_capture_text', fallback: 'Schreiberfassung'},
-            {path: '/reports', icon: <FileText size={19}/>, labelKey: 'nav_reports'},
             {path: '/termin', icon: <Calendar size={19}/>, labelKey: 'nav_termin'}
         ]
     },
     {
         titleKey: 'nav_group_letters',
-        fallback: 'Schriftverkehr & Fristen',
+        fallback: 'Dokumente',
         items: [
+            {path: '/reports', icon: <FileText size={19}/>, labelKey: 'nav_reports'},
             {path: '/drafts', icon: <Mail size={19}/>, labelKey: 'nav_drafts'},
             {path: '/summary', icon: <BookOpen size={19}/>, labelKey: 'nav_summary'}
             // Fristen-Radar ist jetzt die Ansicht „Fristen“ im Terminplaner (/fristen leitet dorthin um).
@@ -188,7 +188,7 @@ export const MainLayout: React.FC = () => {
                     </div>
                     <div className="app-brand-text">
                         <div className="app-brand-title">Site<span>AI</span> Assistant</div>
-                        <div className="app-brand-sub">Bauleitung & Dokumentation</div>
+                        <div className="app-brand-sub">Bautagesbericht &amp; Planung</div>
                     </div>
                 </div>
 

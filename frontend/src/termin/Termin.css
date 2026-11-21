@@ -319,13 +319,7 @@
   display: grid;
   grid-template-columns: minmax(0, 1fr) 360px;
   gap: 14px;
-  align-items: start;
-}
-
-@media (max-width: 1150px) {
-  .tp-body {
-    grid-template-columns: 1fr;
-  }
+  align-items: stretch;
 }
 
 .tp-main {
@@ -337,13 +331,33 @@
 }
 
 .tp-side {
-  position: sticky;
-  top: 12px;
-  max-height: calc(100vh - 100px);
-  overflow-y: auto;
+  position: relative;
+  min-height: 0;
   background: white;
   border: 1px solid var(--border-light, #e2e8f0);
   border-radius: 12px;
+  overflow: hidden;
+}
+
+.tp-side > .tp-detail {
+  position: absolute;
+  inset: 0;
+  overflow-y: auto;
+}
+
+@media (max-width: 1150px) {
+  .tp-body {
+    grid-template-columns: 1fr;
+  }
+
+  .tp-side {
+    overflow: visible;
+  }
+
+  .tp-side > .tp-detail {
+    position: static;
+    overflow-y: visible;
+  }
 }
 
 .tp-footnote {
