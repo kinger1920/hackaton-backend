@@ -3,12 +3,7 @@
  * Connects frontend to FastAPI backend endpoints.
  */
 
-// Ohne VITE_API_URL: Backend auf demselben Rechner wie die Seite (Port 8000). Am PC = localhost wie bisher,
-// auf dem Handy im WLAN (http://192.168.x.x:3000) automatisch die PC-Adresse statt des Handys selbst.
-export const API_BASE_URL = import.meta.env.VITE_API_URL
-  || (typeof window !== 'undefined' && window.location.hostname
-    ? `${window.location.protocol === 'https:' ? 'https' : 'http'}://${window.location.hostname}:8000`
-    : 'http://localhost:8000');
+export const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
 // Notice Types
 export type NoticeType = 'delay' | 'cost' | 'defect' | 'concern';

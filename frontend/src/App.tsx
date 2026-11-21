@@ -13,7 +13,6 @@ import MasterData from './masterdata/MasterData';
 import ProjectAssistant from './ideas/ProjectAssistant';
 import ProgressMap from './ideas/ProgressMap';
 import Defects from './defects/Defects';
-import MobileHome from './mobile/MobileHome';
 import MainLayout from './layout/MainLayout';
 import {ProjectProvider} from './context/ProjectContext';
 import { LanguageProvider } from './context/LanguageContext';
@@ -43,7 +42,6 @@ export const App: React.FC = () => {
             <Route path="/stammdaten" element={<MasterData />} />
             <Route path="/fortschritt" element={<ProgressMap />} />
             <Route path="/maengel" element={<Defects />} />
-            <Route path="/mobile" element={<MobileHome />} />
             <Route path="/fristen" element={<Navigate to="/termin" state={{view: 'deadlines'}} replace />} />
             <Route path="/assistent" element={<ProjectAssistant />} />
             <Route path="/drafts" element={<LetterDrafts />} />
