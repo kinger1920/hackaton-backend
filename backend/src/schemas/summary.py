@@ -30,7 +30,7 @@ class SummarizeRequest(BaseModel):
 
     # Zeitraum-Modus
     project_id: int | None = Field(default=None, description="Projekt (Pflicht im Zeitraum-Modus)")
-    period: Literal["week", "month"] | None = Field(default=None, description="Woche oder Monat")
+    period: Literal["day", "week", "month"] | None = Field(default=None, description="Heute, Woche oder Monat")
     ref_date: dt.date | None = Field(default=None, description="Ein Tag im gewünschten Zeitraum (Default: heute)")
 
     @model_validator(mode="after")

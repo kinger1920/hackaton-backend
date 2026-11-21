@@ -22,7 +22,7 @@ async def summarize(req: SummarizeRequest, session: Session = Depends(get_sessio
     """Zusammenfassung auf Anfrage (Contract: POST /api/summarize).
 
     Input (genau ein Modus, sonst 422):
-      - Zeitraum: {project_id, period: "week"|"month", ref_date?}  → Woche/Monat aus Tagesberichten,
+      - Zeitraum: {project_id, period: "day"|"week"|"month", ref_date?}  → Tag/Woche/Monat aus Tagesberichten,
         Tagebuchnotizen und Briefen des Projekts.
       - Text:     {text, source_type?, project_id?}                  → E-Mail, Protokoll, Tagebuchauszug.
     Output: Format `DocumentSummary` des Frontends + Quellen, Kennzahlen, Zeitraum, Modus.

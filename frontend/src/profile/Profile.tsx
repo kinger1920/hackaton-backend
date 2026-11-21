@@ -1,6 +1,6 @@
 import React, {useEffect, useState} from 'react';
 import {useNavigate} from 'react-router-dom';
-import {CheckCircle2, Save, RotateCcw, ExternalLink, Info} from 'lucide-react';
+import {CheckCircle2, Save, RotateCcw, ExternalLink, Info, User} from 'lucide-react';
 import {useLanguage} from '../context/LanguageContext';
 import {api, Company} from '../services/api';
 import {
@@ -66,17 +66,17 @@ export const Profile: React.FC = () => {
         saveProfile({...DEFAULT_PROFILE});
     };
 
-    const initial = (profile.fullName.trim() || 'B').charAt(0).toUpperCase();
-
     return (
         <div className="profile-container">
             <div className="profile-wrapper">
                 {/* Header – plain like every other page */}
                 <div className="pf-header">
-                    <div className="pf-avatar" aria-hidden="true">{initial}</div>
-                    <div>
-                        <h1>{t('nav_profile')}</h1>
-                        <p>{t('pf_sub')}</p>
+                    <div className="tp-title-group">
+                        <div className="tp-title-icon"><User size={22}/></div>
+                        <div>
+                            <h1>{t('nav_profile')}</h1>
+                            <p>{t('pf_sub')}</p>
+                        </div>
                     </div>
                     {savedSuccess && (
                         <div className="pf-toast">

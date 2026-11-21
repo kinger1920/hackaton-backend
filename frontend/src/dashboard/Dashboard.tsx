@@ -13,10 +13,7 @@ import {
     CheckCircle2,
     ArrowRight,
     AlertCircle,
-    TrendingUp,
-    RefreshCw,
-    AlertTriangle,
-    FileText
+    LayoutDashboard
 } from 'lucide-react';
 import './Dashboard.css';
 import '@frontend/src/index.css';
@@ -26,10 +23,7 @@ import {
     api,
     Company,
     Contract,
-    DailyReportOut,
-    DashboardData,
-    DraftNavState,
-    PlanAnalysis
+    DailyReportOut
 } from '../services/api';
 import {daysBetween, formatDe, parseIsoDate, startOfToday, todayIso} from '../utils/dates';
 
@@ -59,38 +53,24 @@ export const Dashboard: React.FC = () => {
 
     // ---- Backend-Daten (Fallback: Beispieldaten unten) ----
     const projectId = Number(activeProject.id);
-    const [dashboard, setDashboard] = useState<DashboardData | null>(null);
-    const [analysis, setAnalysis] = useState<PlanAnalysis | null>(null);
-    const [period, setPeriod] = useState<'week' | 'all'>('week');
     const [todayReport, setTodayReport] = useState<DailyReportOut | null>(null);
     const [contracts, setContracts] = useState<Contract[]>([]);
     const [clientCompany, setClientCompany] = useState<Company | null>(null);
-    const [isRefreshing, setIsRefreshing] = useState(false);
-    const [backendOnline, setBackendOnline] = useState<boolean | null>(null);
 
     const loadBackend = async () => {
-        setIsRefreshing(true);
-        const [dash, anl, rep, con, cli] = await Promise.allSettled([
-            api.getDashboard(projectId),
-            api.getAnalysis(projectId, period),
+        const [rep, con, cli] = await Promise.allSettled([
             api.getReport(todayIso(), projectId),
             api.listContracts(projectId),
             api.listCompanies({ company_type: 'client' })
         ]);
-        setDashboard(dash.status === 'fulfilled' ? dash.value : null);
-        setAnalysis(anl.status === 'fulfilled' ? anl.value : null);
         setTodayReport(rep.status === 'fulfilled' && rep.value.id != null ? rep.value : null);
         setContracts(con.status === 'fulfilled' ? con.value : []);
         setClientCompany(cli.status === 'fulfilled' && cli.value.length > 0 ? cli.value[0] : null);
-        setBackendOnline(dash.status === 'fulfilled' || anl.status === 'fulfilled');
-        setIsRefreshing(false);
     };
 
     useEffect(() => {
         loadBackend();
-    }, [projectId, period]);
-
-    const goToDraft = (state: DraftNavState) => navigate('/drafts', { state });
+    }, [projectId]);
 
     // 1. Mitarbeiter-Stand (Worker attendance data per project)
     const getStaffData = () => {
@@ -337,9 +317,6 @@ export const Dashboard: React.FC = () => {
         return {percent: Math.round((done / total) * 100), remainingWeeks: Math.ceil((total - done) / 7)};
     })();
 
-    const kpis = dashboard?.kpis;
-    const alerts = dashboard?.alerts ?? [];
-
     // Filter staff in modal
     const filteredWorkers = staffData.workers.filter((w) => {
         if (staffTab === 'present' && !w.present) return false;
@@ -357,11 +334,14 @@ export const Dashboard: React.FC = () => {
         <>
             {/* Welcome Hero Banner */}
             <section className="welcome-hero">
-                <div>
-                    <h1 className="welcome-title">{t('dash_hello')}, {userName}!</h1>
-                    <p className="welcome-desc">
-                        {t('hdr_active_project')} <strong>{activeProject.name}</strong> ({activeProject.number}) • {t('dash_phase')}: {activeProject.phase}
-                    </p>
+                <div className="tp-title-group">
+                    <div className="tp-title-icon"><LayoutDashboard size={22} /></div>
+                    <div>
+                        <h1 className="welcome-title">{t('dash_hello')}, {userName}!</h1>
+                        <p className="welcome-desc">
+                            {t('hdr_active_project')} <strong>{activeProject.name}</strong> ({activeProject.number}) • {t('dash_phase')}: {activeProject.phase}
+                        </p>
+                    </div>
                 </div>
                 <div className="hero-stats">
                     {/* Bauzeit statt Anwesenheit (die steht schon in der Mitarbeiter-Kachel darunter) */}
@@ -494,205 +474,6 @@ export const Dashboard: React.FC = () => {
                     </div>
                     <div className="kpi-icon" style={{ backgroundColor: '#fef2f2', color: '#dc2626' }}>
                         <AlertCircle size={26} />
-                    </div>
-                </div>
-            </section>
-
-            {/* =========================================================================
-                SOLL/IST-ANALYSE & ABWEICHUNGEN (GET /api/analysis + GET /api/dashboard)
-                Ersetzt die frühere Seite /analysis.
-               ========================================================================= */}
-            <section className="dash-analysis-section">
-                <div className="dash-analysis-header">
-                    <div className="dash-analysis-title-group">
-                        <div className="dash-analysis-icon-badge">
-                            <TrendingUp size={22} />
-                        </div>
-                        <div>
-                            <h2 className="dash-analysis-title">Soll/Ist-Analyse & Abweichungen</h2>
-                            <p className="dash-analysis-sub">
-                                {backendOnline === false
-                                    ? 'Backend nicht erreichbar – keine Live-Auswertung'
-                                    : analysis
-                                        ? `${analysis.evaluatedReports} Tagesberichte ausgewertet • Stichtag ${new Date(analysis.refDate).toLocaleDateString('de-DE')}`
-                                        : 'Lade Auswertung…'}
-                            </p>
-                        </div>
-                    </div>
-                    <div className="dash-analysis-controls">
-                        <div className="dash-period-pills">
-                            <button
-                                type="button"
-                                className={`dash-period-btn ${period === 'week' ? 'active' : ''}`}
-                                onClick={() => setPeriod('week')}
-                            >
-                                Diese Woche
-                            </button>
-                            <button
-                                type="button"
-                                className={`dash-period-btn ${period === 'all' ? 'active' : ''}`}
-                                onClick={() => setPeriod('all')}
-                            >
-                                Gesamt
-                            </button>
-                        </div>
-                        <button
-                            type="button"
-                            className={`dash-btn-refresh ${isRefreshing ? 'spinning' : ''}`}
-                            onClick={loadBackend}
-                            disabled={isRefreshing}
-                        >
-                            <RefreshCw size={14} />
-                            <span>Aktualisieren</span>
-                        </button>
-                    </div>
-                </div>
-
-                <div className="dash-analysis-kpi-grid">
-                    <div className="dash-anl-kpi-card">
-                        <div>
-                            <div className="dash-anl-kpi-label">Größter Verzug</div>
-                            <div className={`dash-anl-kpi-val ${(kpis?.delayDays ?? 0) > 0 ? 'negative' : 'dark'}`}>
-                                {kpis ? `${kpis.delayDays.toLocaleString('de-DE')} AT` : '–'}
-                            </div>
-                            <div className="dash-anl-kpi-sub">Arbeitstage gegenüber Plan</div>
-                        </div>
-                    </div>
-                    <div className="dash-anl-kpi-card">
-                        <div>
-                            <div className="dash-anl-kpi-label">Termintreue (SPI)</div>
-                            <div className={`dash-anl-kpi-val ${(kpis?.spi ?? 1) < 0.9 ? 'warning' : 'neutral'}`}>
-                                {kpis ? kpis.spi.toLocaleString('de-DE') : '–'}
-                            </div>
-                            <div className="dash-anl-kpi-sub">1,0 = im Plan</div>
-                        </div>
-                    </div>
-                    <div className="dash-anl-kpi-card">
-                        <div>
-                            <div className="dash-anl-kpi-label">Kritische Abweichungen</div>
-                            <div className={`dash-anl-kpi-val ${(kpis?.criticalAlerts ?? 0) > 0 ? 'negative' : 'dark'}`}>
-                                {kpis ? kpis.criticalAlerts : '–'}
-                            </div>
-                            <div className="dash-anl-kpi-sub">Handlungsbedarf nach VOB/B</div>
-                        </div>
-                    </div>
-                    <div
-                        className="dash-anl-kpi-card"
-                        style={{ cursor: 'pointer' }}
-                        onClick={() => navigate('/drafts')}
-                        title="Zu den Briefentwürfen"
-                    >
-                        <div>
-                            <div className="dash-anl-kpi-label">Offene Briefentwürfe</div>
-                            <div className="dash-anl-kpi-val dark">{kpis ? kpis.openDrafts : '–'}</div>
-                            <div className="dash-anl-kpi-sub">Prüfung & Freigabe nötig →</div>
-                        </div>
-                    </div>
-                </div>
-
-                <div className="dash-analysis-body-grid">
-                    {/* Fortschritt je Vorgang */}
-                    <div className="dash-analysis-subpanel">
-                        <div className="dash-subpanel-header">
-                            <h3 className="dash-subpanel-title">
-                                <Layers size={16} /> Fortschritt je Vorgang
-                            </h3>
-                            <button
-                                type="button"
-                                className="dash-btn-vob-action"
-                                onClick={() => navigate('/fortschritt')}
-                                title="Auf dem Grundriss mit Zeitregler anzeigen"
-                            >
-                                Grundriss-Ansicht →
-                            </button>
-                        </div>
-                        <div className="dash-trades-container">
-                            {(analysis?.workPackages ?? dashboard?.progress ?? []).length === 0 && (
-                                <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
-                                    Kein Bauzeitenplan mit Vorgängen für dieses Projekt (Stammdaten → Bauzeitenpläne).
-                                </div>
-                            )}
-                            {(analysis?.workPackages ?? dashboard?.progress ?? []).map((wp) => (
-                                <div key={wp.id} className="dash-trade-item">
-                                    <div className="dash-trade-top">
-                                        <div>
-                                            <div className="dash-trade-name">{wp.name}</div>
-                                            <div className="dash-trade-subcontractor">
-                                                {wp.trade}{wp.subcontractor ? ` • ${wp.subcontractor}` : ''}
-                                            </div>
-                                        </div>
-                                        <span className={`dash-trade-badge ${wp.status}`}>
-                                            {wp.status === 'delayed'
-                                                ? `−${wp.delayDays.toLocaleString('de-DE')} AT`
-                                                : wp.status === 'warning'
-                                                    ? 'Achtung'
-                                                    : 'Im Plan'}
-                                        </span>
-                                    </div>
-                                    <div className="dash-progress-wrapper">
-                                        <div className="dash-progress-labels">
-                                            <span>Soll {wp.planPercent}%</span>
-                                            <span>Ist {wp.actualPercent}%</span>
-                                        </div>
-                                        <div className="dash-progress-track">
-                                            <div
-                                                className={`dash-progress-fill-actual ${wp.status}`}
-                                                style={{ width: `${Math.min(100, wp.actualPercent)}%` }}
-                                            />
-                                        </div>
-                                    </div>
-                                    <div className="dash-trade-dates">
-                                        Soll-Ende {wp.planDate} • Ist {wp.actualDate}
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
-                    </div>
-
-                    {/* Abweichungen & Briefvorschläge */}
-                    <div className="dash-analysis-subpanel">
-                        <div className="dash-subpanel-header">
-                            <h3 className="dash-subpanel-title">
-                                <AlertTriangle size={16} color="#dc2626" /> Abweichungen & Handlungsempfehlungen
-                            </h3>
-                            <span className="dash-subpanel-count">{alerts.length}</span>
-                        </div>
-                        <div className="dash-deviations-container">
-                            {alerts.length === 0 && (
-                                <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
-                                    {backendOnline === false ? 'Keine Daten (Backend offline).' : 'Keine Abweichungen erkannt.'}
-                                </div>
-                            )}
-                            {alerts.map((a, idx) => (
-                                <div key={`${a.title}-${idx}`} className={`dash-dev-card ${a.severity === 'critical' ? 'critical' : 'warning'}`}>
-                                    <div className="dash-dev-header">
-                                        <div className="dash-dev-title">{a.title}</div>
-                                        <span className={`badge ${a.severity === 'critical' ? 'badge-danger' : 'badge-warning'}`}>
-                                            {a.severity === 'critical' ? t('status_urgent') : t('status_warning')}
-                                        </span>
-                                    </div>
-                                    <div className="dash-dev-details">{a.description}</div>
-                                    <div className="dash-dev-source">
-                                        <FileText size={11} /> Quelle: {a.source}
-                                    </div>
-                                    <div className="dash-dev-vob-box">
-                                        <span>{t(`drafts_type_${a.draftType}`)}</span>
-                                        <button
-                                            type="button"
-                                            className="dash-btn-vob-action"
-                                            onClick={() =>
-                                                goToDraft({
-                                                    type: a.draftType,
-                                                    keywords: a.prefillText || `${a.title}. ${a.description} (Quelle: ${a.source})`
-                                                })
-                                            }
-                                        >
-                                            <Mail size={11} /> Entwurf erstellen
-                                        </button>
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
                     </div>
                 </div>
             </section>

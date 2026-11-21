@@ -977,7 +977,7 @@ const TimelineRow: React.FC<{ it: TimelineItem; navigate: ReturnType<typeof useN
         </div>
         <div className="tp-tl-sum">{it.summary}</div>
         <div className="tp-tl-foot">
-            <span>🔍 {it.source}</span>
+            <span>Quelle: {it.source}</span>
             {it.type === 'notice' && it.refId != null && (
                 <button className="tp-link" onClick={() => navigate('/drafts', {state: {noticeId: it.refId}})}>Brief öffnen</button>
             )}

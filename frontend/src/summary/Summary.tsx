@@ -13,7 +13,8 @@ import {
     Mail,
     Check,
     CalendarRange,
-    Info
+    Info,
+    BookOpen
 } from 'lucide-react';
 import {useProjects} from '../context/ProjectContext';
 import {useLanguage} from '../context/LanguageContext';
@@ -79,7 +80,7 @@ export const Summary: React.FC = () => {
 
     // --- result ---
     const [summary, setSummary] = useState<SummaryResponse | null>(null);
-    const [busy, setBusy] = useState<null | 'text' | 'week' | 'month'>(null);
+    const [busy, setBusy] = useState<null | 'text' | 'day' | 'week' | 'month'>(null);
     const [error, setError] = useState<string | null>(null);
     const [doneIds, setDoneIds] = useState<Set<string>>(new Set());
     const [copyDone, setCopyDone] = useState(false);
@@ -138,7 +139,7 @@ export const Summary: React.FC = () => {
         }
     };
 
-    const handleSummarizePeriod = async (period: 'week' | 'month') => {
+    const handleSummarizePeriod = async (period: 'day' | 'week' | 'month') => {
         setBusy(period);
         setError(null);
         try {
@@ -289,9 +290,12 @@ ${s.vobRisks.length ? s.vobRisks.map((r) => `<p><strong>${escapeHtml(r.title)}</
         <div className="summary-container">
             {/* Header */}
             <div className="summary-header">
-                <div>
-                    <h1>{t('sum_title')}</h1>
-                    <p>{t('su_sub')} <strong>{activeProject.name}</strong></p>
+                <div className="tp-title-group">
+                    <div className="tp-title-icon"><BookOpen size={22}/></div>
+                    <div>
+                        <h1>{t('sum_title')}</h1>
+                        <p>{t('su_sub')} <strong>{activeProject.name}</strong></p>
+                    </div>
                 </div>
                 {toast && (
                     <div className="su-toast">
@@ -392,6 +396,15 @@ ${s.vobRisks.length ? s.vobRisks.map((r) => `<p><strong>${escapeHtml(r.title)}</
                         <h2 className="su-step-title"><span className="su-step-num">2</span>{t('su_step_project')}</h2>
                         <p className="su-hint">{t('su_project_hint')}</p>
                         <div className="su-period-row">
+                            <button
+                                type="button"
+                                className="btn btn-secondary"
+                                onClick={() => handleSummarizePeriod('day')}
+                                disabled={busy !== null}
+                            >
+                                <Sparkles size={15}/>
+                                <span>{busy === 'day' ? t('su_busy') : t('su_btn_today')}</span>
+                            </button>
                             <button
                                 type="button"
                                 className="btn btn-secondary"

@@ -276,6 +276,11 @@
   background-color: #faf8ff;
 }
 
+.category-card.accent-delivery {
+  border-left: 4px solid #0284c7;
+  background-color: #f4faff;
+}
+
 .category-card-header {
   display: flex;
   justify-content: space-between;

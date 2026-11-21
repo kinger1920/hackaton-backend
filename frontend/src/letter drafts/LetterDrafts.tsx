@@ -28,7 +28,8 @@ import {
     Lock,
     CloudOff,
     Cloud,
-    X
+    X,
+    Mail
 } from 'lucide-react';
 import {useProjects, Project, Contractor} from '../context/ProjectContext';
 import {useLanguage} from '../context/LanguageContext';
@@ -1189,9 +1190,12 @@ export const LetterDrafts: React.FC = () => {
         <div className="drafts-container">
             {/* Header */}
             <div className="drafts-header">
-                <div>
-                    <h1>{t('ld_title')}</h1>
-                    <p>{t('ld_sub')}</p>
+                <div className="tp-title-group">
+                    <div className="tp-title-icon"><Mail size={22}/></div>
+                    <div>
+                        <h1>{t('ld_title')}</h1>
+                        <p>{t('ld_sub')}</p>
+                    </div>
                 </div>
 
                 {toast && (

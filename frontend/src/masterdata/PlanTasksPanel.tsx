@@ -191,7 +191,7 @@ export const PlanTasksPanel: React.FC<{ planId: number; onError: (msg: string) =
                         </div>
                     )}
                     {preview.warnings.length > 0 && (
-                        <div className="plan-tasks-warn">{preview.warnings.map((w, i) => <div key={i}>⚠️ {w}</div>)}</div>
+                        <div className="plan-tasks-warn">{preview.warnings.map((w, i) => <div key={i}>Hinweis: {w}</div>)}</div>
                     )}
                     <div className="plan-table-wrap">
                         <table className="plan-table">

@@ -312,7 +312,7 @@ export interface SummarizeRequest {
   text?: string;
   source_type?: SummarySourceType;
   project_id?: number;
-  period?: 'week' | 'month';
+  period?: 'day' | 'week' | 'month';
   ref_date?: string;
 }
 

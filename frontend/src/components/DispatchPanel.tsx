@@ -119,14 +119,14 @@ export const DispatchPanel: React.FC<{ noticeId: number | null; approved: boolea
 
             {approved && !editing && data && (
                 <div style={{display: 'flex', flexDirection: 'column', gap: '2px'}}>
-                    <span>📮 {METHODS[data.method]} am {new Date(data.sent_at).toLocaleString('de-DE')}</span>
+                    <span>Versand: {METHODS[data.method]} am {new Date(data.sent_at).toLocaleString('de-DE')}</span>
                     {data.tracking_number && <span>Sendungsnr.: {data.tracking_number}</span>}
                     {data.received_at ? (
                         <span style={{color: '#15803d', display: 'flex', alignItems: 'center', gap: '4px'}}>
                             <CheckCircle2 size={13}/> Zugang bestätigt am {new Date(data.received_at).toLocaleDateString('de-DE')}
                         </span>
                     ) : (
-                        <span style={{color: '#b45309'}}>⚠️ Zugang noch nicht bestätigt – Nachweis (Rückschein/Quittung) nachreichen.</span>
+                        <span style={{color: '#b45309'}}>Hinweis: Zugang noch nicht bestätigt – Nachweis (Rückschein/Quittung) nachreichen.</span>
                     )}
                 </div>
             )}

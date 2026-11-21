@@ -87,11 +87,14 @@ export const MasterData: React.FC = () => {
     return (
         <div className="masterdata-container">
             <div className="masterdata-header">
-                <div>
-                    <h1>{t('nav_masterdata', 'Stammdaten')}</h1>
-                    <p>
-                        Firmen, Verträge und Bauzeitenpläne für <strong>{activeProject.name}</strong>
-                    </p>
+                <div className="tp-title-group">
+                    <div className="tp-title-icon"><Building2 size={22}/></div>
+                    <div>
+                        <h1>{t('nav_masterdata', 'Stammdaten')}</h1>
+                        <p>
+                            Firmen, Verträge und Bauzeitenpläne für <strong>{activeProject.name}</strong>
+                        </p>
+                    </div>
                 </div>
             </div>
 
@@ -554,7 +557,7 @@ const ContractsTab: React.FC<{ projectId: number; onError: (msg: string) => void
                                                     <span className="badge badge-info">bisher {parseView.result.current_planned_workforce}</span>
                                                 )}
                                         </div>
-                                        <div className="masterdata-row-meta">🔍 „{f.src}“</div>
+                                        <div className="masterdata-row-meta">Fundstelle: „{f.src}“</div>
                                     </div>
                                 </div>
                             ))}

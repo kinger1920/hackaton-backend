@@ -68,8 +68,10 @@ def _detect_link(text: str) -> LinkType | None:
     return None
 
 
-def resolve_period(period: Literal["week", "month"], ref_date: dt.date) -> tuple[dt.date, dt.date]:
-    """Zeitraum zu einem Stichtag: Woche = Montag–Sonntag, Monat = 1. bis letzter Tag."""
+def resolve_period(period: Literal["day", "week", "month"], ref_date: dt.date) -> tuple[dt.date, dt.date]:
+    """Zeitraum zu einem Stichtag: Tag = Stichtag, Woche = Montag–Sonntag, Monat = 1. bis letzter Tag."""
+    if period == "day":
+        return ref_date, ref_date
     if period == "week":
         start = ref_date - dt.timedelta(days=ref_date.weekday())
         return start, start + dt.timedelta(days=6)
@@ -312,14 +314,16 @@ def _offline_text(text: str, label: str) -> dict:
 
 # ---------------------------------------------------------------- Einstiegspunkte
 
-async def summarize_period(session: Session, project: Project, period: Literal["week", "month"],
+async def summarize_period(session: Session, project: Project, period: Literal["day", "week", "month"],
                            ref_date: dt.date) -> SummaryResponse:
-    """Zusammenfassung einer Woche/eines Monats für ein Projekt."""
+    """Zusammenfassung eines Tages/einer Woche/eines Monats für ein Projekt."""
     start, end = resolve_period(period, ref_date)
     reports, notes, notices = collect(session, project.id, start, end)
     stats = compute_stats(reports, notices)
 
-    if period == "week":
+    if period == "day":
+        title = f"Tageszusammenfassung {_de(start)} • {project.name}"
+    elif period == "week":
         title = f"Wochenzusammenfassung KW {start.isocalendar().week} ({_de(start)}–{_de(end)}) • {project.name}"
     else:
         title = f"Monatszusammenfassung {MONTHS_DE[start.month - 1]} {start.year} • {project.name}"

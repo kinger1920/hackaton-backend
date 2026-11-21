@@ -1,48 +1,26 @@
 /* ==========================================================================
-   PAGE KIT – one look for every page, modelled on "Briefentwürfe"
-   --------------------------------------------------------------------------
-   Every page keeps its own markup and CSS file; this sheet only aligns the
-   shared building blocks through the class names the pages already use:
-     1. page title + subtitle      (24px / 800, yellow underline, muted subtitle)
-     2. page header                (plain on the page background, no box, no icon)
-     3. cards / panels             (white surface, 12px radius, thin border)
-     4. inner boxes                (light grey section boxes like the letter form)
-     5. card headings              (15px / 700, icon in brand colour)
-     6. small section labels       (13px / 700, uppercase like the form sections)
-     7. tabs                       (pill toggle like "Neuer Brief | Meine Briefe")
-     8. banners                    (Dashboard "Hallo" / Profile hero as plain headers)
-   Loaded last (after theme-overrides.generated.css) – the ":root" prefix keeps the
-   specificity above both the page files and the generated overrides.
+   PAGE KIT – modern, cohesive construction-tech aesthetic across all pages
    ========================================================================== */
 
 /* --------------------------------------------------------------------------
-   1. Page titles + subtitles
+   1. Page titles + subtitles (unified across every page like Terminplaner)
    -------------------------------------------------------------------------- */
 :root .drafts-header h1,
 :root .projects-title-group h1,
 :root .summary-header h1,
 :root .masterdata-header h1,
 :root .idea-title-group h1,
+:root .pf-header h1,
 :root .reports-title,
-:root .capture-hero-title {
-    margin: 0 0 4px 0;
-    font-size: 24px;
-    font-weight: 800;
+:root .capture-hero-title,
+:root .welcome-title,
+:root .tp-title {
+    margin: 0 0 2px 0;
+    font-size: 22px;
+    font-weight: 700;
     line-height: 1.25;
-    letter-spacing: -0.01em;
+    letter-spacing: -0.02em;
     color: var(--text-main);
-}
-
-/* yellow underline (h1s get it from theme.css; these titles are not always h1) */
-:root .reports-title::after,
-:root .capture-hero-title::after {
-    content: '';
-    display: block;
-    width: 44px;
-    height: 4px;
-    margin-top: 8px;
-    border-radius: 2px;
-    background-color: var(--color-primary-fill);
 }
 
 :root .drafts-header p,
@@ -50,52 +28,90 @@
 :root .summary-header p,
 :root .masterdata-header p,
 :root .idea-title-group p,
+:root .pf-header p,
 :root .reports-subtitle,
-:root .capture-hero-sub {
-    margin-top: 6px;
-    font-size: 14px;
+:root .capture-hero-sub,
+:root .welcome-desc,
+:root .tp-sub {
+    margin: 0;
+    font-size: 13.5px;
     font-weight: 400;
+    line-height: 1.45;
     color: var(--text-muted);
 }
 
+:root .welcome-desc strong,
+:root .tp-sub strong,
+:root .reports-subtitle strong,
+:root .capture-hero-sub strong,
+:root .masterdata-header p strong,
+:root .summary-header p strong {
+    color: var(--text-main);
+    font-weight: 600;
+}
+
 /* --------------------------------------------------------------------------
-   2. Page headers: plain on the page background (like Briefentwürfe), no box
+   2. Page headers: borderless on page background, icon on left (Terminplaner style)
    -------------------------------------------------------------------------- */
+:root .tp-header,
 :root .reports-header-card,
 :root .capture-hero,
-:root .welcome-hero {
-    padding: 0 0 4px 0;
+:root .welcome-hero,
+:root .drafts-header,
+:root .summary-header,
+:root .masterdata-header,
+:root .projects-header-actions,
+:root .pf-header,
+:root .idea-header {
+    padding: 0;
     margin-bottom: 0;
     background: transparent;
     border: none;
     border-radius: 0;
     box-shadow: none;
     color: var(--text-main);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
 }
 
-/* no icon next to the page title (Briefentwürfe has none either) */
+:root .welcome-hero {
+    margin-bottom: 22px;
+}
+
+:root .tp-title-group,
+:root .reports-title-area,
+:root .capture-hero-left,
+:root .idea-title-group {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-width: 0;
+}
+
 :root .capture-hero-icon,
 :root .reports-icon-badge,
-:root .idea-icon {
-    display: none;
+:root .idea-icon,
+:root .tp-title-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 44px;
+    height: 44px;
+    flex-shrink: 0;
+    border-radius: var(--radius-md);
+    background: var(--color-primary-light);
+    color: var(--color-primary);
+    border: 1px solid var(--color-primary-border);
 }
 
-/* Projekt-Assistent: its title is a flex row (title + badge) → put the underline on its own line */
 :root .idea-title-group h1[style] {
     flex-wrap: wrap;
 }
 
-:root .idea-title-group h1[style]::after {
-    content: '';
-    flex: 0 0 44px;
-    height: 4px;
-    margin-top: 8px;
-    margin-right: calc(100% - 44px);
-    border-radius: 2px;
-    background-color: var(--color-primary-fill);
-}
-
-/* page containers: same rhythm between blocks everywhere */
+/* page containers: comfortable breathing room */
 :root .capture-container,
 :root .reports-container,
 :root .summary-container,
@@ -108,7 +124,7 @@
 }
 
 /* --------------------------------------------------------------------------
-   3. Cards / panels
+   3. Cards / panels: softer layered depth, less rigid grid
    -------------------------------------------------------------------------- */
 :root .kpi-card,
 :root .dash-analysis-section,
@@ -116,6 +132,7 @@
 :root .categories-container,
 :root .history-panel,
 :root .editor-panel,
+:root .summary-result-card,
 :root .chat-card,
 :root .progress-plan-card,
 :root .profile-section-card,
@@ -124,53 +141,76 @@
 :root .generator-card,
 :root .ld-saved-card {
     background: var(--bg-surface);
-    border: 1px solid var(--border-light);
+    border: 1px solid color-mix(in srgb, var(--border-light) 85%, transparent);
     border-radius: var(--radius-lg);
     box-shadow: var(--shadow-sm);
+    transition: border-color var(--transition-fast), box-shadow var(--transition-fast), transform var(--transition-fast);
 }
 
-/* main panels share the letter form's padding */
 :root .dash-analysis-section,
 :root .audio-card,
 :root .categories-container,
 :root .editor-panel,
+:root .summary-result-card,
 :root .profile-section-card,
 :root .history-panel {
     padding: 22px;
 }
 
-/* status cards: plain surface + coloured edge instead of tinted gradients */
+/* Tactile micro-feedback on interactive cards without cartoonish bouncing */
+:root .kpi-card.interactive:hover,
+:root .dash-recent-card:hover,
+:root .project-card:hover {
+    transform: translateY(-1px);
+    box-shadow: var(--shadow-md);
+    border-color: var(--color-primary-border);
+}
+
+:root .kpi-value,
+:root .dash-anl-kpi-val,
+:root .hero-stat-number,
+:root .history-item-date,
+:root .dash-trade-badge {
+    font-variant-numeric: tabular-nums;
+}
 
 /* --------------------------------------------------------------------------
-   4. Inner boxes (like the grey sections in the project / letter form)
+   4. Inner boxes: soft tonal separation instead of hard double borders
    -------------------------------------------------------------------------- */
 :root .dash-analysis-subpanel,
 :root .dash-anl-kpi-card,
 :root .category-card,
 :root .form-section {
-    background: var(--color-slate-50);
-    border: 1px solid var(--border-light);
+    background: color-mix(in srgb, var(--color-slate-100) 55%, var(--bg-surface));
+    border: 1px solid color-mix(in srgb, var(--border-light) 65%, transparent);
     border-radius: var(--radius-md);
 }
 
-/* category accents: keep the colour as a left edge, not as a pastel background */
+/* subtle 3px left accent */
 :root .category-card.accent-hindrance {
-    border-left: 4px solid var(--color-danger);
+    border-left: 3px solid var(--color-danger);
 }
 
 :root .category-card.accent-cost {
-    border-left: 4px solid var(--color-warning);
+    border-left: 3px solid var(--color-warning);
 }
 
 :root .category-card.accent-progress {
-    border-left: 4px solid var(--color-success);
+    border-left: 3px solid var(--color-success);
 }
 
 :root .category-card.accent-defect {
-    border-left: 4px solid var(--color-primary-fill);
+    border-left: 3px solid var(--color-primary-fill);
 }
 
-/* hindrance notice in the daily report: warning box from the theme */
+:root .category-card.accent-delivery {
+    border-left: 3px solid var(--color-info);
+}
+
+[data-theme="dark"] .category-card.accent-delivery {
+    background-color: var(--color-slate-50);
+}
+
 :root .hindrance-card {
     background: var(--color-warning-light);
     border: 1px solid var(--color-warning-border);
@@ -178,60 +218,69 @@
 }
 
 /* --------------------------------------------------------------------------
-   5. Card headings (like "1 · Welches Schreiben?")
+   5. Card headings
    -------------------------------------------------------------------------- */
 :root .audio-title,
 :root .history-title,
 :root .editor-title,
+:root .section-block-title,
 :root .section-title,
 :root .create-project-title,
 :root .ld-step-title {
     font-size: 15px;
-    font-weight: 700;
+    font-weight: 600;
     line-height: 1.35;
+    letter-spacing: -0.01em;
     color: var(--text-main);
 }
 
 :root .audio-title svg:not(.lucide-sparkles),
 :root .history-title svg:not(.lucide-sparkles),
 :root .editor-title svg:not(.lucide-sparkles),
+:root .section-block-title svg:not(.lucide-sparkles),
 :root .dash-subpanel-title svg:not(.lucide-sparkles),
 :root .create-project-title svg:not(.lucide-sparkles) {
     color: var(--color-primary);
     stroke: var(--color-primary);
 }
 
+:root .section-desc {
+    font-size: 13px;
+    color: var(--text-muted);
+}
 
 /* --------------------------------------------------------------------------
-   6. Small section labels (like the uppercase form-section titles)
+   6. Small section labels (natural sentence case)
    -------------------------------------------------------------------------- */
 :root .dash-subpanel-title,
 :root .category-card-title,
 :root .general-notes-title,
 :root .summary-block-title,
 :root .form-section-title {
-    font-size: 12.5px;
-    font-weight: 700;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
-    color: var(--color-slate-700);
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: -0.005em;
+    text-transform: none;
+    color: var(--color-slate-800);
 }
 
-/* row titles inside lists */
 :root .masterdata-row-title,
 :root .idea-row-title,
-:root .history-item-title {
-    font-weight: 700;
+:root .history-item-title,
+:root .project-doc-title,
+:root .doc-title {
+    font-weight: 600;
     color: var(--text-main);
 }
 
 /* --------------------------------------------------------------------------
-   7. Tabs → pill toggle like "Neuer Brief | Meine Briefe"
+   7. Tabs → modern segmented controls
    -------------------------------------------------------------------------- */
 :root .idea-tabs,
 :root .masterdata-tabs,
 :root .modal-tabs,
-:root .dash-modal-tabs {
+:root .dash-modal-tabs,
+:root .source-type-nav {
     display: inline-flex;
     flex-wrap: wrap;
     align-self: flex-start;
@@ -239,26 +288,27 @@
     width: auto;
     max-width: 100%;
     padding: 4px;
-    border: 1px solid var(--color-slate-200);
-    border-radius: var(--radius-full);
+    border: 1px solid color-mix(in srgb, var(--border-light) 85%, transparent);
+    border-radius: calc(var(--radius-md) + 2px);
     background-color: var(--color-slate-100);
 }
 
 :root .idea-tab,
 :root .masterdata-tab,
 :root .modal-tab-btn,
-:root .dash-modal-tab {
+:root .dash-modal-tab,
+:root .source-tab-btn {
     display: inline-flex;
     align-items: center;
     gap: 6px;
-    padding: 7px 14px;
+    padding: 6px 13px;
     border: none;
-    border-radius: var(--radius-full);
+    border-radius: var(--radius-sm);
     background: transparent;
     box-shadow: none;
-    color: var(--color-slate-500);
+    color: var(--color-slate-600);
     font-size: 13px;
-    font-weight: 600;
+    font-weight: 500;
     cursor: pointer;
     transition: color var(--transition-fast), background-color var(--transition-fast), box-shadow var(--transition-fast);
 }
@@ -266,52 +316,71 @@
 :root .idea-tab:hover,
 :root .masterdata-tab:hover,
 :root .modal-tab-btn:hover,
-:root .dash-modal-tab:hover {
-    color: var(--color-slate-800);
+:root .dash-modal-tab:hover,
+:root .source-tab-btn:hover {
+    color: var(--text-main);
     background: transparent;
 }
 
 :root .idea-tab.active,
 :root .masterdata-tab.active,
 :root .modal-tab-btn.active,
-:root .dash-modal-tab.active {
+:root .dash-modal-tab.active,
+:root .source-tab-btn.active {
     background-color: var(--bg-surface);
-    color: var(--color-primary);
-    box-shadow: var(--shadow-md);
+    color: var(--text-main);
+    font-weight: 600;
+    box-shadow: var(--shadow-sm);
 }
 
-/* AI suggestion chips in the assistant stay blue (✨) */
 :root .idea-tab:has(svg.lucide-sparkles) {
     color: var(--color-ai);
 }
 
 /* --------------------------------------------------------------------------
-   8. Banners (Dashboard "Hallo …", Profile) → plain page headers like Briefentwürfe
-      (the box itself is removed in section 2; here only the text inside)
+   8. Dashboard Hero Stats (sit cleanly alongside the borderless welcome header)
    -------------------------------------------------------------------------- */
-:root .welcome-title {
-    margin: 0 0 4px 0;
-    font-size: 24px;
-    font-weight: 800;
-    line-height: 1.25;
-    letter-spacing: -0.01em;
+:root .welcome-hero {
+    padding: 0;
+    margin-bottom: 22px;
+    background: transparent;
+    border: none;
+    border-radius: 0;
+    box-shadow: none;
     color: var(--text-main);
 }
 
+:root .welcome-title {
+    color: var(--text-main);
+}
 
 :root .welcome-desc {
-    margin-top: 6px;
-    font-size: 14px;
     color: var(--text-muted);
 }
 
-/* no icon in the profile subtitle */
+:root .welcome-desc strong {
+    color: var(--text-main);
+    font-weight: 600;
+}
 
+:root .profile-hero-name {
+    margin: 0 0 2px 0;
+    font-size: 22px;
+    font-weight: 700;
+    line-height: 1.25;
+    letter-spacing: -0.02em;
+    color: var(--text-main);
+}
 
-/* the small numbers next to "Hallo …" stay as compact boxes, like the KPI tiles */
+:root .profile-hero-role {
+    margin-top: 4px;
+    font-size: 13.5px;
+    color: var(--text-muted);
+}
+
 :root .hero-stat-card {
     background: var(--bg-surface);
-    border: 1px solid var(--border-light);
+    border: 1px solid color-mix(in srgb, var(--border-light) 85%, transparent);
     border-radius: var(--radius-md);
     box-shadow: var(--shadow-sm);
     backdrop-filter: none;
@@ -325,38 +394,45 @@
     color: var(--text-muted);
 }
 
+:root .profile-hero-tag {
+    background: var(--color-slate-100);
+    color: var(--color-slate-700);
+    border: 1px solid var(--border-light);
+    border-radius: var(--radius-full);
+    backdrop-filter: none;
+}
 
+:root .profile-avatar-large {
+    background-color: var(--color-primary-fill);
+    color: var(--color-on-primary);
+    border: 2px solid var(--color-primary-border);
+}
 
 /* --------------------------------------------------------------------------
-   9. Terminplaner (tp-…) – same look as the other pages
+   9. Terminplaner (tp-…)
    -------------------------------------------------------------------------- */
 :root .tp-page {
     gap: 20px;
 }
 
 :root .tp-title {
-    margin: 0 0 4px 0;
-    font-size: 24px;
-    font-weight: 800;
+    margin: 0 0 2px 0;
+    font-size: 22px;
+    font-weight: 700;
     line-height: 1.25;
-    letter-spacing: -0.01em;
+    letter-spacing: -0.02em;
     color: var(--text-main);
 }
 
 :root .tp-sub {
-    margin-top: 6px;
-    font-size: 14px;
+    margin-top: 3px;
+    font-size: 13.5px;
     color: var(--text-muted);
 }
 
-:root .tp-title-icon {
-    display: none;
-}
-
-/* toolbar = normal card */
 :root .tp-toolbar {
     background: var(--bg-surface);
-    border: 1px solid var(--border-light);
+    border: 1px solid color-mix(in srgb, var(--border-light) 85%, transparent);
     border-radius: var(--radius-lg);
     box-shadow: var(--shadow-sm);
 }
@@ -364,40 +440,42 @@
 :root .tp-icon-btn {
     background: var(--bg-surface);
     border-color: var(--border-light);
+    border-radius: var(--radius-sm);
     color: var(--color-slate-700);
 }
 
-/* view switch (Monat / Woche / …) = pill toggle like "Neuer Brief | Meine Briefe" */
 :root .tp-segment {
     gap: 4px;
     padding: 4px;
-    border: 1px solid var(--color-slate-200);
-    border-radius: var(--radius-full);
+    border: 1px solid color-mix(in srgb, var(--border-light) 85%, transparent);
+    border-radius: calc(var(--radius-md) + 2px);
     background-color: var(--color-slate-100);
 }
 
 :root .tp-segment button {
-    padding: 7px 14px;
-    border-radius: var(--radius-full);
-    color: var(--color-slate-500);
+    padding: 6px 13px;
+    border-radius: var(--radius-sm);
+    color: var(--color-slate-600);
     font-size: 13px;
-    font-weight: 600;
+    font-weight: 500;
 }
 
 :root .tp-segment button:hover {
-    color: var(--color-slate-800);
+    color: var(--text-main);
 }
 
 :root .tp-segment button.active {
     background-color: var(--bg-surface);
-    color: var(--color-primary);
-    box-shadow: var(--shadow-md);
+    color: var(--text-main);
+    font-weight: 600;
+    box-shadow: var(--shadow-sm);
 }
 
 :root .tp-section h3 {
-    font-size: 12.5px;
-    font-weight: 700;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
-    color: var(--color-slate-700);
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: -0.005em;
+    text-transform: none;
+    color: var(--color-slate-800);
 }
+

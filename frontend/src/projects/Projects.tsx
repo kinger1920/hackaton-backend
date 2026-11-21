@@ -18,7 +18,8 @@ import {
     X,
     ShieldCheck,
     ShieldOff,
-    Pencil
+    Pencil,
+    FolderKanban
 } from 'lucide-react';
 import {useProjects, Project, Contractor} from '@/context/ProjectContext';
 import {useLanguage} from '../context/LanguageContext';
@@ -241,9 +242,12 @@ export const Projects: React.FC = () => {
         <div className="projects-wrapper">
             {/* Header Bar */}
             <div className="projects-header-actions">
-                <div className="projects-title-group">
-                    <h1>{t('proj_title')}</h1>
-                    <p>{t('proj_sub')}</p>
+                <div className="tp-title-group">
+                    <div className="tp-title-icon"><FolderKanban size={22}/></div>
+                    <div className="projects-title-group">
+                        <h1>{t('proj_title')}</h1>
+                        <p>{t('proj_sub')}</p>
+                    </div>
                 </div>
 
                 <button

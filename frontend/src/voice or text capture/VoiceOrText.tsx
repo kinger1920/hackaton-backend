@@ -661,7 +661,7 @@ Kategorisierte Stichpunkte:
     <>
       {isTranscribing && (
         <div style={{ fontSize: '12px', color: 'var(--color-primary)', fontWeight: 600 }}>
-          ⏳ Audio wird über Whisper transkribiert...
+          Audio wird über Whisper transkribiert...
         </div>
       )}
 
@@ -712,7 +712,7 @@ Kategorisierte Stichpunkte:
             color: '#92400e'
           }}
         >
-          <strong>ℹ️ Offene Rückfragen der KI für den VOB-Brief:</strong>
+          <strong>Offene Rückfragen der KI für den VOB-Brief:</strong>
           <ul style={{ margin: '6px 0 0 16px', padding: 0 }}>
             {aiQuestions.map((q, idx) => (
               <li key={idx} style={{ marginBottom: '2px' }}>
@@ -775,7 +775,7 @@ Kategorisierte Stichpunkte:
       <section className="capture-hero">
         <div className="capture-hero-left">
           <div className="capture-hero-icon">
-            {isVoiceMode ? <Mic size={28} /> : <PenLine size={28} />}
+            {isVoiceMode ? <Mic size={22} /> : <PenLine size={22} />}
           </div>
           <div>
             <h1 className="capture-hero-title">
@@ -785,27 +785,6 @@ Kategorisierte Stichpunkte:
               {isVoiceMode ? t('cap_voice_sub') : t('cap_text_sub')} <strong>{activeProject.name}</strong>
             </p>
           </div>
-        </div>
-
-        <div style={{ display: 'flex', gap: '8px' }}>
-          <button
-            type="button"
-            className="btn btn-secondary"
-            onClick={() => navigate('/reports')}
-            title={t('nav_reports')}
-          >
-            <FileText size={16} />
-            <span>{t('nav_reports')}</span>
-          </button>
-
-          <button
-            type="button"
-            className="btn btn-primary"
-            onClick={() => handleSaveToDiary()}
-          >
-            <CheckCircle2 size={16} />
-            <span>{t('btn_save')}</span>
-          </button>
         </div>
       </section>
 
@@ -1180,7 +1159,7 @@ Kategorisierte Stichpunkte:
           </div>
 
           {/* Category 5: Material, Lieferungen & Logistik */}
-          <div className="category-card">
+          <div className="category-card accent-delivery">
             <div className="category-card-header">
               <span className="category-card-title">
                 <Package size={16} color="#059669" />
