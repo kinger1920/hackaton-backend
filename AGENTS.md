@@ -84,8 +84,17 @@ cd backend && uv sync
 cd backend && uv add <package-name>
 
 # Run the development server
-cd backend && uv run uvicorn src.main:app --reload
+cd backend && ./scripts/dev.sh   # or: uv run uvicorn src.main:app --reload (no Pango path, no .env vars)
 ```
+
+### Quickstart for Teammates (own API key, all features)
+
+1. `cp backend/.env.example backend/.env` and put **your own** Groq key into `GROQ_API_KEY` (free: https://console.groq.com/keys). Never commit `.env` or paste keys anywhere. Without a key everything still runs offline (`"mode": "offline"`).
+2. macOS, once: `brew install pango` (needed for PDF export).
+3. `cd backend && uv sync && ./scripts/dev.sh` – sets the Pango path on macOS and loads all values from `backend/.env` (incl. optional `DATABASE_URL`). Use this instead of plain `uvicorn`, also in PyCharm/VS Code terminals.
+4. Optional demo data in a copy (keeps the tracked DB clean): `cp data/site_assistant.db ~/bauassist-demo.db`, set `DATABASE_URL=sqlite:////Users/<you>/bauassist-demo.db` in `.env`, run `DATABASE_URL=sqlite:////Users/<you>/bauassist-demo.db uv run python scripts/seed_reports.py`, restart `./scripts/dev.sh`.
+5. Open http://localhost:8000/docs. `GET /health` must show `"pdf_export": true`; otherwise `/pdf` returns 503 with a hint (Word export always works).
+6. Frontend: `cd frontend && npm install && npm run dev`. Only if the backend is not on `localhost:8000`: `cp .env.example .env.local` and adjust `VITE_API_URL`.
 
 ### Environment & PDF Export
 
