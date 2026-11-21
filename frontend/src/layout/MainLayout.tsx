@@ -5,14 +5,17 @@ import {
     LayoutDashboard,
     Mic,
     FileText,
-    AlertTriangle,
     Mail,
-    FolderKanban,
-    User,
-    LogOut,
-    CloudSun
+  FolderKanban,
+  User,
+  LogOut,
+  CloudSun,
+  BookOpen,
+  TrendingUp
 } from 'lucide-react';
 import {useProjects} from '../context/ProjectContext';
+import { useLanguage } from '../context/LanguageContext';
+import LanguageSwitcher from '../components/LanguageSwitcher';
 import '@frontend/src/index.css';
 import '@frontend/src/dashboard/Dashboard.css';
 
@@ -20,6 +23,7 @@ export const MainLayout: React.FC = () => {
     const navigate = useNavigate();
     const location = useLocation();
     const {projects, activeProject, activeProjectId, setActiveProjectId} = useProjects();
+  const { t } = useLanguage();
 
     const userName = localStorage.getItem('userName') || 'Bauleiter';
     const userProfile = (() => {
@@ -63,31 +67,31 @@ export const MainLayout: React.FC = () => {
                         onClick={() => navigate('/dashboard')}
                     >
                         <LayoutDashboard size={18}/>
-                        <span>Dashboard</span>
+                        <span>{t('nav_dashboard')}</span>
                     </button>
 
                     <button
                         className={`nav-item ${isActive('/capture') ? 'active' : ''}`}
-                        onClick={() => navigate('/dashboard')}
+                        onClick={() => navigate('/capture')}
                     >
                         <Mic size={18}/>
-                        <span>Sprach- & Schnell-Erfassung</span>
+                        <span>{t('nav_capture')}</span>
                     </button>
 
                     <button
                         className={`nav-item ${isActive('/reports') ? 'active' : ''}`}
-                        onClick={() => navigate('/dashboard')}
+                        onClick={() => navigate('/reports')}
                     >
                         <FileText size={18}/>
-                        <span>Bautagesberichte</span>
+                        <span>{t('nav_reports')}</span>
                     </button>
 
                     <button
-                        className={`nav-item ${isActive('/alerts') ? 'active' : ''}`}
-                        onClick={() => navigate('/dashboard')}
+                        className={`nav-item ${isActive('/analysis') || isActive('/alerts') ? 'active' : ''}`}
+                        onClick={() => navigate('/analysis')}
                     >
-                        <AlertTriangle size={18}/>
-                        <span>Abweichungs-Alerts</span>
+                        <TrendingUp size={18}/>
+                        <span>{t('nav_analysis')}</span>
                         <span className="nav-badge">2</span>
                     </button>
 
@@ -96,7 +100,15 @@ export const MainLayout: React.FC = () => {
                         onClick={() => navigate('/drafts')}
                     >
                         <Mail size={18}/>
-                        <span>Brief- & Mängelentwürfe</span>
+                        <span>{t('nav_drafts')}</span>
+          </button>
+
+          <button
+            className={`nav-item ${isActive('/summary') ? 'active' : ''}`}
+            onClick={() => navigate('/summary')}
+          >
+            <BookOpen size={18} />
+            <span>{t('nav_summary')}</span>
                     </button>
 
                     <button
@@ -104,7 +116,7 @@ export const MainLayout: React.FC = () => {
                         onClick={() => navigate('/projects')}
                     >
                         <FolderKanban size={18}/>
-                        <span>Projekte</span>
+                        <span>{t('nav_projects')}</span>
                     </button>
 
                     <button
@@ -112,7 +124,7 @@ export const MainLayout: React.FC = () => {
                         onClick={() => navigate('/profile')}
                     >
                         <User size={18}/>
-                        <span>Mein Profil</span>
+                        <span>{t('nav_profile')}</span>
                     </button>
                 </nav>
 
@@ -143,7 +155,7 @@ export const MainLayout: React.FC = () => {
                             htmlFor="globalProjectSelect"
                             style={{fontSize: '13px', fontWeight: 600, color: 'var(--color-slate-600)'}}
                         >
-                            Aktives Bauprojekt:
+                            {t('hdr_active_project')}
                         </label>
                         <select
                             id="globalProjectSelect"
@@ -172,12 +184,15 @@ export const MainLayout: React.FC = () => {
                     <div className="header-actions">
                         <div className="header-info-tag">
                             <CloudSun size={16}/>
-                            <span>{siteLocation}: 9°C • Trocken</span>
+                            <span>{siteLocation}: 9°C • {t('hdr_weather_dry')}</span>
                         </div>
 
-                        <button className="btn btn-danger" onClick={handleLogout} title="Abmelden">
+                        {/* Language Switcher Button in top right header */}
+            <LanguageSwitcher />
+
+            <button className="btn btn-danger" onClick={handleLogout} title={t('nav_logout')}>
                             <LogOut size={16}/>
-                            <span>Abmelden</span>
+                            <span>{t('nav_logout')}</span>
                         </button>
                     </div>
                 </header>

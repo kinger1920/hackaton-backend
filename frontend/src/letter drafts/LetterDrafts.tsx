@@ -13,6 +13,7 @@ import {
     Edit3
 } from 'lucide-react';
 import {useProjects} from '../context/ProjectContext';
+import { useLanguage } from '../context/LanguageContext';
 import '@frontend/src/index.css';
 import './LetterDrafts.css';
 
@@ -81,16 +82,17 @@ const PRESETS: Record<LetterCategory, string[]> = {
 };
 
 export const LetterDrafts: React.FC = () => {
-    const {activeProject} = useProjects();
-    const userName = localStorage.getItem('userName') || 'Max Mustermann';
-    const userProfile = (() => {
-        try {
-            return JSON.parse(localStorage.getItem('userProfile') || '');
-        } catch {
-            return null;
-        }
-    })();
-    const companyName = userProfile?.company || 'Baupartner AG & Co. KG';
+    const { t } = useLanguage();
+  const { activeProject } = useProjects();
+  const userName = localStorage.getItem('userName') || 'Max Mustermann';
+  const userProfile = (() => {
+    try {
+      return JSON.parse(localStorage.getItem('userProfile') || '');
+    } catch {
+      return null;
+    }
+  })();
+  const companyName = userProfile?.company || 'Baupartner AG & Co. KG';
 
     const [selectedType, setSelectedType] = useState<LetterCategory>('delay');
     const [recipient, setRecipient] = useState(activeProject.client || 'Städtisches Hochbauamt');
@@ -295,17 +297,14 @@ p { margin-bottom: 10pt; white-space: pre-wrap; }
             {/* Header */}
             <div className="drafts-header">
                 <div>
-                    <h1>Smart Drafts für VOB-Schriftverkehr</h1>
-                    <p>
-                        Erstellen Sie aus wenigen Stichworten rechtssichere Entwürfe für Behinderungsanzeigen,
-                        Mehrkosten, Mängelrügen & Bedenken.
-                    </p>
-                </div>
+                    <h1>{t('drafts_title')}</h1>
+          <p>{t('drafts_sub')}</p>
+        </div>
 
                 {saveSuccess && (
                     <div className="toast-success">
                         <CheckCircle2 size={16}/>
-                        <span>Entwurf gespeichert!</span>
+                        <span>{t('btn_save')}!</span>
                     </div>
                 )}
             </div>
@@ -315,32 +314,40 @@ p { margin-bottom: 10pt; white-space: pre-wrap; }
                 <div className="generator-card">
                     <div>
                         <label className="form-label" style={{marginBottom: '8px'}}>
-                            1. Art des Schreibens auswählen
+                            1. {t('drafts_title')}
                         </label>
                         <div className="type-selector-grid">
-                            {LETTER_TYPES.map((t) => (
-                                <button
-                                    key={t.id}
-                                    type="button"
-                                    className={`type-btn ${selectedType === t.id ? 'active' : ''}`}
-                                    onClick={() => setSelectedType(t.id)}
-                                >
-                  <span className="type-btn-title">
-                    {t.icon}
-                      <span>{t.name}</span>
-                  </span>
-                                    <span style={{fontSize: '11px', fontWeight: 600, color: 'var(--color-primary)'}}>
-                    {t.paragraph}
-                  </span>
-                                    <span className="type-btn-sub">{t.desc}</span>
-                                </button>
-                            ))}
+                            {LETTER_TYPES.map((lt) => {
+                const labelMap: Record<LetterCategory, string> = {
+                  delay: t('drafts_type_delay'),
+                  cost: t('drafts_type_cost'),
+                  defect: t('drafts_type_defect'),
+                  concern: t('drafts_type_concern')
+                };
+                return (
+                  <button
+                    key={lt.id}
+                    type="button"
+                    className={`type-btn ${selectedType === lt.id ? 'active' : ''}`}
+                    onClick={() => setSelectedType(lt.id)}
+                  >
+                    <span className="type-btn-title">
+                      {lt.icon}
+                      <span>{labelMap[lt.id]}</span>
+                    </span>
+                    <span style={{ fontSize: '11px', fontWeight: 600, color: 'var(--color-primary)' }}>
+                      {lt.paragraph}
+                    </span>
+                    <span className="type-btn-sub">{lt.desc}</span>
+                  </button>
+                );
+                            })}
                         </div>
                     </div>
 
                     <div className="form-group">
                         <label className="form-label" htmlFor="recipientInput">
-                            2. Empfänger (Auftraggeber / Nachunternehmer)
+                            2. {t('drafts_label_recipient')}
                         </label>
                         <input
                             id="recipientInput"
@@ -348,26 +355,26 @@ p { margin-bottom: 10pt; white-space: pre-wrap; }
                             type="text"
                             value={recipient}
                             onChange={(e) => setRecipient(e.target.value)}
-                            placeholder="Name des Empfängers / Firma"
+                            placeholder={t('drafts_label_recipient')}
                         />
                     </div>
 
                     <div className="form-group">
                         <label className="form-label" htmlFor="keywordsInput">
-                            3. Baustellen-Situation / Stichworte eingeben *
+                            3. {t('drafts_label_keywords')} *
                         </label>
                         <textarea
                             id="keywordsInput"
                             className="form-textarea"
                             rows={4}
-                            placeholder="Schildern Sie die Situation in Stichworten, z. B.: 'Bagger seit 10 Uhr stillgelegt, weil Freigabe der TGA-Durchbrüche fehlt. 3 Mann Tiefbau blockiert.'"
+                            placeholder="z. B.: Bagger stillgelegt, Freigabe fehlt..."
                             value={keywords}
                             onChange={(e) => setKeywords(e.target.value)}
                         />
 
                         <div>
               <span style={{fontSize: '12px', color: 'var(--text-muted)'}}>
-                Beispiele für {LETTER_TYPES.find((t) => t.id === selectedType)?.name}:
+                Beispiele:
               </span>
                             <div className="preset-chips">
                                 {PRESETS[selectedType].map((preset, idx) => (
@@ -392,7 +399,7 @@ p { margin-bottom: 10pt; white-space: pre-wrap; }
                         onClick={handleGenerate}
                     >
                         <Sparkles size={18}/>
-                        <span>{isGenerating ? 'KI generiert VOB-Entwurf...' : 'Schreiben aus Stichworten generieren'}</span>
+                        <span>{isGenerating ? t('dash_btn_gen_draft') : t('drafts_btn_generate')}</span>
                     </button>
                 </div>
 
@@ -402,31 +409,31 @@ p { margin-bottom: 10pt; white-space: pre-wrap; }
                         <div style={{display: 'flex', alignItems: 'center', gap: '8px'}}>
                             <Edit3 size={16} color="var(--color-primary)"/>
                             <span style={{fontSize: '13px', fontWeight: 600}}>
-                Interaktiver Entwurf (Human-in-the-Loop)
+                {t('drafts_paper_view_title')}
               </span>
                         </div>
 
                         <div style={{display: 'flex', gap: '8px'}}>
-                            <button className="doc-btn" onClick={handleCopy} title="In die Zwischenablage kopieren">
+                            <button className="doc-btn" onClick={handleCopy} title={t('btn_copy')}>
                                 <Copy size={14}/>
-                                <span>{copySuccess ? 'Kopiert!' : 'Kopieren'}</span>
+                                <span>{copySuccess ? t('btn_copied') : t('btn_copy')}</span>
                             </button>
 
                             <button className="doc-btn" onClick={handleDownloadDocx}
-                                    title="Als Word (.doc) herunterladen">
+                                    title={t('btn_word_export')}>
                                 <Download size={14}/>
-                                <span>Word</span>
+                                <span>{t('btn_word_export')}</span>
                             </button>
 
-                            <button className="doc-btn" onClick={handlePrint} title="Drucken / PDF erzeugen">
+                            <button className="doc-btn" onClick={handlePrint} title={t('btn_pdf_export')}>
                                 <Printer size={14}/>
-                                <span>Drucken</span>
+                                <span>{t('btn_print')}</span>
                             </button>
 
                             <button className="btn btn-primary" style={{padding: '6px 12px', fontSize: '13px'}}
                                     onClick={handleSaveToDrafts}>
                                 <Save size={14}/>
-                                <span>Speichern</span>
+                                <span>{t('btn_save')}</span>
                             </button>
                         </div>
                     </div>
@@ -436,13 +443,13 @@ p { margin-bottom: 10pt; white-space: pre-wrap; }
                         <div className="paper-header">
                             <div>
                                 <strong>{companyName}</strong>
-                                <div>Bauleitung: {userName}</div>
-                                <div>Projekt: {activeProject.name} ({activeProject.number})</div>
+                                <div>{t('role_site_manager')}: {userName}</div>
+                                <div>{t('drafts_label_project')}: {activeProject.name} ({activeProject.number})</div>
                             </div>
                             <div style={{textAlign: 'right'}}>
-                                <div>Datum: {new Date().toLocaleDateString('de-DE')}</div>
-                                <div>Empfänger: <strong>{recipient}</strong></div>
-                                <div>Einsatzort: {activeProject.location}</div>
+                                <div>{t('drafts_label_date')}: {new Date().toLocaleDateString('de-DE')}</div>
+                                <div>{t('drafts_label_recipient')}: <strong>{recipient}</strong></div>
+                                <div>Standort: {activeProject.location}</div>
                             </div>
                         </div>
 
@@ -451,7 +458,7 @@ p { margin-bottom: 10pt; white-space: pre-wrap; }
                             className="letter-subject"
                             value={subject}
                             onChange={(e) => setSubject(e.target.value)}
-                            title="Klicken zum Anpassen des Betreffs"
+                            title="Subject"
                             style={{
                                 width: '100%',
                                 border: 'none',
@@ -460,19 +467,18 @@ p { margin-bottom: 10pt; white-space: pre-wrap; }
                             }}
                         />
 
-                        <textarea
-                            className="letter-body-editable"
-                            value={letterBody}
-                            onChange={(e) => setLetterBody(e.target.value)}
-                            title="Sie können diesen Text vor Versand direkt anpassen"
-                        />
-                    </div>
+            <textarea
+              className="letter-body-editable"
+              value={letterBody}
+              onChange={(e) => setLetterBody(e.target.value)}
+            />
+          </div>
 
                     {/* Legal Disclaimer / Constraint Banner */}
                     <div className="legal-notice-banner">
                         <AlertTriangle size={16} style={{flexShrink: 0}}/>
                         <span>
-              <strong>Rechtlicher Hinweis:</strong> Dies ist ein KI-generierter Entwurf zur Arbeitserleichterung und stellt keine Rechtsberatung dar. Prüfung und Freigabe liegen vor Versand eigenverantwortlich bei der Bauleitung.
+              {t('drafts_legal_disclaimer')}
             </span>
                     </div>
                 </div>

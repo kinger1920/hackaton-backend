@@ -1,11 +1,14 @@
 import React, {useState} from 'react';
 import {useNavigate} from 'react-router-dom';
 import {HardHat, ArrowRight} from 'lucide-react';
+import { useLanguage } from '../context/LanguageContext';
+import LanguageSwitcher from '../components/LanguageSwitcher';
 import '@frontend/src/index.css';
 
 export const Login: React.FC = () => {
     const [name, setName] = useState('');
     const navigate = useNavigate();
+  const { t } = useLanguage();
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
@@ -18,14 +21,19 @@ export const Login: React.FC = () => {
     return (
         <div
             style={{
-                display: 'flex',
-                justifyContent: 'center',
-                alignItems: 'center',
-                minHeight: '100vh',
-                backgroundColor: 'var(--color-slate-900)',
-                padding: '20px'
-            }}
-        >
+                position: 'relative',
+        display: 'flex',
+        justifyContent: 'center',
+        alignItems: 'center',
+        minHeight: '100vh',
+        backgroundColor: 'var(--color-slate-900)',
+        padding: '20px'
+      }}
+    >
+      {/* Top right language switcher on login page */}
+      <div style={{ position: 'fixed', top: '20px', right: '24px', zIndex: 100 }}>
+        <LanguageSwitcher />
+      </div>
             <form
                 onSubmit={handleSubmit}
                 className="card"
@@ -73,12 +81,12 @@ export const Login: React.FC = () => {
                         textAlign: 'center'
                     }}
                 >
-                    Bitte geben Sie Ihren Namen ein, um fortzufahren
+                    {t('login_subtitle')}
                 </p>
 
                 <div className="form-group" style={{marginBottom: '20px'}}>
                     <label htmlFor="nameInput" className="form-label">
-                        Name
+                        {t('login_name_label')}
                     </label>
                     <input
                         id="nameInput"
@@ -93,7 +101,7 @@ export const Login: React.FC = () => {
                 </div>
 
                 <button type="submit" className="btn btn-primary" style={{width: '100%', padding: '13px'}}>
-                    <span>Submit</span>
+                    <span>{t('login_btn')}</span>
                     <ArrowRight size={18}/>
                 </button>
             </form>
