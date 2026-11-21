@@ -11,6 +11,7 @@ import {
   Plus
 } from 'lucide-react';
 import { useProjects } from '../context/ProjectContext';
+import { useLanguage } from '../context/LanguageContext';
 import '@frontend/src/index.css';
 import './Profile.css';
 
@@ -58,6 +59,7 @@ const DEFAULT_PROFILE: UserProfileData = {
 
 export const Profile: React.FC = () => {
   const navigate = useNavigate();
+  const { t } = useLanguage();
   const { projects, activeProject, activeProjectId, setActiveProjectId } = useProjects();
 
   const [profile, setProfile] = useState<UserProfileData>(DEFAULT_PROFILE);
@@ -197,7 +199,7 @@ export const Profile: React.FC = () => {
                 <User size={20} />
               </div>
               <div>
-                <h2 className="section-title">Persönliche Daten</h2>
+                <h2 className="section-title">{t('prof_sec_personal')}</h2>
                 <p className="section-desc">Ihre Kontaktdaten für Bautagesberichte und Korrespondenz</p>
               </div>
             </div>
@@ -271,7 +273,7 @@ export const Profile: React.FC = () => {
                 <HardHat size={20} />
               </div>
               <div>
-                <h2 className="section-title">Rolle & Zeichnungsbefugnisse</h2>
+                <h2 className="section-title">{t('prof_sec_role')}</h2>
                 <p className="section-desc">Ihre Funktion im Bauprojekt und Freigabeberechtigungen</p>
               </div>
             </div>
@@ -348,7 +350,7 @@ export const Profile: React.FC = () => {
                 <Briefcase size={20} />
               </div>
               <div>
-                <h2 className="section-title">Derzeitiges Bauprojekt</h2>
+                <h2 className="section-title">{t('hdr_active_project')}</h2>
                 <p className="section-desc">Wählen Sie das Projekt einfach aus der Liste Ihrer Bauprojekte aus</p>
               </div>
             </div>
@@ -451,7 +453,7 @@ export const Profile: React.FC = () => {
                 <MapPin size={20} />
               </div>
               <div>
-                <h2 className="section-title">Arbeitsort & Standort</h2>
+                <h2 className="section-title">{t('prof_sec_location')}</h2>
                 <p className="section-desc">Standort der Baustelle und primärer Arbeitsplatz</p>
               </div>
             </div>
@@ -521,7 +523,7 @@ export const Profile: React.FC = () => {
               style={{ padding: '12px 24px', fontSize: '15px' }}
             >
               <Save size={18} />
-              <span>Profil speichern</span>
+              <span>{t('prof_btn_save')}</span>
             </button>
           </div>
         </form>

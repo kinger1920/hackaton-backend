@@ -14,6 +14,7 @@ import {
 import './Dashboard.css';
 import '@frontend/src/index.css';
 import { useProjects } from '../context/ProjectContext';
+import { useLanguage } from '../context/LanguageContext';
 
 interface DraftItem {
   id: string;
@@ -25,7 +26,8 @@ interface DraftItem {
 
 export const Dashboard: React.FC = () => {
   const navigate = useNavigate();
-  const userName = localStorage.getItem('userName') || 'Bauleiter';
+  const { t } = useLanguage();
+  const userName = localStorage.getItem('userName') || t('role_site_manager');
   const { activeProject } = useProjects();
 
   const [quickNote, setQuickNote] = useState('');
@@ -86,41 +88,51 @@ export const Dashboard: React.FC = () => {
       {/* Welcome Hero Banner */}
       <section className="welcome-hero">
         <div>
-          <h1 className="welcome-title">Hallo, {userName}!</h1>
+          <h1 className="welcome-title">{t('dash_hello')}, {userName}!</h1>
           <p className="welcome-desc">
-            Aktives Bauprojekt: <strong>{activeProject.name}</strong> ({activeProject.number}) • Phase: {activeProject.phase}
+            {t('hdr_active_project')} <strong>{activeProject.name}</strong> ({activeProject.number}) • {t('dash_phase')}: {activeProject.phase}
           </p>
         </div>
         <div className="hero-stats">
           <div className="hero-stat-card">
             <div className="hero-stat-number">2</div>
-            <div className="hero-stat-label">Akute Fristen</div>
+            <div className="hero-stat-label">{t('dash_stat_deadlines')}</div>
           </div>
           <div className="hero-stat-card">
             <div className="hero-stat-number">{drafts.length}</div>
-            <div className="hero-stat-label">Offene Entwürfe</div>
+            <div className="hero-stat-label">{t('dash_stat_open_drafts')}</div>
           </div>
         </div>
       </section>
 
       {/* KPI Summary Cards */}
       <section className="kpi-grid">
-        <div className="kpi-card">
+        <div
+          className="kpi-card"
+          onClick={() => navigate('/reports')}
+          style={{ cursor: 'pointer' }}
+          title={t('dash_kpi_diary')}
+        >
           <div>
-            <div className="kpi-label">Bautagesbericht</div>
+            <div className="kpi-label">{t('dash_kpi_diary')}</div>
             <div className="kpi-value">1 Offen</div>
-            <div className="kpi-sub">Fällig bis 18:00 Uhr</div>
+            <div className="kpi-sub">{t('dash_kpi_diary_sub')}</div>
           </div>
           <div className="kpi-icon" style={{ backgroundColor: '#eff6ff', color: '#2563eb' }}>
             <FileText size={24} />
           </div>
         </div>
 
-        <div className="kpi-card">
+        <div
+          className="kpi-card"
+          onClick={() => navigate('/analysis')}
+          style={{ cursor: 'pointer' }}
+          title={t('dash_btn_full_analysis')}
+        >
           <div>
-            <div className="kpi-label">Kritische Abweichungen</div>
+            <div className="kpi-label">{t('dash_kpi_alerts')}</div>
             <div className="kpi-value">2 Alerts</div>
-            <div className="kpi-sub alert">Handlungsbedarf nach VOB</div>
+            <div className="kpi-sub alert">{t('dash_kpi_alerts_sub')}</div>
           </div>
           <div className="kpi-icon" style={{ backgroundColor: '#fef2f2', color: '#dc2626' }}>
             <AlertTriangle size={24} />
@@ -129,9 +141,9 @@ export const Dashboard: React.FC = () => {
 
         <div className="kpi-card">
           <div>
-            <div className="kpi-label">Schriftverkehr-Entwürfe</div>
+            <div className="kpi-label">{t('dash_kpi_drafts')}</div>
             <div className="kpi-value">{drafts.length} Bereit</div>
-            <div className="kpi-sub">Prüfung & Freigabe nötig</div>
+            <div className="kpi-sub">{t('dash_kpi_drafts_sub')}</div>
           </div>
           <div className="kpi-icon" style={{ backgroundColor: '#f0fdf4', color: '#16a34a' }}>
             <Mail size={24} />
@@ -140,9 +152,9 @@ export const Dashboard: React.FC = () => {
 
         <div className="kpi-card">
           <div>
-            <div className="kpi-label">Anwesende Fachkräfte</div>
+            <div className="kpi-label">{t('dash_kpi_workers')}</div>
             <div className="kpi-value">34 Personen</div>
-            <div className="kpi-sub">4 Gewerke auf Baustelle</div>
+            <div className="kpi-sub">{t('dash_kpi_workers_sub')}</div>
           </div>
           <div className="kpi-icon" style={{ backgroundColor: '#f8fafc', color: '#475569' }}>
             <Users size={24} />
@@ -159,14 +171,14 @@ export const Dashboard: React.FC = () => {
             <div className="panel-header">
               <h2 className="panel-title">
                 <Sparkles size={20} color="#2563eb" />
-                <span>KI-Schnellerfassung & Sprachnotiz</span>
+                <span>{t('dash_capture_title')}</span>
               </h2>
             </div>
 
             <div className="capture-box">
               <textarea
                 className="form-textarea capture-textarea"
-                placeholder="Schildern Sie kurz die Baustellen-Situation oder klicken Sie auf das Mikrofon (z. B. 'Bagger stillgelegt wegen fehlender Leitungspläne...')"
+                placeholder={t('dash_capture_placeholder')}
                 value={quickNote}
                 onChange={(e) => setQuickNote(e.target.value)}
               />
@@ -178,7 +190,27 @@ export const Dashboard: React.FC = () => {
                   onClick={handleMicToggle}
                 >
                   <Mic size={16} />
-                  <span>{isRecording ? 'Sprachaufnahme läuft...' : 'Diktat starten'}</span>
+                  <span>{isRecording ? t('dash_mic_running') : t('dash_mic_start')}</span>
+                </button>
+
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  onClick={() => navigate('/capture')}
+                  title={t('dash_btn_open_capture')}
+                >
+                  <Mic size={16} />
+                  <span>{t('dash_btn_open_capture')}</span>
+                </button>
+
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  onClick={() => navigate('/reports')}
+                  title={t('dash_btn_to_diary')}
+                >
+                  <FileText size={16} />
+                  <span>{t('dash_btn_to_diary')}</span>
                 </button>
 
                 <button
@@ -188,7 +220,7 @@ export const Dashboard: React.FC = () => {
                   disabled={!quickNote.trim()}
                 >
                   <Sparkles size={16} />
-                  <span>Briefentwurf erzeugen</span>
+                  <span>{t('dash_btn_gen_draft')}</span>
                 </button>
               </div>
             </div>
@@ -196,29 +228,37 @@ export const Dashboard: React.FC = () => {
 
           {/* Deviations & Critical Alerts */}
           <div className="panel">
-            <div className="panel-header">
+            <div className="panel-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <h2 className="panel-title">
                 <AlertTriangle size={20} color="#dc2626" />
-                <span>Erkannte Abweichungen & Handlungsempfehlungen</span>
+                <span>{t('dash_deviations_title')}</span>
               </h2>
+              <button
+                type="button"
+                className="history-btn-small"
+                onClick={() => navigate('/analysis')}
+                style={{ color: '#dc2626', fontWeight: 600 }}
+              >
+                <span>{t('dash_btn_full_analysis')}</span>
+              </button>
             </div>
 
             <div className="alerts-list">
               <div className="alert-item">
-                <span className="badge badge-danger">Dringend</span>
+                <span className="badge badge-danger">{t('status_urgent')}</span>
                 <div className="alert-content">
                   <div className="alert-title">Verzug bei TGA-Schlitz- und Durchbruchsplanung</div>
                   <div className="alert-desc">
                     Planlieferung seit 4 Tagen überfällig. Trockenbauarbeiten im 1. OG drohen ab Montag zu stocken.
                   </div>
                   <span className="alert-action-link" onClick={() => navigate('/drafts')}>
-                    → Jetzt Behinderungsanzeige nach VOB/B entwerfen
+                    → {t('drafts_type_delay')}
                   </span>
                 </div>
               </div>
 
               <div className="alert-item warning">
-                <span className="badge badge-warning">Hinweis</span>
+                <span className="badge badge-warning">{t('status_warning')}</span>
                 <div className="alert-content">
                   <div className="alert-title">Wetterwarnung: Dauerregen & Starkwind am Freitag</div>
                   <div className="alert-desc">
@@ -239,7 +279,7 @@ export const Dashboard: React.FC = () => {
             <div className="panel-header">
               <h2 className="panel-title">
                 <Clock size={20} color="#2563eb" />
-                <span>Schriftverkehr & Entwürfe</span>
+                <span>{t('dash_drafts_title')}</span>
               </h2>
             </div>
 
@@ -257,10 +297,12 @@ export const Dashboard: React.FC = () => {
                   </div>
 
                   <div className="doc-actions">
-                    <span className="doc-status-badge">{draft.status}</span>
+                    <span className="doc-status-badge">
+                      {draft.status === 'Freigegeben' ? t('status_approved') : t('status_draft')}
+                    </span>
                     <button
                       className="doc-btn"
-                      title="Als PDF / Word exportieren"
+                      title={t('btn_word_export')}
                       onClick={() => alert(`Export von: "${draft.title}" als DOCX/PDF gestartet`)}
                     >
                       <FileDown size={14} />
