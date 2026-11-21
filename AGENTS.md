@@ -100,6 +100,10 @@ export DYLD_FALLBACK_LIBRARY_PATH=/opt/homebrew/lib
 
 Without Pango the PDF endpoint returns `503` and the PDF test is skipped; Word export (`/docx`) works without system libraries. Linux/Docker: install `libpango-1.0-0 libpangoft2-1.0-0`.
 
+### Demo Data for Summaries
+
+`POST /api/summarize` summarizes a week/month of daily reports, site notes and notices (or a free text such as an email). To get demo daily reports (workdays 02.11.–20.11.2026) run `cd backend && DATABASE_URL=sqlite:///path/to/copy.db uv run python scripts/seed_reports.py`. Without `DATABASE_URL` it writes into the tracked `data/site_assistant.db` – do not commit that.
+
 ---
 
 ## 7. Guidelines for Coding Agents

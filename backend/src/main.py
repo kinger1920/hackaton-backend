@@ -17,6 +17,7 @@ from src.routers.projects import router as projects_router
 from src.routers.contracts import router as contracts_router
 from src.routers.ai import router as ai_router
 from src.routers.notices import router as notices_router
+from src.routers.summary import router as summary_router
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -51,6 +52,7 @@ app.include_router(projects_router)
 app.include_router(contracts_router)
 app.include_router(ai_router)
 app.include_router(notices_router)
+app.include_router(summary_router)
 
 @app.get("/")
 async def root():
