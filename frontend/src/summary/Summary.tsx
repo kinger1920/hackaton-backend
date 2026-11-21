@@ -756,8 +756,8 @@ ${summaryData.vobRisks.map((r) => `<p><strong>${r.title}</strong><br/>${r.descri
 };
 
 // Situation-adaptive summary builder based on project situation
-function buildInitialSummaryForProject(projectId: string, projectName: string, projectNumber: string): SummaryResult {
-  if (projectId === 'proj-2') {
+function buildInitialSummaryForProject(projectId: string | number, projectName: string, projectNumber: string): SummaryResult {
+  if (String(projectId) === '2' || (projectId as any) === 'proj-2') {
     // Wohnquartier Spreebogen
     return {
       title: `Baustellen-Zusammenfassung • ${projectName}`,
@@ -810,7 +810,7 @@ function buildInitialSummaryForProject(projectId: string, projectName: string, p
       ],
       traceabilityNotes: `Extrahiert aus Bautagesbericht Nr. 67, Baubesprechung Nr. 8 & WSA-Bescheid für ${projectName} (${projectNumber}).`
     };
-  } else if (projectId === 'proj-3') {
+  } else if (String(projectId) === '3' || (projectId as any) === 'proj-3') {
     // Sanierung Bürokomplex Am Tiergarten
     return {
       title: `Sanierungs- & Schadstoff-Zusammenfassung • ${projectName}`,
@@ -919,7 +919,7 @@ function buildInitialSummaryForProject(projectId: string, projectName: string, p
   }
 }
 
-function buildSummaryForSpecificSituation(projectId: string, projectName: string, _source: DocumentSourceType | 'upload'): SummaryResult {
+function buildSummaryForSpecificSituation(projectId: string | number, projectName: string, _source: DocumentSourceType | 'upload'): SummaryResult {
   return buildInitialSummaryForProject(projectId, projectName, 'PRJ-AKTUELL');
 }
 

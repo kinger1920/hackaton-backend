@@ -26,6 +26,7 @@ import {
   ProjectDocumentItem
 } from '../context/ProjectDocuments';
 import { useLanguage } from '../context/LanguageContext';
+import { api } from '../services/api';
 import '@frontend/src/index.css';
 import './DailyReports.css';
 
@@ -69,13 +70,41 @@ export const DailyReports: React.FC = () => {
   const [savedSuccessMsg, setSavedSuccessMsg] = useState(false);
 
   // Load project diary entries whenever project changes or custom event fires
-  const loadHistory = () => {
-    const entries = getDiaryEntriesForProject(activeProject.id);
-    setDiaryHistory(entries);
+  const loadHistory = async () => {
+    const localEntries = getDiaryEntriesForProject(activeProject.id);
+    let combined = [...localEntries];
+
+    try {
+      const backendNotes = await api.listSiteNotes(Number(activeProject.id));
+      if (backendNotes && backendNotes.length > 0) {
+        const mappedNotes: ProjectDocumentItem[] = backendNotes.map((bn) => ({
+          id: `backend-note-${bn.id}`,
+          projectId: bn.project_id,
+          type: 'diary',
+          title: `Tagebuchnotiz #${bn.id} (${bn.category || 'allgemein'})`,
+          date: new Date(bn.created_at).toLocaleDateString('de-DE'),
+          authorOrSender: bn.author || userName,
+          content: bn.content,
+          trades: ['Bautagebuch'],
+          hindrance: bn.category === 'delay' || bn.category === 'incident' ? bn.content : undefined
+        }));
+
+        const existingIds = new Set(combined.map((c) => c.id));
+        mappedNotes.forEach((mn) => {
+          if (!existingIds.has(mn.id)) {
+            combined.push(mn);
+          }
+        });
+      }
+    } catch (err) {
+      console.warn('Backend listSiteNotes Fallback:', err);
+    }
+
+    setDiaryHistory(combined);
 
     // Auto-calculate next report number based on history
-    if (entries.length > 0) {
-      const match = entries[0].title.match(/Nr\.\s*(\d+)/i);
+    if (combined.length > 0) {
+      const match = combined[0].title.match(/Nr\.\s*(\d+)/i);
       if (match && match[1]) {
         const nextNum = parseInt(match[1], 10) + 1;
         setReportNumber(String(nextNum));
@@ -86,7 +115,9 @@ export const DailyReports: React.FC = () => {
   useEffect(() => {
     loadHistory();
 
-    const handleUpdate = () => loadHistory();
+    const handleUpdate = () => {
+      loadHistory();
+    };
     window.addEventListener('project-documents-updated', handleUpdate);
     return () => window.removeEventListener('project-documents-updated', handleUpdate);
   }, [activeProject.id]);
@@ -149,8 +180,8 @@ export const DailyReports: React.FC = () => {
     }
   };
 
-  // Action: Save new entry to project documents
-  const handleSaveReport = () => {
+  // Action: Save new entry to project documents & backend site notes
+  const handleSaveReport = async () => {
     const title = `Bautagesbericht Nr. ${reportNumber} — ${progressText.slice(0, 35)}...`;
     const fullContent = `Bautagesbericht Nr. ${reportNumber} — Datum: ${reportDate}
 Projekt: ${activeProject.name} (${activeProject.number})
@@ -180,6 +211,18 @@ ${referencedDoc ? `[Bezug auf Vorbericht: ${referencedDoc.title} (${referencedDo
     };
 
     saveProjectDocument(newDoc);
+
+    try {
+      await api.createSiteNote({
+        project_id: Number(activeProject.id),
+        content: fullContent,
+        category: hindranceText ? 'incident' : 'progress',
+        author: userName
+      });
+    } catch (err) {
+      console.warn('Backend createSiteNote Fallback:', err);
+    }
+
     loadHistory();
     setSavedSuccessMsg(true);
     setTimeout(() => setSavedSuccessMsg(false), 4000);

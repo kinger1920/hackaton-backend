@@ -47,6 +47,34 @@ def init_db() -> None:
         import src.models  # noqa: F401
 
     SQLModel.metadata.create_all(engine)
+    add_missing_columns(engine)
+
+
+def add_missing_columns(target: Engine) -> list[str]:
+    """Trägt neue, nullable Spalten in bestehende SQLite-Tabellen nach (idempotent).
+
+    Warum: `create_all` legt nur fehlende TABELLEN an, ergänzt aber keine Spalten in
+    vorhandenen. Ohne diesen Schritt müsste jeder seine DB löschen, sobald ein Modell ein
+    neues Feld bekommt. Nur nullable Spalten ohne Default werden ergänzt (sicher per ALTER).
+    Output: Liste der ergänzten Spalten ("tabelle.spalte").
+    """
+    from sqlalchemy import inspect, text
+
+    added: list[str] = []
+    inspector = inspect(target)
+    existing_tables = set(inspector.get_table_names())
+    with target.begin() as conn:
+        for table in SQLModel.metadata.sorted_tables:
+            if table.name not in existing_tables:
+                continue
+            present = {c["name"] for c in inspector.get_columns(table.name)}
+            for column in table.columns:
+                if column.name in present or not column.nullable or column.primary_key:
+                    continue
+                col_type = column.type.compile(dialect=target.dialect)
+                conn.execute(text(f'ALTER TABLE "{table.name}" ADD COLUMN "{column.name}" {col_type}'))
+                added.append(f"{table.name}.{column.name}")
+    return added
 
 
 def get_session() -> Generator[Session, None, None]:
