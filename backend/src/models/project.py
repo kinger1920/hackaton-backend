@@ -24,6 +24,16 @@ class ProjectCreate(ProjectBase):
     pass
 
 
+class ProjectUpdate(SQLModel):
+    name: Optional[str] = None
+    number: Optional[str] = None
+    client: Optional[str] = None
+    location: Optional[str] = None
+    phase: Optional[str] = None
+    status: Optional[str] = None
+    description: Optional[str] = None
+
+
 class ProjectRead(ProjectBase):
     id: int
     created_at: datetime

@@ -27,25 +27,30 @@ export const Projects: React.FC = () => {
         description: ''
     });
 
-    const handleCreate = (e: React.FormEvent) => {
+    const handleCreate = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!formData.name.trim()) return;
 
-        addProject({
-            ...formData,
-            number: formData.number.trim() || `PRJ-${new Date().getFullYear()}-${Math.floor(100 + Math.random() * 900)}`
-        });
+        try {
+            await addProject({
+                ...formData,
+                number: formData.number.trim() || `PRJ-${new Date().getFullYear()}-${Math.floor(100 + Math.random() * 900)}`
+            });
 
-        setFormData({
-            name: '',
-            number: '',
-            client: '',
-            location: '',
-            phase: 'Rohbau',
-            status: 'Aktiv',
-            description: ''
-        });
-        setShowCreateForm(false);
+            setFormData({
+                name: '',
+                number: '',
+                client: '',
+                location: '',
+                phase: 'Rohbau',
+                status: 'Aktiv',
+                description: ''
+            });
+            setShowCreateForm(false);
+        } catch (err) {
+            console.error(err);
+            alert('Projekt konnte nicht gespeichert werden.');
+        }
     };
 
     return (
@@ -268,9 +273,14 @@ export const Projects: React.FC = () => {
                                     className="btn btn-danger"
                                     style={{padding: '6px 10px', fontSize: '12px'}}
                                     title="Projekt löschen"
-                                    onClick={() => {
+                                    onClick={async () => {
                                         if (window.confirm(`Möchten Sie das Projekt "${proj.name}" wirklich löschen?`)) {
-                                            deleteProject(proj.id);
+                                            try {
+                                                await deleteProject(proj.id);
+                                            } catch (err) {
+                                                console.error(err);
+                                                alert('Projekt konnte nicht gelöscht werden. Läuft das Backend?');
+                                            }
                                         }
                                     }}
                                 >
