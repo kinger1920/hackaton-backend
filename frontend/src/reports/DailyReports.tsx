@@ -127,7 +127,7 @@ export const DailyReports: React.FC = () => {
 
   // Idee #2: Wetter automatisch
   const [isLoadingWeather, setIsLoadingWeather] = useState(false);
-  const [weatherHint, setWeatherHint] = useState<string | null>(null);
+  const [weatherHint, setWeatherHint] = useState<{ text: string; error: boolean } | null>(null);
 
   // Idee #1: Fotos → Tagebucheintrag
   const [photos, setPhotos] = useState<ReportPhoto[]>([]);
@@ -188,12 +188,14 @@ export const DailyReports: React.FC = () => {
       const w = await api.getWeather(toIsoDate(reportDate), Number(activeProject.id));
       setWeather([w.condition, w.wind_kmh != null ? `Wind ${w.wind_kmh} km/h` : null, w.precipitation_mm != null ? `${w.precipitation_mm} mm Niederschlag` : null].filter(Boolean).join(', '));
       if (w.temperature_c != null) setTemperatureC(String(w.temperature_c));
+      setWeatherHint({ text: `Wetter übernommen – Quelle: ${w.source}`, error: false });
     } catch (err) {
-      setWeatherHint(
-        isNotImplemented(err)
+      setWeatherHint({
+        text: isNotImplemented(err)
           ? 'Wetterdaten stehen auf diesem Server aktuell nicht zur Verfügung. Bitte von Hand eintragen.'
-          : `Wetter konnte nicht geladen werden: ${(err as Error)?.message ?? err}`
-      );
+          : `Wetter konnte nicht geladen werden: ${(err as Error)?.message ?? err}`,
+        error: true,
+      });
     } finally {
       setIsLoadingWeather(false);
     }
@@ -1020,7 +1022,7 @@ export const DailyReports: React.FC = () => {
                 <div className="form-group">
                   <label className="form-label" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
                     <span>{t('rep_form_weather')}</span>
-                    {/* Idee #2: Wetter automatisch (Backend folgt: GET /api/weather) */}
+                    {/* Idee #2: Wetter automatisch (GET /api/weather – Open-Meteo am Projektstandort) */}
                     <button
                       type="button"
                       className="history-btn-small"
@@ -1077,8 +1079,13 @@ export const DailyReports: React.FC = () => {
               </div>
 
               {weatherHint && (
-                <div style={{ fontSize: '12px', color: '#92400e', backgroundColor: '#fffbeb', border: '1px solid #fde68a', borderRadius: 'var(--radius-md)', padding: '8px 12px' }}>
-                  {weatherHint}
+                <div
+                  role={weatherHint.error ? 'alert' : 'status'}
+                  style={weatherHint.error
+                    ? { fontSize: '12px', color: '#92400e', backgroundColor: '#fffbeb', border: '1px solid #fde68a', borderRadius: 'var(--radius-md)', padding: '8px 12px' }
+                    : { fontSize: '11px', marginTop: '-4px', marginBottom: '8px', color: 'var(--text-muted, #64748b)' }}
+                >
+                  {weatherHint.text}
                 </div>
               )}
 

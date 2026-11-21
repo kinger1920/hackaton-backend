@@ -268,8 +268,8 @@ export interface ContractParseResponse {
 }
 
 // ==========================================
-// Geplante Endpunkte (Ideen #1–#7) – Frontend steht, Backend folgt.
-// Liefert das Backend 404, zeigt die Oberfläche "Backend folgt".
+// Endpunkte der Ideen #1–#7 (Fotos, Wetter, Versand, Assistent, Termine, Profil) – alle im Backend vorhanden.
+// Liefert ein älteres Backend 404, zeigt die Oberfläche "Backend folgt" (isNotImplemented).
 // ==========================================
 
 /** Idee #1: Foto → Tagebucheintrag & Foto-Verwaltung (/api/photos) */
@@ -360,6 +360,17 @@ export interface AssistantAnswer {
   answer: string;
   sources: string[];
   mode: 'ai' | 'offline';
+  session_id?: number | null;
+}
+
+/** Eintrag aus GET /api/assistant/history */
+export interface AssistantHistoryMessage {
+  id: number;
+  role: 'user' | 'assistant';
+  text: string;
+  sources: string[];
+  mode: 'ai' | 'offline' | null;
+  created_at: string;
 }
 
 // ---- Summary Types (/api/summarize) ----
@@ -1088,6 +1099,14 @@ export const api = {
     return handleResponse<Contract>(res, 'Fehler beim Aktualisieren des Vertrags');
   },
 
+  /** PUT /contracts/{id}/file (multipart): PDF an bestehenden Vertrag anhängen/ersetzen, Text wird neu extrahiert. */
+  async attachContractFile(contractId: number, file: File): Promise<Contract> {
+    const form = new FormData();
+    form.append('file', file, file.name);
+    const res = await fetch(`${API_BASE_URL}/contracts/${contractId}/file`, { method: 'PUT', body: form });
+    return handleResponse<Contract>(res, 'Fehler beim Anhängen der Vertragsdatei');
+  },
+
   async deleteContract(contractId: number): Promise<void> {
     const res = await fetch(`${API_BASE_URL}/contracts/${contractId}`, { method: 'DELETE' });
     await expectOk(res, 'Fehler beim Löschen des Vertrags');
@@ -1356,5 +1375,17 @@ export const api = {
       body: JSON.stringify({ question, project_id: projectId }),
     });
     return handleResponse<AssistantAnswer>(res, 'Assistent nicht erreichbar');
+  },
+
+  /** GET /api/assistant/history?project_id= – gespeicherter Chat-Verlauf (älteste zuerst) */
+  async getAssistantHistory(projectId: number): Promise<AssistantHistoryMessage[]> {
+    const res = await fetch(`${API_BASE_URL}/api/assistant/history?project_id=${projectId}`);
+    return handleResponse<AssistantHistoryMessage[]>(res, 'Chat-Verlauf konnte nicht geladen werden');
+  },
+
+  /** DELETE /api/assistant/history?project_id= – neuer Chat */
+  async clearAssistantHistory(projectId: number): Promise<void> {
+    const res = await fetch(`${API_BASE_URL}/api/assistant/history?project_id=${projectId}`, { method: 'DELETE' });
+    await expectOk(res, 'Chat-Verlauf konnte nicht gelöscht werden');
   },
 };

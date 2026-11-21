@@ -29,6 +29,8 @@ from src.routers.reports import router as reports_router
 from src.routers.analysis import router as analysis_router
 from src.routers.photos import router as photos_router
 from src.routers.documents import router as documents_router
+from src.routers.assistant import router as assistant_router
+from src.routers.weather import router as weather_router
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -76,6 +78,8 @@ app.include_router(reports_router)
 app.include_router(analysis_router)
 app.include_router(photos_router)
 app.include_router(documents_router)
+app.include_router(assistant_router)
+app.include_router(weather_router)
 
 @app.get("/")
 async def root():

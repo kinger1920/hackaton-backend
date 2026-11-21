@@ -1,16 +1,22 @@
 import React, {useEffect, useRef, useState} from 'react';
-import {MessageSquare, Mic, Send, Square} from 'lucide-react';
+import {MessageSquare, Mic, RotateCcw, Send, Square} from 'lucide-react';
 import {useProjects} from '../context/ProjectContext';
 import {api} from '../services/api';
 import {useAudioRecorder} from '../utils/useAudioRecorder';
 import {isNotImplemented} from '../components/ComingSoon';
 import './Ideas.css';
 
+/**
+ * Projekt-Assistent: POST /api/assistant/ask (Antwort + Quellen), Verlauf je Projekt über
+ * GET/DELETE /api/assistant/history (gespeichert in ChatSession/ChatMessage).
+ */
+
 interface Message {
     role: 'user' | 'assistant';
     text: string;
     sources?: string[];
     pending?: boolean;
+    offline?: boolean;
 }
 
 const SUGGESTIONS = [
@@ -22,16 +28,16 @@ const SUGGESTIONS = [
 
 export const ProjectAssistant: React.FC = () => {
     const {activeProject} = useProjects();
-    const [messages, setMessages] = useState<Message[]>([
-        {
-            role: 'assistant',
-            text: `Fragen zu „${activeProject.name}“ – auf Basis von Tagesberichten, Notizen, Briefen und Verträgen.`
-        }
-    ]);
+    const greeting = (): Message => ({
+        role: 'assistant',
+        text: `Fragen zu „${activeProject.name}“ – auf Basis von Tagesberichten, Notizen, Briefen und Verträgen.`
+    });
+    const [messages, setMessages] = useState<Message[]>(() => [greeting()]);
     const [input, setInput] = useState('');
     const [busy, setBusy] = useState(false);
     const [transcribing, setTranscribing] = useState(false);
     const [audioHint, setAudioHint] = useState<string | null>(null);
+    const [historyError, setHistoryError] = useState<string | null>(null);
     const endRef = useRef<HTMLDivElement>(null);
 
     const recorder = useAudioRecorder(async (blob) => {
@@ -63,6 +69,42 @@ export const ProjectAssistant: React.FC = () => {
         }
     };
 
+    // Verlauf des aktiven Projekts laden (bei Projektwechsel neu)
+    useEffect(() => {
+        let cancelled = false;
+        setMessages([greeting()]);
+        setHistoryError(null);
+        api.getAssistantHistory(Number(activeProject.id))
+            .then((hist) => {
+                if (cancelled || hist.length === 0) return;
+                setMessages([greeting(), ...hist.map((h) => ({
+                    role: h.role,
+                    text: h.text,
+                    sources: h.sources,
+                    offline: h.mode === 'offline'
+                }))]);
+            })
+            .catch((err) => {
+                if (!cancelled) setHistoryError(`Verlauf nicht geladen: ${(err as Error)?.message ?? err}`);
+            });
+        return () => {
+            cancelled = true;
+        };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [activeProject.id]);
+
+    const handleNewChat = async () => {
+        if (busy) return;
+        try {
+            await api.clearAssistantHistory(Number(activeProject.id));
+            setHistoryError(null);
+        } catch (err) {
+            setHistoryError(`Verlauf konnte nicht gelöscht werden: ${(err as Error)?.message ?? err}`);
+            return;
+        }
+        setMessages([greeting()]);
+    };
+
     useEffect(() => {
         endRef.current?.scrollIntoView({behavior: 'smooth', block: 'end'});
     }, [messages]);
@@ -77,7 +119,7 @@ export const ProjectAssistant: React.FC = () => {
         let reply: Message;
         try {
             const res = await api.askProject(q, Number(activeProject.id));
-            reply = {role: 'assistant', text: res.answer, sources: res.sources};
+            reply = {role: 'assistant', text: res.answer, sources: res.sources, offline: res.mode === 'offline'};
         } catch (err) {
             if (isNotImplemented(err)) {
                 reply = {
@@ -101,7 +143,18 @@ export const ProjectAssistant: React.FC = () => {
                         <h1>Projekt-Assistent</h1>
                     </div>
                 </div>
+                <button
+                    type="button"
+                    className="btn btn-secondary"
+                    onClick={handleNewChat}
+                    disabled={busy || messages.length <= 1}
+                    title="Verlauf löschen und neuen Chat beginnen"
+                >
+                    <RotateCcw size={14}/> <span>Neuer Chat</span>
+                </button>
             </div>
+
+            {historyError && <div className="chat-audio-hint"><span>{historyError}</span></div>}
 
             <div className="chat-card">
                 <div className="chat-messages">
@@ -110,6 +163,9 @@ export const ProjectAssistant: React.FC = () => {
                             {m.text}
                             {m.sources && m.sources.length > 0 && (
                                 <div className="chat-sources">Quellen: {m.sources.join(' • ')}</div>
+                            )}
+                            {m.offline && (
+                                <div className="chat-sources">Antwort regelbasiert direkt aus den Projektdaten</div>
                             )}
                         </div>
                     ))}

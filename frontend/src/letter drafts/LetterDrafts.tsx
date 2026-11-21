@@ -1660,7 +1660,7 @@ export const LetterDrafts: React.FC = () => {
                             </div>
                         </div>
 
-                        {/* Idee #4: Versand & Zugangsnachweis (Backend folgt) */}
+                        {/* Idee #4: Versand & Zugangsnachweis (GET/PUT /api/notices/{id}/dispatch) */}
                         <DispatchPanel noticeId={noticeId} approved={locked}/>
 
                         <div className="legal-notice-banner">

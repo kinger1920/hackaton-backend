@@ -16,7 +16,8 @@ import {
     ListTree,
     CheckCircle2,
     PauseCircle,
-    BookOpen
+    BookOpen,
+    Paperclip
 } from 'lucide-react';
 import PlanTasksPanel from './PlanTasksPanel';
 import {formatDe} from '../utils/dates';
@@ -334,6 +335,7 @@ const ContractsTab: React.FC<{ projectId: number; onError: (msg: string) => void
     // POST /api/contracts/{id}/parse – Vorschlag mit Fundstellen, Übernahme per PATCH
     const [parseView, setParseView] = useState<{ contract: Contract; result: ContractParseResponse } | null>(null);
     const [parsingId, setParsingId] = useState<number | null>(null);
+    const [attachingId, setAttachingId] = useState<number | null>(null);
 
     const handleParse = async (c: Contract) => {
         setParsingId(c.id);
@@ -446,6 +448,21 @@ const ContractsTab: React.FC<{ projectId: number; onError: (msg: string) => void
         }
     };
 
+    // PUT /contracts/{id}/file – PDF nachträglich anhängen (z. B. Demo-/Projektformular-Verträge) oder ersetzen
+    const handleAttachFile = async (c: Contract, file: File | undefined) => {
+        if (!file) return;
+        if (c.file_name && !window.confirm(`Vorhandene Datei "${c.file_name}" durch "${file.name}" ersetzen?`)) return;
+        setAttachingId(c.id);
+        try {
+            await api.attachContractFile(c.id, file);
+            load();
+        } catch (err: any) {
+            onError(err?.message || 'Datei konnte nicht angehängt werden');
+        } finally {
+            setAttachingId(null);
+        }
+    };
+
     const handleDownload = async (c: Contract) => {
         try {
             saveBlob(await api.downloadContractFile(c.id), c.file_name || `Vertrag_${c.id}.pdf`);
@@ -510,13 +527,32 @@ const ContractsTab: React.FC<{ projectId: number; onError: (msg: string) => void
                             ? 'Sollstärke, Firma, Gewerk und Fristen auslesen'
                             : c.file_name
                                 ? 'Kein Text im PDF (Scan?)'
-                                : 'Keine Datei hinterlegt – zum Auslesen den Vertrag als PDF hochladen'}
+                                : 'Keine Datei hinterlegt – zum Auslesen erst ein PDF anhängen (Büroklammer)'}
                     >
                         {parsingId === c.id ? <RefreshCw size={14}/> : <FileSearch size={14}/>}
                     </button>
                     <button className="btn btn-secondary" onClick={() => handleShowText(c)} title="Ausgelesenen Text anzeigen"><Eye size={14}/></button>
                     <button className="btn btn-secondary" onClick={() => handleDownload(c)} disabled={!c.file_name}
                             title={c.file_name ? 'PDF herunterladen' : 'Keine Datei hinterlegt (z. B. Demo- oder Projektformular-Vertrag)'}><Download size={14}/></button>
+                    <label
+                        className={`btn btn-secondary${attachingId === c.id ? ' is-disabled' : ''}`}
+                        title={c.file_name ? 'PDF ersetzen' : 'Vertrags-PDF anhängen (danach „Auslesen“ möglich)'}
+                        aria-disabled={attachingId === c.id}
+                        style={{cursor: attachingId === c.id ? 'wait' : 'pointer'}}
+                    >
+                        {attachingId === c.id ? <RefreshCw size={14}/> : <Paperclip size={14}/>}
+                        <input
+                            type="file"
+                            accept="application/pdf,.pdf"
+                            hidden
+                            disabled={attachingId === c.id}
+                            onChange={(e) => {
+                                const file = e.target.files?.[0];
+                                e.target.value = '';
+                                handleAttachFile(c, file);
+                            }}
+                        />
+                    </label>
                     <button className="btn btn-secondary" onClick={() => startEdit(c)} title="Bearbeiten"><Pencil size={14}/></button>
                     <button className="btn btn-danger" onClick={() => handleDelete(c)} title="Löschen"><Trash2 size={14}/></button>
                 </div>

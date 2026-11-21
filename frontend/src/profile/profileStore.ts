@@ -1,6 +1,6 @@
 /**
  * Site manager profile – shared by "Mein Profil" and the letter page.
- * Stored in localStorage ("userProfile"); there is no user endpoint in the backend yet.
+ * Cached in localStorage ("userProfile") and synced to the backend via GET/PUT /api/profile.
  * Company address and VOB rules come from Stammdaten (company_type "own") when available.
  */
 import {api, Company} from '../services/api';

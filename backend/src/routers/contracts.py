@@ -135,6 +135,37 @@ async def upload_contract(
     return db_contract
 
 
+@router.put("/{contract_id}/file", response_model=ContractRead)
+async def replace_contract_file(
+    contract_id: int,
+    file: UploadFile = File(..., description="Vertrags-PDF"),
+    session: Session = Depends(get_session),
+):
+    """PDF an einen bestehenden Vertrag anhängen oder ersetzen (z. B. Demo-/Projektformular-Verträge ohne Datei).
+
+    Der Volltext wird neu extrahiert, damit „Auslesen“ (POST /api/contracts/{id}/parse) danach funktioniert.
+    """
+    db_contract = _get_or_404(session, contract_id)
+    filename = file.filename or ""
+    if not (filename.lower().endswith(".pdf") or file.content_type == "application/pdf"):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Only PDF files are supported")
+    data = await file.read()
+    if not data:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Uploaded PDF file is empty")
+
+    old_path = db_contract.file_path
+    safe_name, dest_path = save_contract_pdf(data, filename)
+    db_contract.file_name = safe_name
+    db_contract.file_path = str(dest_path)
+    db_contract.extracted_text = extract_pdf_text(data)
+    session.add(db_contract)
+    session.commit()
+    session.refresh(db_contract)
+    if old_path and old_path != str(dest_path):
+        delete_contract_file(old_path)
+    return db_contract
+
+
 @router.patch("/{contract_id}", response_model=ContractRead)
 def update_contract(
     contract_id: int,
