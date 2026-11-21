@@ -170,7 +170,7 @@ export const MainLayout: React.FC = () => {
                             id="globalProjectSelect"
                             className="form-input"
                             value={activeProjectId}
-                            onChange={(e) => setActiveProjectId(e.target.value)}
+                            onChange={(e) => setActiveProjectId(Number(e.target.value))}
                             style={{
                                 width: 'auto',
                                 maxWidth: '380px',

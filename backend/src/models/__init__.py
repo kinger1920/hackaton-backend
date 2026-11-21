@@ -11,12 +11,13 @@ from .plan import (
     PlanTaskCreate,
     PlanTaskRead,
 )
-from .project import Project, ProjectCreate, ProjectRead
+from .project import Project, ProjectCreate, ProjectRead, ProjectUpdate
 from .report import DailyReport, DailyReportCreate, DailyReportRead
 
 __all__ = [
     "Project",
     "ProjectCreate",
+    "ProjectUpdate",
     "ProjectRead",
     "ConstructionPlan",
     "ConstructionPlanCreate",

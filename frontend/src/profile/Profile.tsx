@@ -102,7 +102,7 @@ export const Profile: React.FC = () => {
         }));
     };
 
-    const handleProjectDropdownChange = (projectId: string) => {
+    const handleProjectDropdownChange = (projectId: number) => {
         setActiveProjectId(projectId);
         const selected = projects.find((p) => p.id === projectId);
         if (selected) {
@@ -387,7 +387,7 @@ export const Profile: React.FC = () => {
                                     id="projectSelect"
                                     className="form-input"
                                     value={activeProjectId}
-                                    onChange={(e) => handleProjectDropdownChange(e.target.value)}
+                                    onChange={(e) => handleProjectDropdownChange(Number(e.target.value))}
                                     style={{
                                         fontWeight: 600,
                                         fontSize: '15px',

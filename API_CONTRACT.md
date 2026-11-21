@@ -46,6 +46,16 @@ export interface Project {
 export type ProjectCreate = Omit<Project, 'id' | 'created_at' | 'updated_at'>;
 ```
 
+### Bereits implementierte Endpunkte (`Project`)
+
+| Methode | Pfad | Beschreibung | Statuscodes |
+| --- | --- | --- | --- |
+| `GET` | `/projects` | Alle Projekte abrufen | `200` |
+| `GET` | `/projects/{project_id}` | Einzelnes Projekt abrufen | `200`, `404` |
+| `POST` | `/projects` | Neues Projekt anlegen (Body: `ProjectCreate`) | `201` |
+| `PATCH` | `/projects/{project_id}` | Projekt teilweise aktualisieren (Body: `ProjectUpdate`) | `200`, `404` |
+| `DELETE` | `/projects/{project_id}` | Projekt inkl. abhängiger Einträge löschen | `204`, `404` |
+
 ---
 
 ## 2. `SiteNote` (Baustellen-Notiz / Sprach- & Schnellerfassung)

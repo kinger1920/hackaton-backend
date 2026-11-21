@@ -8,10 +8,12 @@ if str(BACKEND_DIR) not in sys.path:
 
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from src.database import init_db
 
 from src.routers.notes import router as notes_router
 from src.routers.plans import router as plans_router
+from src.routers.projects import router as projects_router
 from src.routers.ai import router as ai_router
 from src.routers.notices import router as notices_router
 
@@ -29,8 +31,22 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 app.include_router(notes_router)
 app.include_router(plans_router)
+app.include_router(projects_router)
 app.include_router(ai_router)
 app.include_router(notices_router)
 
