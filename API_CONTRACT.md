@@ -246,6 +246,16 @@ export interface PlanTask {
 }
 ```
 
+### Bereits implementierte Endpunkte (`ConstructionPlan`)
+
+| Methode | Pfad | Beschreibung | Statuscodes |
+| --- | --- | --- | --- |
+| `GET` | `/plans` | Alle Pläne (optional: `?project_id=1`) | `200` |
+| `GET` | `/plans/{plan_id}` | Einzelnen Plan per ID abrufen | `200`, `404` |
+| `POST` | `/plans` | Neuen Projektplan anlegen (Body: `ConstructionPlanCreate`) | `201`, `404` (Projekt fehlt) |
+| `PATCH` | `/plans/{plan_id}` | Projektplan teilweise aktualisieren (Body: `ConstructionPlanUpdate`) | `200`, `404` |
+| `DELETE` | `/plans/{plan_id}` | Projektplan inkl. zugehöriger `PlanTask`s löschen | `204`, `404` |
+
 ---
 
 ## 6. `ChatSession` & `ChatMessage` (KI-Assistent Chat)

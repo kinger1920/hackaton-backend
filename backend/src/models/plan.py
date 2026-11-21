@@ -22,6 +22,14 @@ class ConstructionPlanCreate(ConstructionPlanBase):
     pass
 
 
+class ConstructionPlanUpdate(SQLModel):
+    title: Optional[str] = None
+    version: Optional[str] = None
+    file_path: Optional[str] = None
+    file_name: Optional[str] = None
+    raw_data: Optional[str] = None
+
+
 class ConstructionPlanRead(ConstructionPlanBase):
     id: int
     uploaded_at: datetime
