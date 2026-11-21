@@ -11,7 +11,8 @@ import {
   LogOut,
   CloudSun,
   BookOpen,
-  TrendingUp
+  TrendingUp,
+  Calendar
 } from 'lucide-react';
 import {useProjects} from '../context/ProjectContext';
 import { useLanguage } from '../context/LanguageContext';
@@ -84,6 +85,14 @@ export const MainLayout: React.FC = () => {
                     >
                         <FileText size={18}/>
                         <span>{t('nav_reports')}</span>
+                    </button>
+
+                    <button
+                        className={`nav-item ${isActive('/termin') ? 'active' : ''}`}
+                        onClick={() => navigate('/termin')}
+                    >
+                        <Calendar size={18}/>
+                        <span>{t('nav_termin')}</span>
                     </button>
 
                     <button

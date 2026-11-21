@@ -9,6 +9,7 @@ import Summary from './summary/Summary';
 import DailyReports from './reports/DailyReports';
 import VoiceOrText from './voice or text capture/VoiceOrText';
 import Analysis from './analysis/Analysis';
+import Termin from './termin/Termin';
 import MainLayout from './layout/MainLayout';
 import {ProjectProvider} from './context/ProjectContext';
 import { LanguageProvider } from './context/LanguageContext';
@@ -27,6 +28,7 @@ export const App: React.FC = () => {
           <Route element={<MainLayout />}>
             <Route path="/dashboard" element={<Dashboard />} />
             <Route path="/reports" element={<DailyReports />} />
+            <Route path="/termin" element={<Termin />} />
             <Route path="/capture" element={<VoiceOrText />} />
             <Route path="/analysis" element={<Analysis />} />
             <Route path="/alerts" element={<Analysis />} />
