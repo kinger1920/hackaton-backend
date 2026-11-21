@@ -1,4 +1,4 @@
-import React from 'react';
+import React, {useEffect, useState} from 'react';
 import {Outlet, useNavigate, useLocation} from 'react-router-dom';
 import {
     HardHat,
@@ -12,8 +12,14 @@ import {
   CloudSun,
   BookOpen,
   TrendingUp,
-  Calendar
+  Calendar,
+  Building2,
+  AlarmClock,
+  MessageSquare,
+  WifiOff
 } from 'lucide-react';
+import {useOnlineStatus} from '../components/useOnlineStatus';
+import {api, HealthStatus} from '../services/api';
 import {useProjects} from '../context/ProjectContext';
 import { useLanguage } from '../context/LanguageContext';
 import LanguageSwitcher from '../components/LanguageSwitcher';
@@ -47,6 +53,27 @@ export const MainLayout: React.FC = () => {
     };
 
     const isActive = (path: string) => location.pathname === path;
+
+    // Idee #6 (Offline/PWA): Netzstatus des Geräts – Details unter Profil → „Offline & App“
+    const isOnline = useOnlineStatus();
+
+    // Backend-Status (GET /health) – alle 30 s prüfen; zeigt auch, ob PDF-Export verfügbar ist
+    const [health, setHealth] = useState<HealthStatus | null>(null);
+    const [healthChecked, setHealthChecked] = useState(false);
+    useEffect(() => {
+        let cancelled = false;
+        const check = () =>
+            api.health()
+                .then((h) => !cancelled && setHealth(h))
+                .catch(() => !cancelled && setHealth(null))
+                .finally(() => !cancelled && setHealthChecked(true));
+        check();
+        const timer = window.setInterval(check, 30000);
+        return () => {
+            cancelled = true;
+            window.clearInterval(timer);
+        };
+    }, []);
 
     return (
         <div className="dashboard-layout">
@@ -95,13 +122,24 @@ export const MainLayout: React.FC = () => {
                         <span>{t('nav_termin')}</span>
                     </button>
 
+                    {/* Soll/Ist-Analyse ist ins Dashboard integriert (/analysis leitet dorthin um). */}
+
+                    {/* Idee #7: Live-Baufortschritt auf Grundriss mit Zeitregler */}
                     <button
-                        className={`nav-item ${isActive('/analysis') || isActive('/alerts') ? 'active' : ''}`}
-                        onClick={() => navigate('/analysis')}
+                        className={`nav-item ${isActive('/fortschritt') ? 'active' : ''}`}
+                        onClick={() => navigate('/fortschritt')}
                     >
                         <TrendingUp size={18}/>
-                        <span>{t('nav_analysis')}</span>
-                        <span className="nav-badge">2</span>
+                        <span>{t('nav_progress_map', 'Baufortschritt')}</span>
+                    </button>
+
+                    {/* Idee #3: Fristen-Radar */}
+                    <button
+                        className={`nav-item ${isActive('/fristen') ? 'active' : ''}`}
+                        onClick={() => navigate('/fristen')}
+                    >
+                        <AlarmClock size={18}/>
+                        <span>{t('nav_deadlines', 'Fristen-Radar')}</span>
                     </button>
 
                     <button
@@ -120,12 +158,29 @@ export const MainLayout: React.FC = () => {
             <span>{t('nav_summary')}</span>
                     </button>
 
+                    {/* Idee #5: „Frag dein Projekt“-Chat mit Quellen */}
+                    <button
+                        className={`nav-item ${isActive('/assistent') ? 'active' : ''}`}
+                        onClick={() => navigate('/assistent')}
+                    >
+                        <MessageSquare size={18}/>
+                        <span>{t('nav_assistant', 'Projekt-Assistent')}</span>
+                    </button>
+
                     <button
                         className={`nav-item ${isActive('/projects') ? 'active' : ''}`}
                         onClick={() => navigate('/projects')}
                     >
                         <FolderKanban size={18}/>
                         <span>{t('nav_projects')}</span>
+                    </button>
+
+                    <button
+                        className={`nav-item ${isActive('/stammdaten') ? 'active' : ''}`}
+                        onClick={() => navigate('/stammdaten')}
+                    >
+                        <Building2 size={18}/>
+                        <span>{t('nav_masterdata', 'Stammdaten')}</span>
                     </button>
 
                     <button
@@ -191,6 +246,38 @@ export const MainLayout: React.FC = () => {
                     </div>
 
                     <div className="header-actions">
+                        {!isOnline && (
+                            <div
+                                className="header-info-tag"
+                                style={{color: '#b91c1c', cursor: 'pointer'}}
+                                title="Gerät ist offline – Offline-Modus folgt (Profil → Offline & App)"
+                                onClick={() => navigate('/profile')}
+                            >
+                                <WifiOff size={14}/>
+                                <span>Offline</span>
+                            </div>
+                        )}
+                        {healthChecked && (
+                            <div
+                                className="header-info-tag"
+                                title={
+                                    health
+                                        ? `Backend verbunden • PDF-Export ${health.pdf_export ? 'verfügbar' : 'nicht verfügbar (Pango fehlt) – Word geht immer'}`
+                                        : 'Backend nicht erreichbar – Seiten zeigen Beispieldaten'
+                                }
+                            >
+                                <span
+                                    style={{
+                                        width: '8px',
+                                        height: '8px',
+                                        borderRadius: '50%',
+                                        display: 'inline-block',
+                                        backgroundColor: health ? (health.pdf_export ? '#16a34a' : '#f59e0b') : '#dc2626'
+                                    }}
+                                />
+                                <span>{health ? 'Backend online' : 'Backend offline'}</span>
+                            </div>
+                        )}
                         <div className="header-info-tag">
                             <CloudSun size={16}/>
                             <span>{siteLocation}: 9°C • {t('hdr_weather_dry')}</span>

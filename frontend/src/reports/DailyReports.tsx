@@ -21,8 +21,10 @@ import {
   Trash2,
   TrendingUp,
   ThumbsUp,
-  ThumbsDown
+  ThumbsDown,
+  Camera
 } from 'lucide-react';
+import { ComingSoonBadge, ComingSoonNote, isNotImplemented } from '../components/ComingSoon';
 import { useProjects } from '../context/ProjectContext';
 import {
   getDiaryEntriesForProject,
@@ -31,7 +33,15 @@ import {
   ProjectDocumentItem
 } from '../context/ProjectDocuments';
 import { useLanguage } from '../context/LanguageContext';
-import { api, DayAnalysis, saveBlob } from '../services/api';
+import { api, AttendanceItem, Contract, DayAnalysis, PhotoDescribeResponse, saveBlob } from '../services/api';
+
+interface ReportPhoto {
+  file: File;
+  url: string;
+  status: 'analyzing' | 'done' | 'unavailable' | 'error';
+  result?: PhotoDescribeResponse;
+  error?: string;
+}
 import '@frontend/src/index.css';
 import './DailyReports.css';
 
@@ -85,6 +95,98 @@ export const DailyReports: React.FC = () => {
   const [dayAnalysis, setDayAnalysis] = useState<DayAnalysis | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
 
+  // Neue Berichtsfelder im Backend: Temperatur, Bauleitung, Anwesenheit je Firma
+  const [temperatureC, setTemperatureC] = useState<string>('');
+  const [siteManager, setSiteManager] = useState<string>('');
+  const [attendance, setAttendance] = useState<AttendanceItem[]>([]);
+  const [contracts, setContracts] = useState<Contract[]>([]);
+
+  // Idee #2: Wetter automatisch
+  const [isLoadingWeather, setIsLoadingWeather] = useState(false);
+  const [weatherHint, setWeatherHint] = useState<string | null>(null);
+
+  // Idee #1: Fotos → Tagebucheintrag
+  const [photos, setPhotos] = useState<ReportPhoto[]>([]);
+
+  // Verträge des Projekts (Sollstärke je Firma)
+  useEffect(() => {
+    api.listContracts(Number(activeProject.id))
+      .then(setContracts)
+      .catch(() => setContracts([]));
+  }, [activeProject.id]);
+
+  const plannedFor = (company?: string | null): number | null => {
+    if (!company) return null;
+    const c = contracts.find((k) => k.contractor_name && k.contractor_name.toLowerCase() === company.trim().toLowerCase());
+    return c?.planned_workforce ?? null;
+  };
+
+  const updateAttendance = (idx: number, changes: Partial<AttendanceItem>) => {
+    setAttendance((prev) => {
+      const next = prev.map((a, i) => (i === idx ? { ...a, ...changes } : a));
+      const total = next.reduce((s, a) => s + (a.workers || 0), 0);
+      if (total > 0) setWorkforceCount(total);
+      return next;
+    });
+  };
+
+  const handleAttendanceFromContracts = () => {
+    const existing = new Set(attendance.map((a) => (a.company || '').toLowerCase()));
+    const added = contracts
+      .filter((c) => c.contractor_name && !existing.has(c.contractor_name.toLowerCase()))
+      .map((c) => ({ company: c.contractor_name!, trade: c.trade ?? '', workers: 0, hours: null }));
+    setAttendance([...attendance, ...added]);
+  };
+
+  const handleAutoWeather = async () => {
+    setIsLoadingWeather(true);
+    setWeatherHint(null);
+    try {
+      const w = await api.getWeather(toIsoDate(reportDate), Number(activeProject.id));
+      setWeather([w.condition, w.wind_kmh != null ? `Wind ${w.wind_kmh} km/h` : null, w.precipitation_mm != null ? `${w.precipitation_mm} mm Niederschlag` : null].filter(Boolean).join(', '));
+      if (w.temperature_c != null) setTemperatureC(String(w.temperature_c));
+    } catch (err) {
+      setWeatherHint(
+        isNotImplemented(err)
+          ? 'Automatisches Wetter (Standort + Datum, beweisrelevant für Behinderungen) ist vorbereitet – das Backend liefert es noch nicht. Bitte vorerst von Hand eintragen.'
+          : `Wetter konnte nicht geladen werden: ${(err as Error)?.message ?? err}`
+      );
+    } finally {
+      setIsLoadingWeather(false);
+    }
+  };
+
+  const handlePhotosSelected = (files: FileList | null) => {
+    if (!files) return;
+    Array.from(files).forEach((file) => {
+      const url = URL.createObjectURL(file);
+      setPhotos((prev) => [...prev, { file, url, status: 'analyzing' }]);
+      api.describePhoto(file, Number(activeProject.id))
+        .then((result) => {
+          setPhotos((prev) => prev.map((p) => (p.url === url ? { ...p, status: 'done', result } : p)));
+          // Vorschlag in den Bericht übernehmen (Nutzer kann bearbeiten – human in the loop)
+          if (result.diary_text) setProgressText((prev) => (prev ? `${prev}\n[Foto] ${result.diary_text}` : `[Foto] ${result.diary_text}`));
+        })
+        .catch((err) => {
+          setPhotos((prev) =>
+            prev.map((p) =>
+              p.url === url
+                ? { ...p, status: isNotImplemented(err) ? 'unavailable' : 'error', error: (err as Error)?.message }
+                : p
+            )
+          );
+        });
+    });
+  };
+
+  const removePhoto = (idx: number) => {
+    setPhotos((prev) => {
+      const p = prev[idx];
+      if (p) URL.revokeObjectURL(p.url);
+      return prev.filter((_, i) => i !== idx);
+    });
+  };
+
   function toIsoDate(dateStr: string): string {
     if (dateStr.includes('.')) {
       const parts = dateStr.split('.');
@@ -115,6 +217,9 @@ export const DailyReports: React.FC = () => {
           if (report.deviations_incidents) setHindranceText(report.deviations_incidents);
           if (report.deliveries) setDeliveriesText(report.deliveries);
           if (report.report_number) setReportNumber(String(report.report_number));
+          setTemperatureC(report.temperature_c != null ? String(report.temperature_c) : '');
+          setSiteManager(report.site_manager ?? '');
+          setAttendance(report.attendance ?? []);
           setIsFinalized(report.status === 'finalized');
           setDayAnalysis(null);
         }
@@ -357,7 +462,13 @@ export const DailyReports: React.FC = () => {
         deviations_incidents: hindranceText,
         deliveries: deliveriesText,
         summary: `Bautagesbericht Nr. ${reportNumber} vom ${reportDate}`,
-        status: isFinalized ? 'finalized' : 'draft'
+        status: isFinalized ? 'finalized' : 'draft',
+        temperature_c: temperatureC.trim() === '' ? null : Number(temperatureC),
+        site_manager: siteManager.trim() || userName,
+        // Leere Firmenzeilen nicht senden; leere Liste = Anwesenheit löschen
+        attendance: attendance
+          .filter((a) => (a.company && a.company.trim()) || (a.trade && a.trade.trim()) || a.workers > 0)
+          .map((a) => ({ ...a, company: a.company?.trim() || null, trade: a.trade?.trim() || null }))
       },
       Number(activeProject.id)
     );
@@ -748,12 +859,38 @@ ${referencedDoc ? `[Bezug auf Vorbericht: ${referencedDoc.title} (${referencedDo
             </div>
 
             <div className="form-group">
-              <label className="form-label">{t('rep_form_weather')}</label>
+              <label className="form-label" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '6px' }}>
+                <span>{t('rep_form_weather')}</span>
+                {/* Idee #2: Wetter automatisch (Backend folgt: GET /api/weather) */}
+                <button
+                  type="button"
+                  className="history-btn-small"
+                  style={{ padding: '1px 6px', fontSize: '10px' }}
+                  onClick={handleAutoWeather}
+                  disabled={isLoadingWeather}
+                  title="Wetter für Datum und Baustelle automatisch übernehmen"
+                >
+                  <CloudSun size={11} />
+                  <span>{isLoadingWeather ? '…' : 'Automatisch'}</span>
+                </button>
+              </label>
               <input
                 type="text"
                 className="form-input"
                 value={weather}
                 onChange={(e) => setWeather(e.target.value)}
+              />
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">Temperatur (°C)</label>
+              <input
+                type="number"
+                className="form-input"
+                step="0.5"
+                value={temperatureC}
+                placeholder="z. B. 7"
+                onChange={(e) => setTemperatureC(e.target.value)}
               />
             </div>
 
@@ -764,8 +901,112 @@ ${referencedDoc ? `[Bezug auf Vorbericht: ${referencedDoc.title} (${referencedDo
                 className="form-input"
                 value={workforceCount}
                 onChange={(e) => setWorkforceCount(Number(e.target.value))}
+                title={attendance.length > 0 ? 'Summe aus der Anwesenheit je Firma' : undefined}
               />
             </div>
+
+            <div className="form-group">
+              <label className="form-label">Bauleitung</label>
+              <input
+                type="text"
+                className="form-input"
+                value={siteManager}
+                placeholder={userName}
+                onChange={(e) => setSiteManager(e.target.value)}
+              />
+            </div>
+          </div>
+
+          {weatherHint && <ComingSoonNote endpoint="GET /api/weather?project_id=&date=">{weatherHint}</ComingSoonNote>}
+
+          {/* Anwesenheit je Firma (Backend: attendance) – Basis für den Sollstärken-Check gegen die Verträge */}
+          <div className="form-group">
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px', gap: '8px', flexWrap: 'wrap' }}>
+              <label className="form-label" style={{ margin: 0 }}>
+                Anwesenheit je Firma ({attendance.reduce((s, a) => s + (a.workers || 0), 0)} Personen)
+              </label>
+              <div style={{ display: 'flex', gap: '6px' }}>
+                {contracts.length > 0 && (
+                  <button
+                    type="button"
+                    className="history-btn-small"
+                    onClick={handleAttendanceFromContracts}
+                    title="Firmen aus den hinterlegten Verträgen übernehmen"
+                  >
+                    <Copy size={11} />
+                    <span>Firmen aus Verträgen</span>
+                  </button>
+                )}
+                <button
+                  type="button"
+                  className="history-btn-small"
+                  onClick={() => setAttendance([...attendance, { company: '', trade: '', workers: 0, hours: null }])}
+                >
+                  <Plus size={11} />
+                  <span>Firma</span>
+                </button>
+              </div>
+            </div>
+            {attendance.length === 0 ? (
+              <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+                Noch keine Anwesenheit erfasst. Pro Firma eintragen, damit die Sollstärke laut Vertrag geprüft werden kann.
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                {attendance.map((a, idx) => {
+                  const planned = plannedFor(a.company);
+                  const below = planned != null && a.workers < planned;
+                  return (
+                    <div key={idx} style={{ display: 'grid', gridTemplateColumns: '2fr 1.3fr 0.8fr 0.8fr auto', gap: '6px', alignItems: 'center' }}>
+                      <input
+                        className="form-input"
+                        placeholder="Firma"
+                        value={a.company ?? ''}
+                        onChange={(e) => updateAttendance(idx, { company: e.target.value })}
+                      />
+                      <input
+                        className="form-input"
+                        placeholder="Gewerk"
+                        value={a.trade ?? ''}
+                        onChange={(e) => updateAttendance(idx, { trade: e.target.value })}
+                      />
+                      <input
+                        className="form-input"
+                        type="number"
+                        min={0}
+                        title={planned != null ? `Sollstärke laut Vertrag: ${planned}` : 'Arbeitskräfte'}
+                        style={below ? { borderColor: '#f87171', backgroundColor: '#fef2f2' } : undefined}
+                        value={a.workers}
+                        onChange={(e) => updateAttendance(idx, { workers: Math.max(0, Number(e.target.value) || 0) })}
+                      />
+                      <input
+                        className="form-input"
+                        type="number"
+                        min={0}
+                        step="0.5"
+                        placeholder="Std."
+                        value={a.hours ?? ''}
+                        onChange={(e) => updateAttendance(idx, { hours: e.target.value === '' ? null : Number(e.target.value) })}
+                      />
+                      <button
+                        type="button"
+                        className="history-btn-small"
+                        style={{ color: '#dc2626' }}
+                        onClick={() => setAttendance(attendance.filter((_, i) => i !== idx))}
+                        title="Zeile entfernen"
+                      >
+                        <Trash2 size={11} />
+                      </button>
+                      {below && (
+                        <div style={{ gridColumn: '1 / -1', fontSize: '11px', color: '#b91c1c' }}>
+                          ⚠️ Unter Sollstärke laut Vertrag ({a.workers} von {planned})
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
 
           {/* Trades & Subcontractors Present */}
@@ -816,6 +1057,61 @@ ${referencedDoc ? `[Bezug auf Vorbericht: ${referencedDoc.title} (${referencedDo
                 <span>+</span>
               </button>
             </div>
+          </div>
+
+          {/* Idee #1: Foto → Tagebucheintrag (Backend folgt: POST /api/photos/describe) */}
+          <div className="form-group">
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+              <label className="form-label" style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                Baustellenfotos <ComingSoonBadge label="KI-Analyse: Backend folgt" />
+              </label>
+              <label className="history-btn-small" style={{ cursor: 'pointer' }}>
+                <Camera size={11} />
+                <span>Foto aufnehmen / hochladen</span>
+                <input
+                  type="file"
+                  accept="image/*"
+                  capture="environment"
+                  multiple
+                  style={{ display: 'none' }}
+                  onChange={(e) => {
+                    handlePhotosSelected(e.target.files);
+                    e.target.value = '';
+                  }}
+                />
+              </label>
+            </div>
+            {photos.length > 0 && (
+              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '8px' }}>
+                {photos.map((p, idx) => (
+                  <div
+                    key={p.url}
+                    style={{ width: '150px', border: '1px solid var(--border-light)', borderRadius: 'var(--radius-md)', overflow: 'hidden', fontSize: '11px', backgroundColor: 'white' }}
+                  >
+                    <img src={p.url} alt={p.file.name} style={{ width: '100%', height: '90px', objectFit: 'cover', display: 'block' }} />
+                    <div style={{ padding: '6px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                      {p.status === 'analyzing' && <span>KI analysiert…</span>}
+                      {p.status === 'done' && p.result && (
+                        <>
+                          <span><strong>{p.result.caption}</strong></span>
+                          {p.result.issues.length > 0 && <span style={{ color: '#b91c1c' }}>⚠️ {p.result.issues.join(', ')}</span>}
+                        </>
+                      )}
+                      {p.status === 'unavailable' && <span style={{ color: '#92400e' }}>Fotoanalyse folgt (Backend)</span>}
+                      {p.status === 'error' && <span style={{ color: '#b91c1c' }}>{p.error}</span>}
+                      <button
+                        type="button"
+                        className="history-btn-small"
+                        style={{ alignSelf: 'flex-start', color: '#dc2626' }}
+                        onClick={() => removePhoto(idx)}
+                      >
+                        <Trash2 size={10} />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* Progress / Work Done */}
@@ -999,6 +1295,44 @@ ${referencedDoc ? `[Bezug auf Vorbericht: ${referencedDoc.title} (${referencedDo
                   </ul>
                 </div>
               </div>
+
+              {/* Sollstärken-Check: Vertrag vs. Anwesenheit (Backend: DayAnalysis.workforce) */}
+              {(dayAnalysis.workforce ?? []).map((gap) => (
+                <div
+                  key={`wf-${gap.contractId}`}
+                  style={{ fontSize: '12px', backgroundColor: '#fef2f2', border: '1px solid #fecaca', borderRadius: 'var(--radius-md)', padding: '8px 10px' }}
+                >
+                  <strong>
+                    👷 {gap.company || gap.trade || gap.contractTitle}: {gap.actual} statt {gap.planned} Personen (−{gap.shortfallPercent} %)
+                  </strong>
+                  {gap.consecutiveDays > 1 && <span> • seit {gap.consecutiveDays} Tagen</span>}
+                  <div style={{ color: 'var(--color-slate-500)', marginTop: '2px' }}>
+                    Quelle: {gap.source} • Vertrag: {gap.contractSource}
+                  </div>
+                  {gap.vobHints.length > 0 && (
+                    <ul style={{ margin: '4px 0 0', paddingLeft: '18px' }}>
+                      {gap.vobHints.map((h, i) => (
+                        <li key={i}>{h}</li>
+                      ))}
+                    </ul>
+                  )}
+                  {gap.suggestion && (
+                    <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '4px' }}>
+                      <button
+                        type="button"
+                        className="btn btn-primary"
+                        style={{ fontSize: '11px', padding: '4px 10px', backgroundColor: '#b91c1c', whiteSpace: 'nowrap' }}
+                        onClick={() =>
+                          navigate('/drafts', { state: { type: gap.suggestion!.draftType, keywords: gap.suggestion!.prefillText } })
+                        }
+                      >
+                        <Mail size={12} />
+                        <span>{gap.suggestion.title}</span>
+                      </button>
+                    </div>
+                  )}
+                </div>
+              ))}
 
               {dayAnalysis.deviations.map((dev) => (
                 <div

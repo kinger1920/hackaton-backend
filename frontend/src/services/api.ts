@@ -185,6 +185,30 @@ export interface DashboardAlert {
   description: string;
   draftType: 'delay' | 'cost' | 'defect';
   source: string;
+  /** Bei Briefvorschlägen (Sollstärke-Check): Text für POST /api/capture (+ force_type = draftType) */
+  prefillText?: string | null;
+}
+
+// ---- Sollstärken-Check (Vertrag vs. Anwesenheit) ----
+export interface WorkforceSuggestion {
+  draftType: 'delay' | 'cost' | 'defect';
+  title: string;
+  prefillText: string;
+}
+
+export interface WorkforceGap {
+  company: string | null;
+  trade: string | null;
+  contractId: number;
+  contractTitle: string;
+  planned: number;
+  actual: number;
+  shortfallPercent: number;
+  consecutiveDays: number;
+  source: string;
+  contractSource: string;
+  vobHints: string[];
+  suggestion?: WorkforceSuggestion | null;
 }
 
 export interface DashboardData {
@@ -206,6 +230,65 @@ export interface DayAnalysis {
   wentBadly: DayItem[];
   deviations: DeviationItem[];
   stats: { workers: number | null; plannedWorkers: number | null; hours: number | null; weather: string | null };
+  mode: 'ai' | 'offline';
+  /** Unterschreitungen der vertraglichen Sollstärke an diesem Tag */
+  workforce?: WorkforceGap[];
+}
+
+// ---- Vertrag parsen (POST /api/contracts/{id}/parse) ----
+export interface ParsedField {
+  value: number | string;
+  /** wörtliches Zitat aus dem Vertragstext */
+  src: string;
+}
+
+export interface ContractParseResponse {
+  contract_id: number;
+  mode: 'ai' | 'offline';
+  fields: Record<string, ParsedField>;
+  /** Vorschlag für PATCH /contracts/{id} – wird nicht automatisch gespeichert */
+  suggested_patch: Record<string, unknown>;
+  current_planned_workforce: number | null;
+}
+
+// ==========================================
+// Geplante Endpunkte (Ideen #1–#7) – Frontend steht, Backend folgt.
+// Liefert das Backend 404, zeigt die Oberfläche "Backend folgt".
+// ==========================================
+
+/** Idee #1: Foto → Tagebucheintrag (Contract aus dem Hackathon-Plan) */
+export interface PhotoDescribeResponse {
+  caption: string;
+  diary_text: string;
+  issues: string[];
+}
+
+/** Idee #2: Wetter automatisch */
+export interface WeatherResponse {
+  date: string;
+  temperature_c: number | null;
+  condition: string;
+  wind_kmh?: number | null;
+  precipitation_mm?: number | null;
+  source: string;
+}
+
+/** Idee #4: Versand & Zugangsnachweis eines Briefs */
+export type DispatchMethod = 'email' | 'einschreiben' | 'bote' | 'fax' | 'persoenlich';
+
+export interface NoticeDispatch {
+  method: DispatchMethod;
+  sent_at: string;            // ISO-Datum/Zeit
+  recipient_address?: string | null;
+  tracking_number?: string | null;
+  received_at?: string | null; // Zugang bestätigt am
+  note?: string | null;
+}
+
+/** Idee #5: „Frag dein Projekt“ */
+export interface AssistantAnswer {
+  answer: string;
+  sources: string[];
   mode: 'ai' | 'offline';
 }
 
@@ -342,9 +425,21 @@ export interface ReportProgressOut {
   note: string | null;
 }
 
+/** Anwesenheit einer Firma / eines Gewerks an einem Tag */
+export interface AttendanceItem {
+  company?: string | null;
+  trade?: string | null;
+  workers: number;
+  hours?: number | null;
+}
+
 export interface DailyReportIn {
   report_number?: number | null;
   weather?: string | null;
+  temperature_c?: number | null;
+  site_manager?: string | null;
+  /** null/undefined = unverändert lassen, Liste = komplett ersetzen */
+  attendance?: AttendanceItem[] | null;
   workforce_count?: number | null;
   trades?: string[];
   work_completed?: string | null;
@@ -361,6 +456,9 @@ export interface DailyReportOut {
   report_date: string;
   report_number: number | null;
   weather: string | null;
+  temperature_c?: number | null;
+  site_manager?: string | null;
+  attendance?: AttendanceItem[];
   workforce_count: number | null;
   trades: string[];
   work_completed: string | null;
@@ -756,9 +854,62 @@ export const api = {
     return res.blob();
   },
 
+  /** POST /api/contracts/{id}/parse – Sollstärke, Firma, Gewerk, Fristen mit Fundstelle (speichert nichts) */
+  async parseContract(contractId: number): Promise<ContractParseResponse> {
+    const res = await fetch(`${API_BASE_URL}/api/contracts/${contractId}/parse`, { method: 'POST' });
+    return handleResponse<ContractParseResponse>(res, 'Vertrag konnte nicht ausgelesen werden');
+  },
+
   // ---- System ----
   async health(): Promise<HealthStatus> {
     const res = await fetch(`${API_BASE_URL}/health`);
     return handleResponse<HealthStatus>(res, 'Backend nicht erreichbar');
+  },
+
+  // ==========================================
+  // Geplante Endpunkte (Ideen) – existieren im Backend noch nicht → 404 → "Backend folgt"
+  // ==========================================
+
+  /** Idee #1: POST /api/photos/describe (multipart: file, project_id, lang) */
+  async describePhoto(file: File, projectId?: number, lang = 'de'): Promise<PhotoDescribeResponse> {
+    const form = new FormData();
+    form.append('file', file, file.name);
+    form.append('lang', lang);
+    if (projectId) form.append('project_id', String(projectId));
+    const res = await fetch(`${API_BASE_URL}/api/photos/describe`, { method: 'POST', body: form });
+    return handleResponse<PhotoDescribeResponse>(res, 'Fotoanalyse fehlgeschlagen');
+  },
+
+  /** Idee #2: GET /api/weather?project_id=&date= */
+  async getWeather(date: string, projectId?: number): Promise<WeatherResponse> {
+    const params = new URLSearchParams({ date });
+    if (projectId) params.set('project_id', String(projectId));
+    const res = await fetch(`${API_BASE_URL}/api/weather?${params.toString()}`);
+    return handleResponse<WeatherResponse>(res, 'Wetter konnte nicht geladen werden');
+  },
+
+  /** Idee #4: GET/PUT /api/notices/{id}/dispatch */
+  async getDispatch(noticeId: number): Promise<NoticeDispatch | null> {
+    const res = await fetch(`${API_BASE_URL}/api/notices/${noticeId}/dispatch`);
+    return handleResponse<NoticeDispatch | null>(res, 'Versanddaten konnten nicht geladen werden');
+  },
+
+  async saveDispatch(noticeId: number, data: NoticeDispatch): Promise<NoticeDispatch> {
+    const res = await fetch(`${API_BASE_URL}/api/notices/${noticeId}/dispatch`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    return handleResponse<NoticeDispatch>(res, 'Versanddaten konnten nicht gespeichert werden');
+  },
+
+  /** Idee #5: POST /api/assistant/ask {question, project_id} */
+  async askProject(question: string, projectId?: number): Promise<AssistantAnswer> {
+    const res = await fetch(`${API_BASE_URL}/api/assistant/ask`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ question, project_id: projectId }),
+    });
+    return handleResponse<AssistantAnswer>(res, 'Assistent nicht erreichbar');
   },
 };

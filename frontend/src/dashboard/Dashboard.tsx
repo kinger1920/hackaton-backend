@@ -1,87 +1,349 @@
-import React, {useState} from 'react';
-import {useNavigate} from 'react-router-dom';
+import React, { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
-    FileText,
-    AlertTriangle,
-    Mail,
-    Sparkles,
-    Mic,
     Users,
+    CloudSun,
+    Layers,
+    PhoneCall,
+    Phone,
+    Mail,
+    Search,
+    X,
+    Building2,
     CheckCircle2,
-    FileDown,
-    Clock
+    ArrowRight,
+    AlertCircle,
+    TrendingUp,
+    RefreshCw,
+    AlertTriangle,
+    FileText
 } from 'lucide-react';
 import './Dashboard.css';
 import '@frontend/src/index.css';
-import {useProjects} from '../context/ProjectContext';
+import { useProjects } from '../context/ProjectContext';
 import { useLanguage } from '../context/LanguageContext';
+import {
+    api,
+    Company,
+    Contract,
+    DailyReportOut,
+    DashboardData,
+    DraftNavState,
+    PlanAnalysis
+} from '../services/api';
 
-interface DraftItem {
+function todayIso(): string {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+interface WorkerPerson {
     id: string;
-    title: string;
-    category: string;
-    date: string;
-    status: 'Entwurf' | 'Freigegeben';
+    name: string;
+    role: string;
+    company: string;
+    present: boolean;
+    arrivalTime?: string;
+    absenceReason?: string;
 }
 
 export const Dashboard: React.FC = () => {
     const navigate = useNavigate();
     const { t } = useLanguage();
-  const userName = localStorage.getItem('userName') || t('role_site_manager');
-    const {activeProject} = useProjects();
+    const userName = localStorage.getItem('userName') || t('role_site_manager');
+    const { projects, activeProject, setActiveProjectId } = useProjects();
 
-    const [quickNote, setQuickNote] = useState('');
-    const [isRecording, setIsRecording] = useState(false);
-    const [drafts, setDrafts] = useState<DraftItem[]>([
-        {
-            id: '1',
-            title: 'Behinderungsanzeige § 6 Abs. 1 VOB/B (Fehlende TGA-Ausführungspläne)',
-            category: 'Behinderungsanzeige',
-            date: 'Heute, 09:15',
-            status: 'Entwurf'
-        },
-        {
-            id: '2',
-            title: 'Bautagesbericht KW 47 - Donnerstag (Erdarbeiten & Rohbau Bauteil A)',
-            category: 'Bautagesbericht',
-            date: 'Heute, 08:00',
-            status: 'Entwurf'
-        },
-        {
-            id: '3',
-            title: 'Bedenkenanmeldung (Feuchtigkeit in Untergeschoss-Sohle vor Estrich)',
-            category: 'Bedenken',
-            date: 'Gestern, 16:30',
-            status: 'Freigegeben'
-        }
-    ]);
+    // Modal States
+    const [showStaffModal, setShowStaffModal] = useState(false);
+    const [staffTab, setStaffTab] = useState<'present' | 'absent'>('present');
+    const [staffSearch, setStaffSearch] = useState('');
 
-    const handleMicToggle = () => {
-        if (!isRecording) {
-            setIsRecording(true);
-            setTimeout(() => {
-                setQuickNote('Kettenbagger seit 10:15 Uhr stillgelegt, da Freigabe für Schachtarbeiten Trasse Nord fehlt. 3 Mann Tiefbau blockiert.');
-                setIsRecording(false);
-            }, 1800);
+    const [showEmergencyModal, setShowEmergencyModal] = useState(false);
+
+    // ---- Backend-Daten (Fallback: Beispieldaten unten) ----
+    const projectId = Number(activeProject.id);
+    const [dashboard, setDashboard] = useState<DashboardData | null>(null);
+    const [analysis, setAnalysis] = useState<PlanAnalysis | null>(null);
+    const [period, setPeriod] = useState<'week' | 'all'>('week');
+    const [todayReport, setTodayReport] = useState<DailyReportOut | null>(null);
+    const [contracts, setContracts] = useState<Contract[]>([]);
+    const [clientCompany, setClientCompany] = useState<Company | null>(null);
+    const [isRefreshing, setIsRefreshing] = useState(false);
+    const [backendOnline, setBackendOnline] = useState<boolean | null>(null);
+
+    const loadBackend = async () => {
+        setIsRefreshing(true);
+        const [dash, anl, rep, con, cli] = await Promise.allSettled([
+            api.getDashboard(projectId),
+            api.getAnalysis(projectId, period),
+            api.getReport(todayIso(), projectId),
+            api.listContracts(projectId),
+            api.listCompanies({ company_type: 'client' })
+        ]);
+        setDashboard(dash.status === 'fulfilled' ? dash.value : null);
+        setAnalysis(anl.status === 'fulfilled' ? anl.value : null);
+        setTodayReport(rep.status === 'fulfilled' && rep.value.id != null ? rep.value : null);
+        setContracts(con.status === 'fulfilled' ? con.value : []);
+        setClientCompany(cli.status === 'fulfilled' && cli.value.length > 0 ? cli.value[0] : null);
+        setBackendOnline(dash.status === 'fulfilled' || anl.status === 'fulfilled');
+        setIsRefreshing(false);
+    };
+
+    useEffect(() => {
+        loadBackend();
+    }, [projectId, period]);
+
+    const goToDraft = (state: DraftNavState) => navigate('/drafts', { state });
+
+    // 1. Mitarbeiter-Stand (Worker attendance data per project)
+    const getStaffData = () => {
+        const pid = String(activeProject.id);
+        if (pid === '2' || pid === 'proj-2') {
+            const workers: WorkerPerson[] = [
+                { id: 'w-sp-1', name: 'Jürgen Lehmann', role: 'Polier Spezialtiefbau', company: 'Fa. Bauer-Ramm', present: true, arrivalTime: '06:30 Uhr' },
+                { id: 'w-sp-2', name: 'Frank Behrens', role: 'Großgeräteführer Rammgerät', company: 'Fa. Bauer-Ramm', present: true, arrivalTime: '06:45 Uhr' },
+                { id: 'w-sp-3', name: 'Tomasz Nowak', role: 'Spezialtiefbau-Facharbeiter', company: 'Fa. Bauer-Ramm', present: true, arrivalTime: '06:45 Uhr' },
+                { id: 'w-sp-4', name: 'Piotr Kaczmarek', role: 'Spezialtiefbau-Facharbeiter', company: 'Fa. Bauer-Ramm', present: true, arrivalTime: '06:50 Uhr' },
+                { id: 'w-sp-5', name: 'Sergej Braun', role: 'Schweißfachkraft Spundwand', company: 'Fa. Bauer-Ramm', present: true, arrivalTime: '07:00 Uhr' },
+                { id: 'w-sp-6', name: 'Uwe Seidel', role: 'Vorarbeiter Wasserhaltung', company: 'Fa. HydroSpree', present: true, arrivalTime: '06:40 Uhr' },
+                { id: 'w-sp-7', name: 'Lutz Krüger', role: 'Brunnenbaumeister', company: 'Fa. HydroSpree', present: true, arrivalTime: '07:05 Uhr' },
+                { id: 'w-sp-8', name: 'Ahmed Mansour', role: 'Tiefbaufacharbeiter', company: 'Fa. Flussbau Nord', present: true, arrivalTime: '06:45 Uhr' },
+                { id: 'w-sp-9', name: 'Oleg Danilow', role: 'Baggerführer Kettenbagger', company: 'Fa. Flussbau Nord', present: true, arrivalTime: '06:50 Uhr' },
+                { id: 'w-sp-10', name: 'Matthias Horn', role: 'Messgehilfe Vermessung', company: 'Vermessungsbüro Spree', present: true, arrivalTime: '07:15 Uhr' }
+            ];
+            return {
+                plannedCount: 26,
+                presentCount: 26,
+                absentCount: 0,
+                workers
+            };
+        } else if (pid === '3' || pid === 'proj-3') {
+            const workers: WorkerPerson[] = [
+                { id: 'w-tg-1', name: 'Dr. Jens Franke', role: 'Leitender Schadstoffgutachter', company: 'Dr. Franke Sachverständige', present: true, arrivalTime: '07:30 Uhr' },
+                { id: 'w-tg-2', name: 'Torsten Bergmann', role: 'Sachkundiger TRGS 519', company: 'Fa. CleanAsbest', present: true, arrivalTime: '06:45 Uhr' },
+                { id: 'w-tg-3', name: 'Marek Wisniewski', role: 'Schadstoffsanierer', company: 'Fa. CleanAsbest', present: true, arrivalTime: '06:50 Uhr' },
+                { id: 'w-tg-4', name: 'Andrzej Kowal', role: 'Schadstoffsanierer', company: 'Fa. CleanAsbest', present: true, arrivalTime: '06:50 Uhr' },
+                { id: 'w-tg-5', name: 'Heiko Klein', role: 'Restaurator Stuckarbeiten', company: 'Restaurator Klein', present: true, arrivalTime: '07:15 Uhr' },
+                { id: 'w-tg-6', name: 'Christian Vogt', role: 'Zimmerermeister Schutzgerüst', company: 'Holz & Denkmal', present: true, arrivalTime: '07:00 Uhr' }
+            ];
+            return {
+                plannedCount: 18,
+                presentCount: 18,
+                absentCount: 0,
+                workers
+            };
         } else {
-            setIsRecording(false);
+            // Default: Schulzentrum Nord (38 planned, 34 present, 4 absent)
+            const workers: WorkerPerson[] = [
+                // Present workers
+                { id: 'w-sz-1', name: 'Markus Weber', role: 'Oberpolier Rohbau', company: 'Fa. BetonTech', present: true, arrivalTime: '06:15 Uhr' },
+                { id: 'w-sz-2', name: 'Jan Kowalski', role: 'Vorarbeiter Eisenflechter', company: 'Fa. BetonTech', present: true, arrivalTime: '06:30 Uhr' },
+                { id: 'w-sz-3', name: 'Dariusz Nowak', role: 'Eisenflechter Decke B', company: 'Fa. BetonTech', present: true, arrivalTime: '06:35 Uhr' },
+                { id: 'w-sz-4', name: 'Piotr Zielinski', role: 'Eisenflechter Decke B', company: 'Fa. BetonTech', present: true, arrivalTime: '06:35 Uhr' },
+                { id: 'w-sz-5', name: 'Bogdan Mazur', role: 'Eisenflechter Decke B', company: 'Fa. BetonTech', present: true, arrivalTime: '06:40 Uhr' },
+                { id: 'w-sz-6', name: 'Ahmet Yilmaz', role: 'Vorarbeiter Schalungsbau', company: 'Fa. BetonTech', present: true, arrivalTime: '06:30 Uhr' },
+                { id: 'w-sz-7', name: 'Mehmet Kaya', role: 'Schalungsbauer Unterzüge', company: 'Fa. BetonTech', present: true, arrivalTime: '06:40 Uhr' },
+                { id: 'w-sz-8', name: 'Emre Sahin', role: 'Schalungsbauer Decke', company: 'Fa. BetonTech', present: true, arrivalTime: '06:45 Uhr' },
+                { id: 'w-sz-9', name: 'Thomas Müller', role: 'Kranführer Turmdrehkran 1', company: 'Fa. BetonTech', present: true, arrivalTime: '06:20 Uhr' },
+                { id: 'w-sz-10', name: 'Jens Wagner', role: 'Kranführer Turmdrehkran 2', company: 'Fa. BetonTech', present: true, arrivalTime: '06:25 Uhr' },
+                { id: 'w-sz-11', name: 'Stefan Schmidt', role: 'Baumaschinist Kettenbagger', company: 'Fa. Erd & Grund', present: true, arrivalTime: '06:45 Uhr' },
+                { id: 'w-sz-12', name: 'Christian Bauer', role: 'Tiefbaufacharbeiter Grundleitungen', company: 'Fa. Erd & Grund', present: true, arrivalTime: '06:45 Uhr' },
+                { id: 'w-sz-13', name: 'Sven Krause', role: 'Rohrleger DN 150', company: 'Fa. Erd & Grund', present: true, arrivalTime: '06:50 Uhr' },
+                { id: 'w-sz-14', name: 'Michael Wolf', role: 'Bauleiter TGA Elektro', company: 'Fa. Elektro-Klima', present: true, arrivalTime: '07:00 Uhr' },
+                { id: 'w-sz-15', name: 'Lukas Fischer', role: 'Elektroinstallateur Leerrohre', company: 'Fa. Elektro-Klima', present: true, arrivalTime: '06:55 Uhr' },
+                { id: 'w-sz-16', name: 'Tobias Hoffmann', role: 'Monteur Lüftungsschacht', company: 'Fa. Elektro-Klima', present: true, arrivalTime: '07:05 Uhr' },
+                { id: 'w-sz-17', name: 'Andreas Becker', role: 'Zimmerermeister Hallendach', company: 'Fa. Holzwerk Nord', present: true, arrivalTime: '06:40 Uhr' },
+                { id: 'w-sz-18', name: 'Carsten Lindner', role: 'Zimmerer Dachtragwerk', company: 'Fa. Holzwerk Nord', present: true, arrivalTime: '06:45 Uhr' },
+                { id: 'w-sz-19', name: 'Felix Otto', role: 'Zimmerer Hallendach', company: 'Fa. Holzwerk Nord', present: true, arrivalTime: '06:50 Uhr' },
+                // Missing workers with reasons
+                { id: 'w-sz-a1', name: 'Klaus Richter', role: 'Schalungsbauer Bauteil B', company: 'Fa. BetonTech', present: false, absenceReason: 'Krankmeldung bis 24.11. (AU liegt vor)' },
+                { id: 'w-sz-a2', name: 'Ali Demir', role: 'Eisenflechter Decke', company: 'Fa. BetonTech', present: false, absenceReason: 'Geplanter Erholungsurlaub' },
+                { id: 'w-sz-a3', name: 'Florian Koch', role: 'Auszubildender TGA', company: 'Fa. Elektro-Klima', present: false, absenceReason: 'Berufsschule (Blockunterricht OSZ)' },
+                { id: 'w-sz-a4', name: 'Goran Petrovic', role: 'Tiefbaufacharbeiter', company: 'Fa. Erd & Grund', present: false, absenceReason: 'Unentschuldigt abwesend (Polier informiert)' }
+            ];
+            return {
+                plannedCount: 38,
+                presentCount: 34,
+                absentCount: 4,
+                workers
+            };
         }
     };
 
-    const handleGenerateDraft = () => {
-        if (!quickNote.trim()) return;
+    // Echte Zahlen: Anwesenheit aus dem heutigen Bautagesbericht, Soll aus den Verträgen (Sollstärke)
+    const demoStaff = getStaffData();
+    const attendance = todayReport?.attendance ?? [];
+    const contractPlanned = contracts.reduce((sum, c) => sum + (c.planned_workforce ?? 0), 0);
+    const reportPresent =
+        todayReport?.workforce_count ?? (attendance.length > 0 ? attendance.reduce((s, a) => s + a.workers, 0) : null);
+    const usesBackendStaff = reportPresent != null;
+    const staffData = usesBackendStaff
+        ? {
+              plannedCount: contractPlanned > 0 ? contractPlanned : reportPresent!,
+              presentCount: reportPresent!,
+              absentCount: Math.max(0, (contractPlanned > 0 ? contractPlanned : reportPresent!) - reportPresent!),
+              workers: demoStaff.workers
+          }
+        : demoStaff;
 
-        const newDraft: DraftItem = {
-            id: String(Date.now()),
-            title: `KI-Entwurf: Behinderungsanzeige (${quickNote.slice(0, 40)}...)`,
-            category: 'Behinderungsanzeige',
-            date: 'Gerade eben',
-            status: 'Entwurf'
-        };
-
-        setDrafts([newDraft, ...drafts]);
-        setQuickNote('');
+    // 2. Wetter Kachel Daten (Site weather per project)
+    const getWeatherData = () => {
+        const pid = String(activeProject.id);
+        if (pid === '2' || pid === 'proj-2') {
+            return {
+                temp: 6,
+                condition: 'Windig am Spreeufer',
+                wind: '32 km/h (Böen 48 km/h)',
+                rainRisk: '20% Niederschlag',
+                craneStatus: 'Böenwarnung aktiv',
+                concreteStatus: 'Betonage zulässig (> +5°C)',
+                isWindWarning: true
+            };
+        } else if (pid === '3' || pid === 'proj-3') {
+            return {
+                temp: 8,
+                condition: 'Leicht bewölkt & trocken',
+                wind: '16 km/h',
+                rainRisk: '5% Niederschlag',
+                craneStatus: 'Freier Kranbetrieb',
+                concreteStatus: 'Konditionierter Innenbereich',
+                isWindWarning: false
+            };
+        } else {
+            return {
+                temp: 7,
+                condition: 'Bedeckt & böig',
+                wind: '24 km/h (Böen 38 km/h)',
+                rainRisk: '15% Niederschlag',
+                craneStatus: 'Kran freigegeben (< 45 km/h)',
+                concreteStatus: 'Betonage zulässig (> +5°C)',
+                isWindWarning: false
+            };
+        }
     };
+
+    // Wetter aus dem heutigen Bautagesbericht, falls eingetragen (automatisches Wetter: Idee #2)
+    const demoWeather = getWeatherData();
+    const weatherData = todayReport && (todayReport.weather || todayReport.temperature_c != null)
+        ? {
+              ...demoWeather,
+              temp: todayReport.temperature_c ?? demoWeather.temp,
+              condition: todayReport.weather || demoWeather.condition,
+              concreteStatus:
+                  todayReport.temperature_c != null
+                      ? todayReport.temperature_c > 5
+                          ? 'Betonage zulässig (> +5°C)'
+                          : 'Achtung: Winterbaumaßnahmen prüfen (≤ +5°C)'
+                      : demoWeather.concreteStatus
+          }
+        : demoWeather;
+
+    // 3. Zustand Beton Kachel Daten (Concrete status per project)
+    const getConcreteData = () => {
+        const pid = String(activeProject.id);
+        if (pid === '2' || pid === 'proj-2') {
+            return {
+                component: 'Spundwand-Kopfbalken Achse 1-4',
+                spec: 'C30/37 XA2 (WU-Beton)',
+                strengthPercent: 85,
+                strengthMpa: '25.5 / 30 N/mm²',
+                age: 'Tag 7 von 28',
+                temp: '19.2°C',
+                stripDays: 'Bereits ausgeschalt',
+                status: 'WU-Güteprüfung i.O.'
+            };
+        } else if (pid === '3' || pid === 'proj-3') {
+            return {
+                component: 'Fundamentunterfangung Aufzug',
+                spec: 'C20/25 XC2',
+                strengthPercent: 100,
+                strengthMpa: '28.0 N/mm² (Endfestigkeit)',
+                age: 'Tag 14 von 28',
+                temp: '16.5°C',
+                stripDays: 'Vollständig freigegeben',
+                status: 'Prüfstatik abgenommen'
+            };
+        } else {
+            return {
+                component: 'Decke 1. OG Bauteil B',
+                spec: 'C25/30 XC1/XC2',
+                strengthPercent: 68,
+                strengthMpa: '20.4 / 30 N/mm²',
+                age: 'Tag 3 von 28',
+                temp: '24.8°C',
+                stripDays: 'Freigabe in 4 Werktagen (25.11.)',
+                status: 'Hydratationswärme optimal'
+            };
+        }
+    };
+
+    const concreteData = getConcreteData();
+
+    // 4. Auftraggeber & Notfall-Kontakt Daten (Client emergency per project)
+    const getClientData = () => {
+        const pid = String(activeProject.id);
+        if (pid === '2' || pid === 'proj-2') {
+            return {
+                clientName: activeProject.client || 'Spreebogen Wohnbau GmbH & Co. KG',
+                clientShort: 'Spreebogen Wohnbau GmbH',
+                contactPerson: 'Dr. Carsten Brandt (Technischer Leiter)',
+                emergencyPhone: '+49 30 5549-8800',
+                email: 'notfall@spreebogen-wohnbau.de',
+                hotline24h: '0800 5549000',
+                address: 'Köpenicker Str. 112, 10179 Berlin'
+            };
+        } else if (pid === '3' || pid === 'proj-3') {
+            return {
+                clientName: activeProject.client || 'Tiergarten Real Estate AG',
+                clientShort: 'Tiergarten Real Estate AG',
+                contactPerson: 'Herr Markus von Berg (Asset & Project Lead)',
+                emergencyPhone: '+49 30 2099-3100',
+                email: 'projekte@tiergarten-ag.de',
+                hotline24h: '0800 2099112',
+                address: 'Stauffenbergstr. 18, 10785 Berlin'
+            };
+        } else {
+            return {
+                clientName: activeProject.client || 'Städtisches Hochbauamt Berlin-Mitte',
+                clientShort: 'Städtisches Hochbauamt Mitte',
+                contactPerson: 'Frau Dipl.-Ing. Susanne Weber (Bauherrenvertreterin)',
+                emergencyPhone: '+49 30 9018-24400',
+                email: 'susanne.weber@ba-mitte.berlin.de',
+                hotline24h: '0800 2284357',
+                address: 'Karl-Marx-Allee 31, 10178 Berlin'
+            };
+        }
+    };
+
+    // Auftraggeber aus den Stammdaten (Firma vom Typ "client"), sonst Beispieldaten
+    const demoClient = getClientData();
+    const clientData = clientCompany
+        ? {
+              ...demoClient,
+              clientName: clientCompany.name,
+              clientShort: clientCompany.name,
+              contactPerson: clientCompany.contact_person || demoClient.contactPerson,
+              emergencyPhone: clientCompany.phone || demoClient.emergencyPhone,
+              email: clientCompany.email || demoClient.email,
+              address: clientCompany.address || demoClient.address
+          }
+        : demoClient;
+
+    const kpis = dashboard?.kpis;
+    const alerts = dashboard?.alerts ?? [];
+
+    // Filter staff in modal
+    const filteredWorkers = staffData.workers.filter((w) => {
+        if (staffTab === 'present' && !w.present) return false;
+        if (staffTab === 'absent' && w.present) return false;
+        if (!staffSearch.trim()) return true;
+        const q = staffSearch.toLowerCase();
+        return (
+            w.name.toLowerCase().includes(q) ||
+            w.role.toLowerCase().includes(q) ||
+            w.company.toLowerCase().includes(q)
+        );
+    });
 
     return (
         <>
@@ -90,255 +352,653 @@ export const Dashboard: React.FC = () => {
                 <div>
                     <h1 className="welcome-title">{t('dash_hello')}, {userName}!</h1>
                     <p className="welcome-desc">
-                        {t('hdr_active_project')} <strong>{activeProject.name}</strong> ({activeProject.number}) •
-                        {t('dash_phase')}: {activeProject.phase}
+                        {t('hdr_active_project')} <strong>{activeProject.name}</strong> ({activeProject.number}) • {t('dash_phase')}: {activeProject.phase}
                     </p>
                 </div>
                 <div className="hero-stats">
                     <div className="hero-stat-card">
-                        <div className="hero-stat-number">2</div>
-                        <div className="hero-stat-label">{t('dash_stat_deadlines')}</div>
+                        <div className="hero-stat-number">{staffData.presentCount} / {staffData.plannedCount}</div>
+                        <div className="hero-stat-label">Anwesende Fachkräfte</div>
                     </div>
                     <div className="hero-stat-card">
-                        <div className="hero-stat-number">{drafts.length}</div>
-                        <div className="hero-stat-label">{t('dash_stat_open_drafts')}</div>
+                        <div className="hero-stat-number">{activeProject.status}</div>
+                        <div className="hero-stat-label">Projektstatus</div>
                     </div>
                 </div>
             </section>
 
-      {/* KPI Summary Cards */}
-      <section className="kpi-grid">
-        <div
-          className="kpi-card"
-                    onClick={() => navigate('/reports')}
-          style={{ cursor: 'pointer' }}
-          title={t('dash_kpi_diary')}
-        >
-          <div>
-            <div className="kpi-label">{t('dash_kpi_diary')}</div>
-                        <div className="kpi-value">1 Offen</div>
-                        <div className="kpi-sub">{t('dash_kpi_diary_sub')}</div>
+            {/* =========================================================================
+                DIE 4 HAUPTKACHELN:
+                1. Mitarbeiter-Stand (mit Klick-Namensliste)
+                2. Wetter
+                3. Zustand Beton
+                4. Auftraggeber & Notfall-Kontakt
+               ========================================================================= */}
+            <section className="kpi-grid">
+                {/* 1. KACHEL: MITARBEITER-STAND */}
+                <div
+                    className="kpi-card interactive"
+                    onClick={() => setShowStaffModal(true)}
+                    title="Klicken, um die Namensliste aller anwesenden und fehlenden Personen zu sehen"
+                >
+                    <div style={{ flex: 1 }}>
+                        <div className="kpi-label">Mitarbeiter-Stand</div>
+                        <div className="kpi-value">
+                            {staffData.presentCount} / {staffData.plannedCount}
+                        </div>
+                        <div className={`kpi-sub ${staffData.absentCount > 0 ? 'alert' : ''}`}>
+                            {staffData.absentCount > 0
+                                ? `${staffData.absentCount} Personen fehlen`
+                                : 'Vollzählig vor Ort'}
+                        </div>
+                        <div className="kpi-click-hint">
+                            <Search size={12} />
+                            <span>Klick für Namensliste</span>
+                        </div>
                     </div>
-                    <div className="kpi-icon" style={{backgroundColor: '#eff6ff', color: '#2563eb'}}>
-                        <FileText size={24}/>
-                    </div>
-                </div>
-
-        <div
-          className="kpi-card"
-                    onClick={() => navigate('/analysis')}
-          style={{ cursor: 'pointer' }}
-          title={t('dash_btn_full_analysis')}
-        >
-          <div>
-            <div className="kpi-label">{t('dash_kpi_alerts')}</div>
-                        <div className="kpi-value">2 Alerts</div>
-                        <div className="kpi-sub alert">{t('dash_kpi_alerts_sub')}</div>
-                    </div>
-                    <div className="kpi-icon" style={{backgroundColor: '#fef2f2', color: '#dc2626'}}>
-                        <AlertTriangle size={24}/>
-                    </div>
-                </div>
-
-                <div className="kpi-card">
-                    <div>
-                        <div className="kpi-label">{t('dash_kpi_drafts')}</div>
-                        <div className="kpi-value">{drafts.length} Bereit</div>
-                        <div className="kpi-sub">{t('dash_kpi_drafts_sub')}</div>
-                    </div>
-                    <div className="kpi-icon" style={{backgroundColor: '#f0fdf4', color: '#16a34a'}}>
-                        <Mail size={24}/>
+                    <div className="kpi-icon" style={{ backgroundColor: '#eff6ff', color: '#2563eb' }}>
+                        <Users size={26} />
                     </div>
                 </div>
 
-                <div className="kpi-card">
-                    <div>
-                        <div className="kpi-label">{t('dash_kpi_workers')}</div>
-                        <div className="kpi-value">34 Personen</div>
-                        <div className="kpi-sub">{t('dash_kpi_workers_sub')}</div>
+                {/* 2. KACHEL: WETTER */}
+                <div
+                    className="kpi-card"
+                    title={`Baustellenwetter für ${activeProject.name}`}
+                >
+                    <div style={{ flex: 1 }}>
+                        <div className="kpi-label">Baustellenwetter</div>
+                        <div className="kpi-value">{weatherData.temp}°C • {weatherData.condition}</div>
+                        <div className="kpi-weather-details">
+                            <span className="kpi-weather-chip">💨 {weatherData.wind}</span>
+                            <span className="kpi-weather-chip">💧 {weatherData.rainRisk}</span>
+                        </div>
+                        <div className="kpi-sub" style={{ marginTop: '6px' }}>
+                            {weatherData.concreteStatus}
+                        </div>
                     </div>
-                    <div className="kpi-icon" style={{backgroundColor: '#f8fafc', color: '#475569'}}>
-                        <Users size={24}/>
+                    <div className="kpi-icon" style={{ backgroundColor: '#fef3c7', color: '#d97706' }}>
+                        <CloudSun size={26} />
+                    </div>
+                </div>
+
+                {/* 3. KACHEL: ZUSTAND BETON */}
+                <div
+                    className="kpi-card"
+                    title="Aktuelle Betonage, Reifegrad und Ausschalfrist"
+                >
+                    <div style={{ flex: 1 }}>
+                        <div className="kpi-label">Zustand Beton & Reifegrad</div>
+                        <div className="kpi-value" style={{ fontSize: '22px' }}>
+                            {concreteData.strengthPercent}% Festigkeit
+                        </div>
+                        <div className="kpi-concrete-progress">
+                            <div className="kpi-concrete-bar">
+                                <div
+                                    className="kpi-concrete-fill"
+                                    style={{ width: `${concreteData.strengthPercent}%` }}
+                                />
+                            </div>
+                        </div>
+                        <div style={{ fontSize: '11px', color: 'var(--color-slate-700)', fontWeight: 600 }}>
+                            {concreteData.component}
+                        </div>
+                        <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                            Kern: {concreteData.temp} • {concreteData.stripDays}
+                        </div>
+                    </div>
+                    <div className="kpi-icon" style={{ backgroundColor: '#f1f5f9', color: '#475569' }}>
+                        <Layers size={26} />
+                    </div>
+                </div>
+
+                {/* 4. KACHEL: AUFTRAGGEBER & NOTFALLKONTAKT */}
+                <div
+                    className="kpi-card"
+                    title="Auftraggeber-Daten und direkte Notfall-Erreichbarkeit"
+                >
+                    <div style={{ flex: 1 }}>
+                        <div className="kpi-label">Auftraggeber & Notfall</div>
+                        <div className="kpi-value" style={{ fontSize: '17px', lineHeight: 1.25 }}>
+                            {clientData.clientShort}
+                        </div>
+                        <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px' }}>
+                            {clientData.contactPerson}
+                        </div>
+                        <button
+                            type="button"
+                            className="kpi-client-emergency-btn"
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                setShowEmergencyModal(true);
+                            }}
+                        >
+                            <PhoneCall size={12} />
+                            <span>Notfall kontaktieren</span>
+                        </button>
+                    </div>
+                    <div className="kpi-icon" style={{ backgroundColor: '#fef2f2', color: '#dc2626' }}>
+                        <AlertCircle size={26} />
                     </div>
                 </div>
             </section>
 
-            {/* Main Dashboard Grid */}
-            <div className="dashboard-grid">
-                {/* Left Column: Quick Capture & Deviations */}
-                <div>
-                    {/* Quick Capture Panel */}
-                    <div className="panel">
-                        <div className="panel-header">
-                            <h2 className="panel-title">
-                                <Sparkles size={20} color="#2563eb"/>
-                                <span>{t('dash_capture_title')}</span>
-                            </h2>
+            {/* =========================================================================
+                SOLL/IST-ANALYSE & ABWEICHUNGEN (GET /api/analysis + GET /api/dashboard)
+                Ersetzt die frühere Seite /analysis.
+               ========================================================================= */}
+            <section className="dash-analysis-section">
+                <div className="dash-analysis-header">
+                    <div className="dash-analysis-title-group">
+                        <div className="dash-analysis-icon-badge">
+                            <TrendingUp size={22} />
                         </div>
-
-                        <div className="capture-box">
-              <textarea
-                  className="form-textarea capture-textarea"
-                  placeholder={t('dash_capture_placeholder')}
-                  value={quickNote}
-                  onChange={(e) => setQuickNote(e.target.value)}
-              />
-
-                            <div className="capture-actions">
-                                <button
-                                    type="button"
-                                    className={`mic-btn ${isRecording ? 'active' : ''}`}
-                                    onClick={handleMicToggle}
-                                >
-                                    <Mic size={16}/>
-                                    <span>{isRecording ? t('dash_mic_running') : t('dash_mic_start')}</span>
-                </button>
-
-                <button
-                  type="button"
-                  className="btn btn-secondary"
-                  onClick={() => navigate('/capture')}
-                  title={t('dash_btn_open_capture')}
-                >
-                  <Mic size={16} />
-                  <span>{t('dash_btn_open_capture')}</span>
-                </button>
-
-                <button
-                  type="button"
-                  className="btn btn-secondary"
-                  onClick={() => navigate('/reports')}
-                  title={t('dash_btn_to_diary')}
-                >
-                  <FileText size={16} />
-                  <span>{t('dash_btn_to_diary')}</span>
-                                </button>
-
-                                <button
-                                    type="button"
-                                    className="btn btn-primary"
-                                    onClick={handleGenerateDraft}
-                                    disabled={!quickNote.trim()}
-                                >
-                                    <Sparkles size={16}/>
-                                    <span>{t('dash_btn_gen_draft')}</span>
-                                </button>
-                            </div>
+                        <div>
+                            <h2 className="dash-analysis-title">Soll/Ist-Analyse & Abweichungen</h2>
+                            <p className="dash-analysis-sub">
+                                {backendOnline === false
+                                    ? 'Backend nicht erreichbar – keine Live-Auswertung'
+                                    : analysis
+                                        ? `${analysis.evaluatedReports} Tagesberichte ausgewertet • Stichtag ${new Date(analysis.refDate).toLocaleDateString('de-DE')}`
+                                        : 'Lade Auswertung…'}
+                            </p>
                         </div>
                     </div>
-
-                    {/* Deviations & Critical Alerts */}
-                    <div className="panel">
-                        <div className="panel-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                            <h2 className="panel-title">
-                                <AlertTriangle size={20} color="#dc2626"/>
-                                <span>{t('dash_deviations_title')}</span>
-                            </h2>
-              <button
-                type="button"
-                className="history-btn-small"
-                onClick={() => navigate('/analysis')}
-                style={{ color: '#dc2626', fontWeight: 600 }}
-              >
-                <span>{t('dash_btn_full_analysis')}</span>
-              </button>
+                    <div className="dash-analysis-controls">
+                        <div className="dash-period-pills">
+                            <button
+                                type="button"
+                                className={`dash-period-btn ${period === 'week' ? 'active' : ''}`}
+                                onClick={() => setPeriod('week')}
+                            >
+                                Diese Woche
+                            </button>
+                            <button
+                                type="button"
+                                className={`dash-period-btn ${period === 'all' ? 'active' : ''}`}
+                                onClick={() => setPeriod('all')}
+                            >
+                                Gesamt
+                            </button>
                         </div>
+                        <button
+                            type="button"
+                            className={`dash-btn-refresh ${isRefreshing ? 'spinning' : ''}`}
+                            onClick={loadBackend}
+                            disabled={isRefreshing}
+                        >
+                            <RefreshCw size={14} />
+                            <span>Aktualisieren</span>
+                        </button>
+                    </div>
+                </div>
 
-                        <div className="alerts-list">
-                            <div className="alert-item">
-                                <span className="badge badge-danger">{t('status_urgent')}</span>
-                                <div className="alert-content">
-                                    <div className="alert-title">Verzug bei TGA-Schlitz- und Durchbruchsplanung</div>
-                                    <div className="alert-desc">
-                                        Planlieferung seit 4 Tagen überfällig. Trockenbauarbeiten im 1. OG drohen ab
-                                        Montag zu stocken.
-                                    </div>
-                                    <span className="alert-action-link" onClick={() => navigate('/drafts')}>
-                    → {t('drafts_type_delay')}
-                  </span>
-                                </div>
+                <div className="dash-analysis-kpi-grid">
+                    <div className="dash-anl-kpi-card">
+                        <div>
+                            <div className="dash-anl-kpi-label">Größter Verzug</div>
+                            <div className={`dash-anl-kpi-val ${(kpis?.delayDays ?? 0) > 0 ? 'negative' : 'dark'}`}>
+                                {kpis ? `${kpis.delayDays.toLocaleString('de-DE')} AT` : '–'}
                             </div>
-
-                            <div className="alert-item warning">
-                                <span className="badge badge-warning">{t('status_warning')}</span>
-                                <div className="alert-content">
-                                    <div className="alert-title">Wetterwarnung: Dauerregen & Starkwind am Freitag</div>
-                                    <div className="alert-desc">
-                                        Mögliche Beeinträchtigung der Dachabdichtungsarbeiten. Vorkehrungen zur
-                                        Baustellensicherung treffen.
-                                    </div>
-                                    <span className="alert-action-link"
-                                          onClick={() => alert('Hinweis in Bautagesbericht übernommen')}>
-                    → In heutigen Bautagesbericht aufnehmen
-                  </span>
-                                </div>
+                            <div className="dash-anl-kpi-sub">Arbeitstage gegenüber Plan</div>
+                        </div>
+                    </div>
+                    <div className="dash-anl-kpi-card">
+                        <div>
+                            <div className="dash-anl-kpi-label">Termintreue (SPI)</div>
+                            <div className={`dash-anl-kpi-val ${(kpis?.spi ?? 1) < 0.9 ? 'warning' : 'neutral'}`}>
+                                {kpis ? kpis.spi.toLocaleString('de-DE') : '–'}
                             </div>
+                            <div className="dash-anl-kpi-sub">1,0 = im Plan</div>
+                        </div>
+                    </div>
+                    <div className="dash-anl-kpi-card">
+                        <div>
+                            <div className="dash-anl-kpi-label">Kritische Abweichungen</div>
+                            <div className={`dash-anl-kpi-val ${(kpis?.criticalAlerts ?? 0) > 0 ? 'negative' : 'dark'}`}>
+                                {kpis ? kpis.criticalAlerts : '–'}
+                            </div>
+                            <div className="dash-anl-kpi-sub">Handlungsbedarf nach VOB/B</div>
+                        </div>
+                    </div>
+                    <div
+                        className="dash-anl-kpi-card"
+                        style={{ cursor: 'pointer' }}
+                        onClick={() => navigate('/drafts')}
+                        title="Zu den Briefentwürfen"
+                    >
+                        <div>
+                            <div className="dash-anl-kpi-label">Offene Briefentwürfe</div>
+                            <div className="dash-anl-kpi-val dark">{kpis ? kpis.openDrafts : '–'}</div>
+                            <div className="dash-anl-kpi-sub">Prüfung & Freigabe nötig →</div>
                         </div>
                     </div>
                 </div>
 
-                {/* Right Column: Drafts & Human-in-the-Loop Review */}
-                <div>
-                    <div className="panel">
-                        <div className="panel-header">
-                            <h2 className="panel-title">
-                                <Clock size={20} color="#2563eb"/>
-                                <span>{t('dash_drafts_title')}</span>
-                            </h2>
+                <div className="dash-analysis-body-grid">
+                    {/* Fortschritt je Vorgang */}
+                    <div className="dash-analysis-subpanel">
+                        <div className="dash-subpanel-header">
+                            <h3 className="dash-subpanel-title">
+                                <Layers size={16} /> Fortschritt je Vorgang
+                            </h3>
+                            <button
+                                type="button"
+                                className="dash-btn-vob-action"
+                                onClick={() => navigate('/fortschritt')}
+                                title="Auf dem Grundriss mit Zeitregler anzeigen"
+                            >
+                                Grundriss-Ansicht →
+                            </button>
                         </div>
-
-                        <div className="docs-list">
-                            {drafts.map((draft) => (
-                                <div key={draft.id} className="doc-item">
-                                    <div className="doc-info">
-                                        <FileText size={20} className="doc-icon"/>
+                        <div className="dash-trades-container">
+                            {(analysis?.workPackages ?? dashboard?.progress ?? []).length === 0 && (
+                                <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+                                    Kein Bauzeitenplan mit Vorgängen für dieses Projekt (Stammdaten → Bauzeitenpläne).
+                                </div>
+                            )}
+                            {(analysis?.workPackages ?? dashboard?.progress ?? []).map((wp) => (
+                                <div key={wp.id} className="dash-trade-item">
+                                    <div className="dash-trade-top">
                                         <div>
-                                            <div className="doc-title">{draft.title}</div>
-                                            <div className="doc-meta">
-                                                {draft.category} • {draft.date}
+                                            <div className="dash-trade-name">{wp.name}</div>
+                                            <div className="dash-trade-subcontractor">
+                                                {wp.trade}{wp.subcontractor ? ` • ${wp.subcontractor}` : ''}
                                             </div>
                                         </div>
+                                        <span className={`dash-trade-badge ${wp.status}`}>
+                                            {wp.status === 'delayed'
+                                                ? `−${wp.delayDays.toLocaleString('de-DE')} AT`
+                                                : wp.status === 'warning'
+                                                    ? 'Achtung'
+                                                    : 'Im Plan'}
+                                        </span>
                                     </div>
-
-                                    <div className="doc-actions">
-                                        <span className="doc-status-badge">
-                      {draft.status === 'Freigegeben' ? t('status_approved') : t('status_draft')}
-                    </span>
-                                        <button
-                                            className="doc-btn"
-                                            title={t('btn_word_export')}
-                                            onClick={() => alert(`Export von: "${draft.title}" als DOCX/PDF gestartet`)}
-                                        >
-                                            <FileDown size={14}/>
-                                        </button>
+                                    <div className="dash-progress-wrapper">
+                                        <div className="dash-progress-labels">
+                                            <span>Soll {wp.planPercent}%</span>
+                                            <span>Ist {wp.actualPercent}%</span>
+                                        </div>
+                                        <div className="dash-progress-track">
+                                            <div
+                                                className={`dash-progress-fill-actual ${wp.status}`}
+                                                style={{ width: `${Math.min(100, wp.actualPercent)}%` }}
+                                            />
+                                        </div>
+                                    </div>
+                                    <div className="dash-trade-dates">
+                                        Soll-Ende {wp.planDate} • Ist {wp.actualDate}
                                     </div>
                                 </div>
                             ))}
                         </div>
                     </div>
 
-                    {/* Quick Info Box: Human-in-the-Loop */}
-                    <div
-                        style={{
-                            padding: '16px',
-                            borderRadius: '10px',
-                            backgroundColor: '#eff6ff',
-                            border: '1px solid #bfdbfe',
-                            fontSize: '13px',
-                            color: '#1e40af',
-                            display: 'flex',
-                            gap: '10px',
-                            alignItems: 'flex-start'
-                        }}
-                    >
-                        <CheckCircle2 size={20} style={{flexShrink: 0, marginTop: '2px'}}/>
-                        <div>
-                            <strong>Human-in-the-Loop Prinzip:</strong> Alle generierten Schreiben sind Vorschläge
-                            zur Entlastung. Sie können jeden Entwurf vor Freigabe oder Export prüfen und editieren.
+                    {/* Abweichungen & Briefvorschläge */}
+                    <div className="dash-analysis-subpanel">
+                        <div className="dash-subpanel-header">
+                            <h3 className="dash-subpanel-title">
+                                <AlertTriangle size={16} color="#dc2626" /> Abweichungen & Handlungsempfehlungen
+                            </h3>
+                            <span className="dash-subpanel-count">{alerts.length}</span>
+                        </div>
+                        <div className="dash-deviations-container">
+                            {alerts.length === 0 && (
+                                <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+                                    {backendOnline === false ? 'Keine Daten (Backend offline).' : 'Keine Abweichungen erkannt.'}
+                                </div>
+                            )}
+                            {alerts.map((a, idx) => (
+                                <div key={`${a.title}-${idx}`} className={`dash-dev-card ${a.severity === 'critical' ? 'critical' : 'warning'}`}>
+                                    <div className="dash-dev-header">
+                                        <div className="dash-dev-title">{a.title}</div>
+                                        <span className={`badge ${a.severity === 'critical' ? 'badge-danger' : 'badge-warning'}`}>
+                                            {a.severity === 'critical' ? t('status_urgent') : t('status_warning')}
+                                        </span>
+                                    </div>
+                                    <div className="dash-dev-details">{a.description}</div>
+                                    <div className="dash-dev-source">
+                                        <FileText size={11} /> Quelle: {a.source}
+                                    </div>
+                                    <div className="dash-dev-vob-box">
+                                        <span>{t(`drafts_type_${a.draftType}`)}</span>
+                                        <button
+                                            type="button"
+                                            className="dash-btn-vob-action"
+                                            onClick={() =>
+                                                goToDraft({
+                                                    type: a.draftType,
+                                                    keywords: a.prefillText || `${a.title}. ${a.description} (Quelle: ${a.source})`
+                                                })
+                                            }
+                                        >
+                                            <Mail size={11} /> Entwurf erstellen
+                                        </button>
+                                    </div>
+                                </div>
+                            ))}
                         </div>
                     </div>
                 </div>
-            </div>
+            </section>
+
+            {/* =========================================================================
+                UNTEN VOM DASHBOARD: ZULETZT GEÖFFNETE BAU-PROJEKTE
+               ========================================================================= */}
+            <section className="dash-recent-projects-section">
+                <div className="dash-recent-header">
+                    <div className="dash-recent-title-group">
+                        <div className="dash-recent-icon">
+                            <Building2 size={20} />
+                        </div>
+                        <div>
+                            <h2 className="dash-recent-title">Zuletzt geöffnete Bauprojekte</h2>
+                            <p className="dash-recent-sub">
+                                Schneller Wechsel zwischen Ihren Baustellen & Projekten
+                            </p>
+                        </div>
+                    </div>
+
+                    <button
+                        type="button"
+                        className="btn btn-secondary"
+                        onClick={() => navigate('/projects')}
+                        style={{ fontSize: '12px' }}
+                    >
+                        Alle Projekte verwalten →
+                    </button>
+                </div>
+
+                <div className="dash-recent-grid">
+                    {projects.map((proj) => {
+                        const isActive = proj.id === activeProject.id;
+                        return (
+                            <div
+                                key={proj.id}
+                                className={`dash-recent-card ${isActive ? 'active' : ''}`}
+                            >
+                                <div className="dash-recent-card-top">
+                                    <div>
+                                        <span className="dash-recent-nr">{proj.number}</span>
+                                        <h3 className="dash-recent-name">{proj.name}</h3>
+                                    </div>
+                                    {isActive && (
+                                        <span className="dash-badge-active-proj">
+                                            <CheckCircle2 size={12} />
+                                            <span>Aktiv</span>
+                                        </span>
+                                    )}
+                                </div>
+
+                                <div className="dash-recent-details">
+                                    <div><strong>Auftraggeber:</strong> {proj.client || 'Keine Angabe'}</div>
+                                    <div><strong>Standort:</strong> {proj.location || 'Berlin'}</div>
+                                    <div><strong>Leistungsphase:</strong> {proj.phase || 'Rohbau'}</div>
+                                </div>
+
+                                <div className="dash-recent-actions">
+                                    <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                                        Status: <strong>{proj.status}</strong>
+                                    </span>
+
+                                    {isActive ? (
+                                        <span style={{ fontSize: '12px', color: 'var(--color-primary)', fontWeight: 600 }}>
+                                            Aktuell geöffnet
+                                        </span>
+                                    ) : (
+                                        <button
+                                            type="button"
+                                            className="dash-btn-switch-proj"
+                                            onClick={() => setActiveProjectId(proj.id)}
+                                        >
+                                            <span>Projekt öffnen</span>
+                                            <ArrowRight size={12} />
+                                        </button>
+                                    )}
+                                </div>
+                            </div>
+                        );
+                    })}
+                </div>
+            </section>
+
+            {/* =========================================================================
+                MODAL 1: MITARBEITER-STAND (ANWESEND / FEHLEND LISTE)
+               ========================================================================= */}
+            {showStaffModal && (
+                <div className="dash-modal-overlay" onClick={() => setShowStaffModal(false)}>
+                    <div className="dash-modal-card" onClick={(e) => e.stopPropagation()}>
+                        <div className="dash-modal-header">
+                            <div className="dash-modal-title-group">
+                                <div className="dash-modal-icon">
+                                    <Users size={22} />
+                                </div>
+                                <div>
+                                    <h3 className="dash-modal-title">Mitarbeiter-Anwesenheit</h3>
+                                    <p className="dash-modal-sub">
+                                        {activeProject.name} • Geplant: {staffData.plannedCount} • Anwesend: {staffData.presentCount}
+                                    </p>
+                                </div>
+                            </div>
+                            <button
+                                type="button"
+                                className="dash-modal-close"
+                                onClick={() => setShowStaffModal(false)}
+                            >
+                                <X size={20} />
+                            </button>
+                        </div>
+
+                        <div className="dash-modal-toolbar">
+                            <div className="dash-modal-tabs">
+                                <button
+                                    type="button"
+                                    className={`dash-modal-tab ${staffTab === 'present' ? 'active' : ''}`}
+                                    onClick={() => setStaffTab('present')}
+                                >
+                                    <span>Anwesend</span>
+                                    <span className="dash-modal-tab-badge present">
+                                        {staffData.presentCount}
+                                    </span>
+                                </button>
+                                <button
+                                    type="button"
+                                    className={`dash-modal-tab ${staffTab === 'absent' ? 'active' : ''}`}
+                                    onClick={() => setStaffTab('absent')}
+                                >
+                                    <span>Fehlend / Abwesend</span>
+                                    <span className="dash-modal-tab-badge absent">
+                                        {staffData.absentCount}
+                                    </span>
+                                </button>
+                            </div>
+
+                            <input
+                                type="text"
+                                className="dash-modal-search"
+                                placeholder="Name, Gewerk, Firma suchen..."
+                                value={staffSearch}
+                                onChange={(e) => setStaffSearch(e.target.value)}
+                            />
+                        </div>
+
+                        <div className="dash-modal-body">
+                            {/* Echte Anwesenheit je Firma aus dem heutigen Bautagesbericht */}
+                            {attendance.length > 0 && (
+                                <div style={{ marginBottom: '14px' }}>
+                                    <div style={{ fontSize: '12px', fontWeight: 700, marginBottom: '6px' }}>
+                                        Anwesenheit je Firma (Bautagesbericht {new Date(todayIso()).toLocaleDateString('de-DE')})
+                                    </div>
+                                    <div className="dash-workers-grid">
+                                        {attendance.map((a, idx) => {
+                                            const contract = contracts.find(
+                                                (c) => c.contractor_name && a.company && c.contractor_name.toLowerCase() === a.company.toLowerCase()
+                                            );
+                                            const below = contract?.planned_workforce != null && a.workers < contract.planned_workforce;
+                                            return (
+                                                <div key={idx} className={`dash-worker-card ${below ? 'absent' : 'present'}`}>
+                                                    <div className="dash-worker-info">
+                                                        <div className="dash-worker-name">{a.company || 'Ohne Firma'}</div>
+                                                        <div className="dash-worker-trade">{a.trade || '–'}</div>
+                                                    </div>
+                                                    <div className="dash-worker-meta">
+                                                        <span className={below ? 'dash-worker-reason' : 'dash-worker-time'}>
+                                                            {a.workers}
+                                                            {contract?.planned_workforce != null ? ` / Soll ${contract.planned_workforce}` : ''} Personen
+                                                            {a.hours != null ? ` • ${a.hours} Std.` : ''}
+                                                        </span>
+                                                    </div>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                    <div style={{ fontSize: '11px', color: 'var(--text-muted)', margin: '10px 0 4px' }}>
+                                        Namensliste unten: Beispieldaten (personenbezogene Anwesenheit gibt es im Backend noch nicht).
+                                    </div>
+                                </div>
+                            )}
+                            {filteredWorkers.length === 0 ? (
+                                <div style={{ textAlign: 'center', padding: '32px 0', color: 'var(--text-muted)' }}>
+                                    {staffTab === 'absent'
+                                        ? 'Keine fehlenden Mitarbeiter eingetragen – alle Fachkräfte sind anwesend!'
+                                        : 'Keine Mitarbeiter für diesen Filter gefunden.'}
+                                </div>
+                            ) : (
+                                <div className="dash-workers-grid">
+                                    {filteredWorkers.map((worker) => (
+                                        <div
+                                            key={worker.id}
+                                            className={`dash-worker-card ${worker.present ? 'present' : 'absent'}`}
+                                        >
+                                            <div className="dash-worker-info">
+                                                <div className="dash-worker-name">{worker.name}</div>
+                                                <div className="dash-worker-trade">{worker.role}</div>
+                                                <div className="dash-worker-company">{worker.company}</div>
+                                            </div>
+
+                                            <div className="dash-worker-meta">
+                                                {worker.present ? (
+                                                    <span className="dash-worker-time">
+                                                        Seit {worker.arrivalTime}
+                                                    </span>
+                                                ) : (
+                                                    <span className="dash-worker-reason">
+                                                        {worker.absenceReason || 'Abwesend'}
+                                                    </span>
+                                                )}
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* =========================================================================
+                MODAL 2: AUFTRAGGEBER & NOTFALLKONTAKT
+               ========================================================================= */}
+            {showEmergencyModal && (
+                <div className="dash-modal-overlay" onClick={() => setShowEmergencyModal(false)}>
+                    <div className="dash-modal-card" style={{ maxWidth: '540px' }} onClick={(e) => e.stopPropagation()}>
+                        <div className="dash-modal-header">
+                            <div className="dash-modal-title-group">
+                                <div className="dash-modal-icon" style={{ background: '#fef2f2', color: '#dc2626' }}>
+                                    <PhoneCall size={22} />
+                                </div>
+                                <div>
+                                    <h3 className="dash-modal-title">Auftraggeber & Notfallkontakt</h3>
+                                    <p className="dash-modal-sub">{activeProject.name}</p>
+                                </div>
+                            </div>
+                            <button
+                                type="button"
+                                className="dash-modal-close"
+                                onClick={() => setShowEmergencyModal(false)}
+                            >
+                                <X size={20} />
+                            </button>
+                        </div>
+
+                        <div className="dash-modal-body">
+                            {/* 24/7 Notfall-Hotline */}
+                            <div className="dash-emergency-box">
+                                <div>
+                                    <div style={{ fontSize: '11px', color: '#991b1b', fontWeight: 700, textTransform: 'uppercase' }}>
+                                        🚨 Sofortiger Notfall / Havariedienst (24/7)
+                                    </div>
+                                    <a href={`tel:${clientData.hotline24h.replace(/\s+/g, '')}`} className="dash-emergency-hotline">
+                                        <Phone size={18} />
+                                        <span>{clientData.hotline24h}</span>
+                                    </a>
+                                </div>
+                                <a
+                                    href={`tel:${clientData.hotline24h.replace(/\s+/g, '')}`}
+                                    className="btn btn-primary"
+                                    style={{ backgroundColor: '#dc2626', borderColor: '#dc2626', fontSize: '12px', padding: '8px 14px' }}
+                                >
+                                    Jetzt anrufen
+                                </a>
+                            </div>
+
+                            {/* Contact Details List */}
+                            <div className="dash-contact-list">
+                                <div className="dash-contact-row">
+                                    <div>
+                                        <div className="dash-contact-label">Auftraggeber / Bauherr</div>
+                                        <div className="dash-contact-val">{clientData.clientName}</div>
+                                    </div>
+                                </div>
+
+                                <div className="dash-contact-row">
+                                    <div>
+                                        <div className="dash-contact-label">Leitende Bauherrenvertreterin</div>
+                                        <div className="dash-contact-val">{clientData.contactPerson}</div>
+                                    </div>
+                                </div>
+
+                                <div className="dash-contact-row">
+                                    <div>
+                                        <div className="dash-contact-label">Telefonische Direktdurchwahl</div>
+                                        <div className="dash-contact-val">{clientData.emergencyPhone}</div>
+                                    </div>
+                                    <a
+                                        href={`tel:${clientData.emergencyPhone.replace(/[^\d+]/g, '')}`}
+                                        className="doc-btn"
+                                        style={{ color: '#2563eb', fontWeight: 600 }}
+                                    >
+                                        <Phone size={13} />
+                                        <span>Anrufen</span>
+                                    </a>
+                                </div>
+
+                                <div className="dash-contact-row">
+                                    <div>
+                                        <div className="dash-contact-label">E-Mail für VOB-Fristen & Eilpost</div>
+                                        <div className="dash-contact-val">{clientData.email}</div>
+                                    </div>
+                                    <a
+                                        href={`mailto:${clientData.email}`}
+                                        className="doc-btn"
+                                        style={{ color: '#2563eb', fontWeight: 600 }}
+                                    >
+                                        <Mail size={13} />
+                                        <span>E-Mail</span>
+                                    </a>
+                                </div>
+
+                                <div className="dash-contact-row">
+                                    <div>
+                                        <div className="dash-contact-label">Bauherren-Anschrift</div>
+                                        <div className="dash-contact-val">{clientData.address}</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
         </>
     );
 };

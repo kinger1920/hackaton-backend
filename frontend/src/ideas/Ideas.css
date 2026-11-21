@@ -1,0 +1,306 @@
+/* Gemeinsame Styles der Ideen-Seiten (#3 Fristen-Radar, #5 Projekt-Assistent, #7 Baufortschritt) */
+
+.idea-page {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.idea-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.idea-title-group {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.idea-title-group h1 {
+  font-size: 22px;
+  font-weight: 700;
+  margin: 0 0 2px;
+}
+
+.idea-title-group p {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text-muted, #64748b);
+}
+
+.idea-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: var(--radius-md, 8px);
+  background: #eff6ff;
+  color: #2563eb;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.idea-kpis {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 10px;
+}
+
+.idea-kpi {
+  background: white;
+  border: 1px solid var(--border-light, #e2e8f0);
+  border-radius: var(--radius-md, 8px);
+  padding: 12px 14px;
+  font-size: 12px;
+  color: var(--text-muted, #64748b);
+  display: flex;
+  flex-direction: column;
+}
+
+.idea-kpi span {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--color-slate-800, #1e293b);
+}
+
+.idea-kpi.danger span { color: #dc2626; }
+.idea-kpi.warning span { color: #d97706; }
+
+.idea-tabs {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.idea-tab {
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--border-light, #e2e8f0);
+  background: white;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  color: var(--color-slate-700, #334155);
+}
+
+.idea-tab.active {
+  background: var(--color-primary, #2563eb);
+  border-color: var(--color-primary, #2563eb);
+  color: white;
+}
+
+.idea-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.idea-empty {
+  padding: 18px;
+  text-align: center;
+  font-size: 13px;
+  color: var(--text-muted, #64748b);
+  border: 1px dashed var(--color-slate-300, #cbd5e1);
+  border-radius: var(--radius-md, 8px);
+}
+
+.idea-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  background: white;
+  border: 1px solid var(--border-light, #e2e8f0);
+  border-left: 4px solid #94a3b8;
+  border-radius: var(--radius-md, 8px);
+}
+
+.idea-row-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.idea-row-title {
+  font-weight: 700;
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.idea-row-meta {
+  font-size: 12px;
+  color: var(--text-muted, #64748b);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  overflow-wrap: anywhere;
+}
+
+/* Fristen-Radar */
+.deadline-date {
+  width: 92px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  font-size: 11px;
+  color: var(--text-muted, #64748b);
+}
+
+.deadline-date strong {
+  font-size: 16px;
+  color: var(--color-slate-800, #1e293b);
+}
+
+.idea-row.deadline-overdue { border-left-color: #dc2626; background: #fffafa; }
+.idea-row.deadline-overdue .deadline-date span { color: #dc2626; font-weight: 700; }
+.idea-row.deadline-soon { border-left-color: #d97706; background: #fffdf7; }
+.idea-row.deadline-soon .deadline-date span { color: #b45309; font-weight: 700; }
+.idea-row.deadline-ok { border-left-color: #16a34a; }
+
+/* Projekt-Assistent (Chat) */
+.chat-card {
+  background: white;
+  border: 1px solid var(--border-light, #e2e8f0);
+  border-radius: var(--radius-lg, 12px);
+  display: flex;
+  flex-direction: column;
+  min-height: 420px;
+}
+
+.chat-messages {
+  flex: 1;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  overflow-y: auto;
+  max-height: 58vh;
+}
+
+.chat-bubble {
+  max-width: 80%;
+  padding: 10px 12px;
+  border-radius: 12px;
+  font-size: 13px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+}
+
+.chat-bubble.user {
+  align-self: flex-end;
+  background: var(--color-primary, #2563eb);
+  color: white;
+  border-bottom-right-radius: 4px;
+}
+
+.chat-bubble.assistant {
+  align-self: flex-start;
+  background: var(--color-slate-100, #f1f5f9);
+  color: var(--color-slate-800, #1e293b);
+  border-bottom-left-radius: 4px;
+}
+
+.chat-sources {
+  margin-top: 6px;
+  font-size: 11px;
+  color: var(--text-muted, #64748b);
+}
+
+.chat-input-row {
+  display: flex;
+  gap: 8px;
+  padding: 12px;
+  border-top: 1px solid var(--border-light, #e2e8f0);
+}
+
+.chat-suggestions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  padding: 0 16px 12px;
+}
+
+/* Baufortschritt (Grundriss) */
+.progress-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(260px, 1fr);
+  gap: 16px;
+}
+
+@media (max-width: 1000px) {
+  .progress-layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+.progress-plan-card {
+  background: white;
+  border: 1px solid var(--border-light, #e2e8f0);
+  border-radius: var(--radius-lg, 12px);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.progress-slider-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  font-size: 13px;
+}
+
+.progress-slider-row input[type='range'] {
+  flex: 1;
+  min-width: 180px;
+}
+
+.progress-legend {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  font-size: 11px;
+  color: var(--text-muted, #64748b);
+}
+
+.progress-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.progress-legend i {
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  display: inline-block;
+}
+
+.progress-zone {
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+
+.progress-zone:hover {
+  opacity: 0.85;
+}
+
+.progress-detail {
+  background: white;
+  border: 1px solid var(--border-light, #e2e8f0);
+  border-radius: var(--radius-lg, 12px);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  font-size: 13px;
+}

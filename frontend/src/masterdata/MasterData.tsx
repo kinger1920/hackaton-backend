@@ -10,7 +10,8 @@ import {
     Eye,
     X,
     UploadCloud,
-    RefreshCw
+    RefreshCw,
+    Sparkles
 } from 'lucide-react';
 import {useProjects} from '../context/ProjectContext';
 import {useLanguage} from '../context/LanguageContext';
@@ -21,9 +22,19 @@ import {
     CompanyCreate,
     CompanyType,
     Contract,
+    ContractParseResponse,
     ContractText,
     ConstructionPlan
 } from '../services/api';
+
+const PARSED_FIELD_LABELS: Record<string, string> = {
+    planned_workforce: 'Sollstärke (Arbeiter)',
+    contractor_name: 'Vertragspartner',
+    trade: 'Gewerk',
+    vob_special: 'VOB-Besonderheiten',
+    execution_start: 'Ausführungsbeginn',
+    execution_end: 'Ausführungsende / Fertigstellung'
+};
 import '@frontend/src/index.css';
 import './MasterData.css';
 
@@ -301,6 +312,31 @@ const ContractsTab: React.FC<{ projectId: number; onError: (msg: string) => void
     const [editingId, setEditingId] = useState<number | null>(null);
     const [saving, setSaving] = useState(false);
     const [textView, setTextView] = useState<ContractText | null>(null);
+    // POST /api/contracts/{id}/parse – Vorschlag mit Fundstellen, Übernahme per PATCH
+    const [parseView, setParseView] = useState<{ contract: Contract; result: ContractParseResponse } | null>(null);
+    const [parsingId, setParsingId] = useState<number | null>(null);
+
+    const handleParse = async (c: Contract) => {
+        setParsingId(c.id);
+        try {
+            setParseView({contract: c, result: await api.parseContract(c.id)});
+        } catch (err: any) {
+            onError(err?.message || 'Vertrag konnte nicht ausgelesen werden');
+        } finally {
+            setParsingId(null);
+        }
+    };
+
+    const handleApplyParse = async () => {
+        if (!parseView) return;
+        try {
+            await api.updateContract(parseView.contract.id, parseView.result.suggested_patch as any);
+            setParseView(null);
+            load();
+        } catch (err: any) {
+            onError(err?.message || 'Übernahme fehlgeschlagen');
+        }
+    };
 
     const load = async () => {
         setLoading(true);
@@ -470,6 +506,14 @@ const ContractsTab: React.FC<{ projectId: number; onError: (msg: string) => void
                                 {c.vob_notes && <div className="masterdata-row-meta">⚖️ {c.vob_notes}</div>}
                             </div>
                             <div className="masterdata-row-actions">
+                                <button
+                                    className="btn btn-secondary"
+                                    onClick={() => handleParse(c)}
+                                    disabled={parsingId === c.id || !c.extracted_text}
+                                    title={c.extracted_text ? 'Sollstärke, Firma, Gewerk und Fristen per KI auslesen' : 'Kein Text im PDF (Scan?)'}
+                                >
+                                    {parsingId === c.id ? <RefreshCw size={14}/> : <Sparkles size={14}/>}
+                                </button>
                                 <button className="btn btn-secondary" onClick={() => handleShowText(c)} title="Ausgelesenen Text anzeigen"><Eye size={14}/></button>
                                 <button className="btn btn-secondary" onClick={() => handleDownload(c)} title="PDF herunterladen"><Download size={14}/></button>
                                 <button className="btn btn-secondary" onClick={() => startEdit(c)} title="Bearbeiten"><Pencil size={14}/></button>
@@ -477,6 +521,51 @@ const ContractsTab: React.FC<{ projectId: number; onError: (msg: string) => void
                             </div>
                         </div>
                     ))}
+                </div>
+            )}
+
+            {parseView && (
+                <div className="modal-overlay" onClick={() => setParseView(null)}>
+                    <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{maxWidth: '760px'}}>
+                        <div className="modal-header" style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}>
+                            <div>
+                                <strong>Vertrag ausgelesen: {parseView.contract.title}</strong>
+                                <div style={{fontSize: '12px', color: 'var(--text-muted)'}}>
+                                    {parseView.result.mode === 'ai' ? 'Von der KI gelesen' : 'Regelbasiert (KI nicht verfügbar)'} • Vorschlag, wird erst nach Klick gespeichert
+                                </div>
+                            </div>
+                            <button onClick={() => setParseView(null)} style={{background: 'none', border: 'none', cursor: 'pointer'}}><X size={16}/></button>
+                        </div>
+                        <div className="masterdata-list" style={{marginTop: '12px'}}>
+                            {Object.keys(parseView.result.fields).length === 0 && (
+                                <div className="masterdata-empty">Keine Angaben im Vertragstext gefunden.</div>
+                            )}
+                            {Object.entries(parseView.result.fields).map(([key, f]) => (
+                                <div key={key} className="masterdata-row">
+                                    <div className="masterdata-row-main">
+                                        <div className="masterdata-row-title">
+                                            {PARSED_FIELD_LABELS[key] ?? key}: {String(f.value)}
+                                            {key === 'planned_workforce' && parseView.result.current_planned_workforce != null &&
+                                                parseView.result.current_planned_workforce !== f.value && (
+                                                    <span className="badge badge-info">bisher {parseView.result.current_planned_workforce}</span>
+                                                )}
+                                        </div>
+                                        <div className="masterdata-row-meta">🔍 „{f.src}“</div>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                        <div className="masterdata-form-actions" style={{marginTop: '12px'}}>
+                            <button className="btn btn-secondary" onClick={() => setParseView(null)}>Verwerfen</button>
+                            <button
+                                className="btn btn-primary"
+                                onClick={handleApplyParse}
+                                disabled={Object.keys(parseView.result.suggested_patch).length === 0}
+                            >
+                                In Vertrag übernehmen
+                            </button>
+                        </div>
+                    </div>
                 </div>
             )}
 

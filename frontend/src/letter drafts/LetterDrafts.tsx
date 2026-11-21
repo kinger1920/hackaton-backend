@@ -32,6 +32,7 @@ import {
 import {useProjects, Project, Contractor} from '../context/ProjectContext';
 import {useLanguage} from '../context/LanguageContext';
 import {api, saveBlob, Company, Contract, DraftNavState, NoticeOut} from '../services/api';
+import DispatchPanel from '../components/DispatchPanel';
 import '@frontend/src/index.css';
 import './LetterDrafts.css';
 
@@ -1663,6 +1664,9 @@ export const LetterDrafts: React.FC = () => {
                                 </button>
                             </div>
                         </div>
+
+                        {/* Idee #4: Versand & Zugangsnachweis (Backend folgt) */}
+                        <DispatchPanel noticeId={noticeId} approved={locked}/>
 
                         <div className="legal-notice-banner">
                             <AlertTriangle size={16} style={{flexShrink: 0}}/>

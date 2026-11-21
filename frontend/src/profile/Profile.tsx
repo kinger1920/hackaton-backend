@@ -14,6 +14,7 @@ import {useProjects} from '../context/ProjectContext';
 import { useLanguage } from '../context/LanguageContext';
 import '@frontend/src/index.css';
 import './Profile.css';
+import OfflineAppCard from '../components/OfflineAppCard';
 
 interface UserProfileData {
     fullName: string;
@@ -531,6 +532,9 @@ export const Profile: React.FC = () => {
                         </button>
                     </div>
                 </form>
+
+                {/* Idee #6: Offline-Modus & App-Installation */}
+                <OfflineAppCard/>
             </div>
         </div>
     );
