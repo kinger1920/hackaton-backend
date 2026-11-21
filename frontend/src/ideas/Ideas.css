@@ -166,8 +166,18 @@
 .idea-row.deadline-ok { border-left-color: #16a34a; }
 
 /* Projekt-Assistent (Chat) */
+.idea-page.chat-page {
+  height: calc(100vh - var(--stripe-h, 6px) - var(--hdr-h, 54px) - 48px);
+  height: calc(100dvh - var(--stripe-h, 6px) - var(--hdr-h, 54px) - 48px);
+  min-height: 440px;
+}
+
+.chat-page .idea-header {
+  flex-shrink: 0;
+}
+
 .chat-card {
-  background: white;
+  background: var(--bg-surface, white);
   border: 1px solid var(--border-light, #e2e8f0);
   border-radius: var(--radius-lg, 12px);
   display: flex;
@@ -175,14 +185,25 @@
   min-height: 420px;
 }
 
+.chat-page .chat-card {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
 .chat-messages {
   flex: 1;
+  min-height: 0;
   padding: 16px;
   display: flex;
   flex-direction: column;
   gap: 10px;
   overflow-y: auto;
   max-height: 58vh;
+}
+
+.chat-page .chat-messages {
+  max-height: none;
 }
 
 .chat-bubble {
@@ -214,10 +235,20 @@
   color: var(--text-muted, #64748b);
 }
 
+.chat-composer {
+  flex-shrink: 0;
+  position: sticky;
+  bottom: 0;
+  z-index: 5;
+  background: var(--bg-surface, white);
+  border-top: 1px solid var(--border-light, #e2e8f0);
+  padding-top: 10px;
+}
+
 .chat-input-row {
   display: flex;
   gap: 8px;
-  padding: 12px;
+  padding: 10px 12px 12px;
   border-top: 1px solid var(--border-light, #e2e8f0);
 }
 
@@ -225,7 +256,7 @@
   display: flex;
   gap: 6px;
   flex-wrap: wrap;
-  padding: 0 16px 12px;
+  padding: 0 16px 10px;
 }
 
 /* Baufortschritt (Grundriss) */

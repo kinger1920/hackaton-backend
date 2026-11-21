@@ -38,7 +38,7 @@ export const ProjectAssistant: React.FC = () => {
     const endRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
-        endRef.current?.scrollIntoView({behavior: 'smooth'});
+        endRef.current?.scrollIntoView({behavior: 'smooth', block: 'end'});
     }, [messages]);
 
     const ask = async (question: string) => {
@@ -67,7 +67,7 @@ export const ProjectAssistant: React.FC = () => {
     };
 
     return (
-        <div className="idea-page">
+        <div className="idea-page chat-page">
             <div className="idea-header">
                 <div className="idea-title-group">
                     <div className="idea-icon"><MessageSquare size={22}/></div>
@@ -93,33 +93,35 @@ export const ProjectAssistant: React.FC = () => {
                     <div ref={endRef}/>
                 </div>
 
-                <div className="chat-suggestions">
-                    {SUGGESTIONS.map((s) => (
-                        <button key={s} className="idea-tab" onClick={() => ask(s)} disabled={busy}>
-                            <Sparkles size={11} style={{display: 'inline', marginRight: '4px'}}/>
-                            {s}
-                        </button>
-                    ))}
-                </div>
+                <div className="chat-composer">
+                    <div className="chat-suggestions">
+                        {SUGGESTIONS.map((s) => (
+                            <button key={s} className="idea-tab" onClick={() => ask(s)} disabled={busy}>
+                                <Sparkles size={11} style={{display: 'inline', marginRight: '4px'}}/>
+                                {s}
+                            </button>
+                        ))}
+                    </div>
 
-                <form
-                    className="chat-input-row"
-                    onSubmit={(e) => {
-                        e.preventDefault();
-                        ask(input);
-                    }}
-                >
-                    <input
-                        className="form-input"
-                        style={{flex: 1}}
-                        placeholder="Frage zum Projekt stellen…"
-                        value={input}
-                        onChange={(e) => setInput(e.target.value)}
-                    />
-                    <button type="submit" className="btn btn-primary" disabled={busy || !input.trim()}>
-                        <Send size={14}/> <span>Fragen</span>
-                    </button>
-                </form>
+                    <form
+                        className="chat-input-row"
+                        onSubmit={(e) => {
+                            e.preventDefault();
+                            ask(input);
+                        }}
+                    >
+                        <input
+                            className="form-input"
+                            style={{flex: 1}}
+                            placeholder="Frage zum Projekt stellen…"
+                            value={input}
+                            onChange={(e) => setInput(e.target.value)}
+                        />
+                        <button type="submit" className="btn btn-primary" disabled={busy || !input.trim()}>
+                            <Send size={14}/> <span>Fragen</span>
+                        </button>
+                    </form>
+                </div>
             </div>
 
             {backendMissing && (
