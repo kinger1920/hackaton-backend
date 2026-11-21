@@ -341,6 +341,15 @@ export interface WeatherResponse {
   wind_kmh?: number | null;
   precipitation_mm?: number | null;
   source: string;
+  /** Zusätzlich für die Dashboard-Kachel (Backend: services/weather.py), null = unbekannt */
+  wind_gusts_kmh?: number | null;
+  precipitation_probability?: number | null;
+  t_min?: number | null;
+  t_max?: number | null;
+  place?: string | null;
+  crane_status?: string | null;
+  is_wind_warning?: boolean | null;
+  concrete_status?: string | null;
 }
 
 /** Idee #4: Versand & Zugangsnachweis eines Briefs */

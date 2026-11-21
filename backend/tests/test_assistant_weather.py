@@ -158,3 +158,63 @@ def test_attach_contract_file(client, engine, monkeypatch, tmp_path):
     assert res.json()["file_name"] == "vertrag.pdf"
     assert client.put("/contracts/1/file", files={"file": ("x.txt", b"abc", "text/plain")}).status_code == 400
     assert pid
+
+
+# ---------------------------------------------------------------- Wetter: Kachel-Felder (Live-Wetter)
+
+def _fake_api(monkeypatch, daily: dict, current: dict | None = None):
+    """Open-Meteo auf HTTP-Ebene mocken; merkt sich die Anfragen."""
+    calls = []
+
+    def fake(url, params):
+        calls.append((url, params))
+        if "geocoding" in url:
+            return {"results": [{"latitude": 48.14, "longitude": 11.58, "name": "München"}]}
+        return {"daily": {k: [v] for k, v in daily.items()}, **({"current": current} if current else {})}
+
+    weather._geo_cache.clear()
+    weather._weather_cache.clear()
+    monkeypatch.setattr(weather, "_get_json", fake)
+    return calls
+
+
+DAILY = {"weather_code": 3, "temperature_2m_max": 9.4, "temperature_2m_min": 3.1, "precipitation_sum": 0.4,
+         "wind_speed_10m_max": 24.2, "wind_gusts_10m_max": 38.6, "precipitation_probability_max": 58}
+
+
+def test_weather_today_has_tile_fields_and_current_temp(client, engine, monkeypatch):
+    pid = _seed(engine)
+    calls = _fake_api(monkeypatch, DAILY, current={"temperature_2m": 5.6, "weather_code": 61})
+    today = dt.date.today().isoformat()
+    body = client.get(f"/api/weather?date={today}&project_id={pid}").json()
+    assert body["temperature_c"] == 6 and body["condition"].startswith("Leichter Regen")  # aktuelle Messung
+    assert (body["wind_kmh"], body["wind_gusts_kmh"], body["precipitation_probability"]) == (24, 39, 58)
+    assert (body["t_min"], body["t_max"], body["place"]) == (3.1, 9.4, "München")
+    assert body["is_wind_warning"] is False and body["crane_status"].startswith("Kran freigegeben")
+    assert body["concrete_status"].startswith("Achtung: Winterbaumaßnahmen")  # Tiefstwert 3,1 °C
+    forecast = calls[-1][1]
+    assert "current" in forecast and "precipitation_probability_max" in forecast["daily"]
+
+
+def test_weather_gust_warning_and_warm_day(monkeypatch):
+    assert weather.site_hints(12.0, 45)["is_wind_warning"] is True
+    assert weather.site_hints(12.0, 44.9)["is_wind_warning"] is False
+    assert weather.site_hints(5.1, None) == {"crane_status": None, "is_wind_warning": None,
+                                            "concrete_status": "Betonage zulässig (> +5 °C)"}
+
+
+def test_weather_archive_without_probability(client, engine, monkeypatch):
+    pid = _seed(engine)
+    calls = _fake_api(monkeypatch, {k: v for k, v in DAILY.items() if k != "precipitation_probability_max"})
+    old = (dt.date.today() - dt.timedelta(days=200)).isoformat()
+    body = client.get(f"/api/weather?date={old}&project_id={pid}").json()
+    assert calls[-1][0] == weather.ARCHIVE_URL and "precipitation_probability_max" not in calls[-1][1]["daily"]
+    assert "current" not in calls[-1][1]
+    assert body["precipitation_probability"] is None and body["temperature_c"] == 6  # Tagesmittel
+
+
+def test_weather_report_fallback_has_concrete_hint(client, engine, monkeypatch):
+    pid = _seed(engine)
+    monkeypatch.setattr(weather, "_geocode_sync", lambda loc: (_ for _ in ()).throw(OSError("offline")))
+    body = client.get(f"/api/weather?date=2026-11-17&project_id={pid}").json()
+    assert body["concrete_status"].startswith("Betonage zulässig") and body["crane_status"] is None

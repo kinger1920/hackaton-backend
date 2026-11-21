@@ -40,3 +40,12 @@ class WeatherResponse(BaseModel):
     wind_kmh: float | None = None
     precipitation_mm: float | None = None
     source: str
+    # Zusätzlich für die Dashboard-Kachel (alle optional, None = unbekannt):
+    wind_gusts_kmh: float | None = None
+    precipitation_probability: int | None = None  # % (nur Vorhersage, nicht Archiv)
+    t_min: float | None = None
+    t_max: float | None = None
+    place: str | None = None
+    crane_status: str | None = None  # Böen ≥ 45 km/h → Warnung (services/weather.site_hints)
+    is_wind_warning: bool | None = None
+    concrete_status: str | None = None  # Tiefsttemperatur ≤ +5 °C → Winterbaumaßnahmen

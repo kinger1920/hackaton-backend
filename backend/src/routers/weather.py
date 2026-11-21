@@ -30,12 +30,15 @@ def _from_report(session: Session, project_id: int, day: dt.date) -> WeatherResp
         data = {"condition": report.weather}
     if not isinstance(data, dict) or not (data.get("condition") or data.get("temp_c") is not None):
         return None
+    temp = data.get("temp_c")
     return WeatherResponse(
         date=day,
-        temperature_c=data.get("temp_c"),
+        temperature_c=temp,
         condition=str(data.get("condition") or ""),
         precipitation_mm=data.get("rain_mm"),
         source=f"Tagesbericht {day.strftime('%d.%m.%Y')} (Wetterdienst nicht erreichbar)",
+        # Wind ist im Bericht nicht erfasst → nur Betonage-Hinweis aus der Temperatur.
+        **weather.site_hints(float(temp) if temp is not None else None, None),
     )
 
 
