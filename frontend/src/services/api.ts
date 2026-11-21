@@ -681,8 +681,15 @@ export const api = {
   },
 
   async transcribeAudio(file: Blob, lang: string = 'de'): Promise<TranscribeResponse> {
+    const ext = file.type.includes('ogg')
+      ? 'ogg'
+      : file.type.includes('mp4')
+        ? 'm4a'
+        : file.type.includes('wav')
+          ? 'wav'
+          : 'webm';
     const formData = new FormData();
-    formData.append('file', file, 'recording.webm');
+    formData.append('audio', file, `recording.${ext}`);
     formData.append('lang', lang);
 
     const res = await fetch(`${API_BASE_URL}/api/transcribe`, {

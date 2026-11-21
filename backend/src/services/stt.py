@@ -27,6 +27,9 @@ async def transcribe(audio: bytes, filename: str, lang: str | None) -> str | Non
     if client is None:
         return None
 
+    if audio.startswith(b"OggS") and not filename.lower().endswith(".ogg"):
+        filename = "recording.ogg"
+
     started = time.perf_counter()
     try:
         result = await asyncio.wait_for(

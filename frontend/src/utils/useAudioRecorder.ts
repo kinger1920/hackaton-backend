@@ -28,7 +28,8 @@ export function useAudioRecorder(onAudio: (audio: Blob) => void) {
             recorder.onstop = () => {
                 stream.getTracks().forEach((t) => t.stop());
                 setIsRecording(false);
-                onAudioRef.current(new Blob(chunksRef.current, {type: recorder.mimeType || 'audio/webm'}));
+                const mimeType = recorder.mimeType || chunksRef.current[0]?.type || 'audio/webm';
+                onAudioRef.current(new Blob(chunksRef.current, {type: mimeType}));
             };
             recorderRef.current = recorder;
             recorder.start();
