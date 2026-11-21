@@ -102,7 +102,7 @@ Without Pango the PDF endpoint returns `503` and the PDF test is skipped; Word e
 
 ### Demo Data for Summaries
 
-`POST /api/summarize` summarizes a week/month of daily reports, site notes and notices (or a free text such as an email). To get demo daily reports (workdays 02.11.–20.11.2026) run `cd backend && DATABASE_URL=sqlite:///path/to/copy.db uv run python scripts/seed_reports.py`. Without `DATABASE_URL` it writes into the tracked `data/site_assistant.db` – do not commit that.
+`POST /api/summarize` summarizes a week/month of daily reports, site notes and notices (or a free text such as an email). Daily reports: `GET/PUT /api/reports/{date}`, `POST /api/reports/{date}/fill` (dictation → report fields + progress per plan task, stored in `ReportProgress`). New nullable columns are added to existing SQLite DBs on startup (`add_missing_columns` in `database.py`), no reset needed. To get demo data (plan "Bauzeitenplan Rohbau" with 6 tasks, daily reports for workdays 02.11.–20.11.2026, progress per task) run `cd backend && DATABASE_URL=sqlite:///path/to/copy.db uv run python scripts/seed_reports.py`. Without `DATABASE_URL` it writes into the tracked `data/site_assistant.db` – do not commit that.
 
 ---
 
