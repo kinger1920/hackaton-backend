@@ -1,0 +1,234 @@
+/* ==========================================================================
+   LETTER DRAFTS STYLES
+   Uses design tokens from global index.css
+   ========================================================================== */
+
+.drafts-container {
+    max-width: 1200px;
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+}
+
+.drafts-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.drafts-header h1 {
+    font-size: 24px;
+    font-weight: 800;
+    color: var(--color-slate-900);
+    margin-bottom: 4px;
+}
+
+.drafts-header p {
+    font-size: 14px;
+    color: var(--text-muted);
+}
+
+/* Two Column Layout: Generator on Left, Paper Preview on Right */
+.drafts-split-layout {
+    display: grid;
+    grid-template-columns: 1fr 1.2fr;
+    gap: 24px;
+}
+
+@media (max-width: 1024px) {
+    .drafts-split-layout {
+        grid-template-columns: 1fr;
+    }
+}
+
+/* Generator Form Card */
+.generator-card {
+    background-color: var(--bg-surface);
+    border-radius: var(--radius-lg);
+    border: 1px solid var(--border-light);
+    padding: 24px;
+    box-shadow: var(--shadow-sm);
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+}
+
+.type-selector-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+}
+
+.type-btn {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    padding: 12px 14px;
+    border-radius: var(--radius-md);
+    border: 1px solid var(--color-slate-200);
+    background-color: var(--color-slate-50);
+    cursor: pointer;
+    transition: all var(--transition-fast);
+    text-align: left;
+}
+
+.type-btn:hover {
+    background-color: var(--color-slate-100);
+    border-color: var(--color-slate-300);
+}
+
+.type-btn.active {
+    background-color: var(--color-primary-light);
+    border-color: var(--color-primary);
+    box-shadow: 0 0 0 1px var(--color-primary);
+}
+
+.type-btn-title {
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--color-slate-900);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 2px;
+}
+
+.type-btn-sub {
+    font-size: 11px;
+    color: var(--color-slate-500);
+}
+
+/* Keyword Presets */
+.preset-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 6px;
+}
+
+.preset-chip {
+    font-size: 11px;
+    padding: 4px 8px;
+    border-radius: var(--radius-full);
+    background-color: var(--color-slate-100);
+    color: var(--color-slate-700);
+    border: 1px solid var(--color-slate-200);
+    cursor: pointer;
+    transition: all var(--transition-fast);
+}
+
+.preset-chip:hover {
+    background-color: var(--color-primary-light);
+    color: var(--color-primary);
+    border-color: var(--color-primary-border);
+}
+
+/* Letter Paper Preview */
+.letter-paper-card {
+    background-color: #ffffff;
+    border-radius: var(--radius-lg);
+    border: 1px solid var(--border-light);
+    box-shadow: var(--shadow-md);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.paper-toolbar {
+    padding: 14px 20px;
+    background-color: var(--color-slate-50);
+    border-bottom: 1px solid var(--border-light);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
+.paper-content {
+    padding: 40px;
+    font-family: 'Times New Roman', Times, serif;
+    color: #111827;
+    line-height: 1.6;
+    font-size: 15px;
+    min-height: 520px;
+    background-color: #ffffff;
+}
+
+.paper-header {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 30px;
+    font-family: var(--font-family-base);
+    font-size: 12px;
+    color: var(--color-slate-600);
+    border-bottom: 1px solid #e5e7eb;
+    padding-bottom: 14px;
+}
+
+.letter-subject {
+    font-family: var(--font-family-base);
+    font-size: 16px;
+    font-weight: 800;
+    color: #111827;
+    margin: 24px 0 18px 0;
+}
+
+.letter-body-editable {
+    width: 100%;
+    min-height: 380px;
+    border: 1px dashed transparent;
+    padding: 8px;
+    font-family: inherit;
+    font-size: 15px;
+    line-height: 1.6;
+    outline: none;
+    resize: vertical;
+    color: #111827;
+    background: transparent;
+    transition: border-color var(--transition-fast);
+}
+
+.letter-body-editable:focus {
+    border-color: var(--color-primary);
+    background-color: #fbfcfe;
+}
+
+.legal-notice-banner {
+    padding: 12px 18px;
+    background-color: #fffbeb;
+    border-top: 1px solid #fef3c7;
+    font-size: 12px;
+    color: #92400e;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-family: var(--font-family-base);
+}
+
+/* History List Card */
+.history-card {
+    background-color: var(--bg-surface);
+    border-radius: var(--radius-lg);
+    border: 1px solid var(--border-light);
+    padding: 24px;
+    box-shadow: var(--shadow-sm);
+}
+
+.history-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 14px;
+    border-radius: var(--radius-md);
+    border: 1px solid var(--border-light);
+    background-color: var(--color-slate-50);
+    margin-bottom: 10px;
+    transition: all var(--transition-fast);
+}
+
+.history-item:hover {
+    background-color: #ffffff;
+    border-color: var(--color-slate-300);
+}

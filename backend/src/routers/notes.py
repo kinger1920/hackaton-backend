@@ -1,9 +1,8 @@
-from fastapi import APIRouter, Depends
-from sqlalchemy import insert
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlmodel import Session, select
 
 from src.database import get_session
-from src.models import SiteNote, SiteNoteRead
+from src.models import Project, SiteNote, SiteNoteCreate, SiteNoteRead
 
 router = APIRouter(prefix="/site-notes", tags=["Site Notes"])
 
@@ -32,24 +31,16 @@ def get_site_note_by_id(
     return session.exec(statement).one_or_none()
 
 
-@router.post("/create-site-note", response_model=SiteNoteRead, tags=["Site Notes"])
+@router.post("/create", response_model=SiteNoteRead, status_code=status.HTTP_201_CREATED, tags=["Site Notes"])
 def create_site_note(
-        content: str,
-        author: str | None,
-        audio_file_path: str | None = None,
-        category: str | None = None,
-        project_id: int | None = None,
+        note: SiteNoteCreate,
         session: Session = Depends(get_session)
 ):
-    statement = insert(SiteNote)
+    if not session.get(Project, note.project_id):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found")
 
-    if content is not None:
-        statement = statement.values(
-            content=content,
-            author=author,
-            audio_file_path=audio_file_path,
-            category=category,
-            project_id=project_id
-        )
-
-    return session.exec(statement)
+    db_note = SiteNote.model_validate(note)
+    session.add(db_note)
+    session.commit()
+    session.refresh(db_note)
+    return db_note
