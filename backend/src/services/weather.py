@@ -29,6 +29,12 @@ TIMEOUT_SECONDS = 6.0
 FORECAST_PAST_LIMIT_DAYS = 90
 FORECAST_FUTURE_LIMIT_DAYS = 15
 
+# Baustellen-Schwellen (fester Code, keine KI – testbar):
+# Turmdrehkrane werden üblicherweise ab Böen um 45 km/h (≈ 12,5 m/s) außer Betrieb genommen.
+CRANE_GUST_LIMIT_KMH = 45
+# Bis +5 °C sind beim Betonieren Winterbaumaßnahmen nötig (Frischbeton-Schutz).
+CONCRETE_MIN_TEMP_C = 5
+
 # WMO-Wettercodes → deutsche Kurzbeschreibung (https://open-meteo.com/en/docs, "WMO Weather interpretation codes")
 WMO_DE: dict[int, str] = {
     0: "Sonnig", 1: "Überwiegend sonnig", 2: "Teilweise bewölkt", 3: "Bewölkt",
@@ -106,11 +112,15 @@ def _daily_sync(lat: float, lon: float, day: dt.date) -> dict:
         url = FORECAST_URL
     data = _get_json(url, {
         "latitude": lat, "longitude": lon,
-        "daily": "weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum,wind_speed_10m_max",
+        "daily": "weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum,wind_speed_10m_max,"
+                 "wind_gusts_10m_max" + (",precipitation_probability_max" if url == FORECAST_URL else ""),
         "timezone": "Europe/Berlin",
         "start_date": day.isoformat(), "end_date": day.isoformat(),
+        # Heute: zusätzlich die aktuelle Messung, damit die Kachel "jetzt" zeigt statt Tagesmittel.
+        **({"current": "temperature_2m,weather_code"} if day == today else {}),
     })
     daily = data.get("daily") or {}
+    current = data.get("current") or {}
 
     def first(name: str):
         values = daily.get(name) or []
@@ -125,6 +135,10 @@ def _daily_sync(lat: float, lon: float, day: dt.date) -> dict:
         "t_min": t_min,
         "precipitation_mm": first("precipitation_sum"),
         "wind_kmh": first("wind_speed_10m_max"),
+        "gusts_kmh": first("wind_gusts_10m_max"),
+        "precip_probability": first("precipitation_probability_max"),  # Archiv: keine Wahrscheinlichkeit
+        "current_temp": current.get("temperature_2m"),
+        "current_code": current.get("weather_code"),
         "url": url,
     }
     # Vergangene Tage ändern sich nicht mehr → cachen; heutige/künftige nicht (Vorhersage wird genauer).
@@ -138,6 +152,23 @@ def describe(code) -> str:
         return WMO_DE.get(int(code), "Wetterlage unbekannt")
     except (TypeError, ValueError):
         return "Wetterlage unbekannt"
+
+
+def site_hints(t_min: float | None, gusts_kmh: float | None) -> dict:
+    """Baustellen-Hinweise aus Tiefsttemperatur und Böen (None = unbekannt → kein Hinweis).
+
+    → {crane_status, is_wind_warning, concrete_status}
+    """
+    hints: dict = {"crane_status": None, "is_wind_warning": None, "concrete_status": None}
+    if gusts_kmh is not None:
+        warn = gusts_kmh >= CRANE_GUST_LIMIT_KMH
+        hints["is_wind_warning"] = warn
+        hints["crane_status"] = (f"Böenwarnung: Kranbetrieb prüfen (≥ {CRANE_GUST_LIMIT_KMH} km/h)" if warn
+                                 else f"Kran freigegeben (< {CRANE_GUST_LIMIT_KMH} km/h)")
+    if t_min is not None:
+        hints["concrete_status"] = (f"Betonage zulässig (> +{CONCRETE_MIN_TEMP_C} °C)" if t_min > CONCRETE_MIN_TEMP_C
+                                    else f"Achtung: Winterbaumaßnahmen prüfen (≤ +{CONCRETE_MIN_TEMP_C} °C)")
+    return hints
 
 
 async def fetch_weather(location: str, day: dt.date) -> dict:
@@ -160,7 +191,11 @@ async def fetch_weather(location: str, day: dt.date) -> dict:
     t_max, t_min = daily["t_max"], daily["t_min"]
     temps = [t for t in (t_max, t_min) if t is not None]
     temperature = round(sum(temps) / len(temps)) if temps else None
-    condition = describe(daily["code"])
+    code = daily["code"]
+    if daily.get("current_temp") is not None:  # heute: aktuelle Messung statt Tagesmittel
+        temperature = round(daily["current_temp"])
+        code = daily.get("current_code", code)
+    condition = describe(code)
     if t_min is not None and t_max is not None:
         condition += f" ({round(t_min)} bis {round(t_max)} °C)"
     kind = "Archiv" if daily["url"] == ARCHIVE_URL else ("Vorhersage" if day > dt.date.today() else "Messung/Modell")
@@ -171,4 +206,10 @@ async def fetch_weather(location: str, day: dt.date) -> dict:
         "wind_kmh": round(daily["wind_kmh"]) if daily["wind_kmh"] is not None else None,
         "precipitation_mm": round(daily["precipitation_mm"], 1) if daily["precipitation_mm"] is not None else None,
         "source": f"Open-Meteo ({kind}), {place}",
+        "wind_gusts_kmh": round(daily["gusts_kmh"]) if daily.get("gusts_kmh") is not None else None,
+        "precipitation_probability": daily.get("precip_probability"),
+        "t_min": round(t_min, 1) if t_min is not None else None,
+        "t_max": round(t_max, 1) if t_max is not None else None,
+        "place": place,
+        **site_hints(t_min, daily.get("gusts_kmh")),
     }
