@@ -23,16 +23,26 @@ router = APIRouter(prefix="/api", tags=["AI"])
 async def capture(req: CaptureRequest, session: Session = Depends(get_session)) -> NoticeDraft:
     """Diktat/Text → Brief-Entwurf (Contract: POST /api/capture).
 
-    Input:  {text, lang, ref_date?, ref_time?, force_type?} – Pydantic prüft das (422 bei Fehlern).
+    Input:  {text, lang, ref_date?, ref_time?, force_type?, project_id?} – Pydantic prüft das
+            (422 bei Fehlern).
     Output: NoticeDraft mit Typ, Feldern (je mit Quelle), Rückfragen, Modus (ai/offline)
             und der ID des neuen Tagebucheintrags.
+    Fehler: 404, wenn `project_id` angegeben ist, das Projekt aber nicht existiert.
     """
+    # Contract: Jede Erfassung erzeugt auch einen Tagebucheintrag (`SiteNote`), der zu
+    # einem Projekt gehört. Das Projekt prüfen wir VOR dem KI-Aufruf, damit eine falsche
+    # ID keine Tokens kostet.
+    if req.project_id is not None:
+        project = session.get(Project, req.project_id)
+        if project is None:
+            # Gleiches Verhalten wie POST /site-notes/create (API_CONTRACT.md): 404 bei unbekanntem Projekt.
+            raise HTTPException(status_code=404, detail=f"Projekt {req.project_id} nicht gefunden")
+    else:
+        # Ohne Angabe (z. B. älteres Frontend): erstes Projekt der Datenbank.
+        project = session.exec(select(Project).order_by(Project.id)).first()
+
     draft = await extraction.capture(req)
 
-    # Contract: Jede Erfassung erzeugt auch einen Tagebucheintrag. Im Repo heißt das
-    # Modell `SiteNote`. Es braucht ein Projekt – solange es keine Projektauswahl gibt,
-    # nehmen wir das erste Projekt der Datenbank.
-    project = session.exec(select(Project).order_by(Project.id)).first()
     if project is None:
         logger.warning("Kein Projekt in der DB – Tagebucheintrag wird nicht gespeichert.")
         return draft

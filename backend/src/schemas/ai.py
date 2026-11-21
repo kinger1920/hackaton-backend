@@ -36,6 +36,9 @@ class CaptureRequest(BaseModel):
     ref_date: str | None = Field(default=None, description="Bezugsdatum ISO YYYY-MM-DD (Default: heute)")
     ref_time: str | None = Field(default=None, description="Bezugszeit HH:MM")
     force_type: NoticeType | None = Field(default=None, description="Brieftyp erzwingen statt erkennen")
+    project_id: int | None = Field(
+        default=None, description="Projekt für den Tagebucheintrag (Default: erstes Projekt der DB)"
+    )
 
 
 class NoticeDraft(BaseModel):
