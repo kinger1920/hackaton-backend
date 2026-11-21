@@ -218,3 +218,34 @@ def test_weather_report_fallback_has_concrete_hint(client, engine, monkeypatch):
     monkeypatch.setattr(weather, "_geocode_sync", lambda loc: (_ for _ in ()).throw(OSError("offline")))
     body = client.get(f"/api/weather?date=2026-11-17&project_id={pid}").json()
     assert body["concrete_status"].startswith("Betonage zulässig") and body["crane_status"] is None
+
+
+# ---------------------------------------------------------------- Mängel + Vorschlagsfragen
+
+def test_ask_offline_open_defects(client):
+    client.post("/api/demo/reset?ref_date=2026-11-22")
+    body = client.post("/api/assistant/ask", json={"question": "Welche Mängel sind offen oder überfällig?",
+                                                   "project_id": 1, "ref_date": "2026-11-20"}).json()
+    assert body["mode"] == "offline"
+    assert "Absturzsicherung" in body["answer"] and "überfällig" in body["answer"]
+    assert "Böschung" not in body["answer"]  # abgenommen
+    assert all(s.startswith("Mangel #") for s in body["sources"])
+
+
+def test_suggestions_from_project_data(client):
+    client.post("/api/demo/reset?ref_date=2026-11-22")
+    qs = client.get("/api/assistant/suggestions?project_id=1&ref_date=2026-11-20").json()
+    assert len(qs) == 4
+    assert qs[0] == "Warum ist „Aushub Achse B“ im Verzug?"
+    assert "Welche Mängel sind offen oder überfällig?" in qs
+
+
+def test_suggestions_empty_project_are_generic(client, engine):
+    with Session(engine) as s:
+        p = Project(name="Leer")
+        s.add(p)
+        s.commit()
+        pid = p.id
+    qs = client.get(f"/api/assistant/suggestions?project_id={pid}").json()
+    assert qs == ["Was steht diese Woche laut Bauzeitenplan an?", "Fasse den Stand des Projekts kurz zusammen."]
+    assert client.get("/api/assistant/suggestions?project_id=999").status_code == 404

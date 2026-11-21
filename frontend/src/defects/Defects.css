@@ -1,0 +1,341 @@
+/* Mängelmanagement – nutzt die Theme-Variablen aus index.css (hell/dunkel) */
+
+.defects-header-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.defects-error {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  align-items: center;
+  padding: 10px 12px;
+  border-radius: var(--radius-md, 8px);
+  border: 1px solid var(--color-danger-border, #fecaca);
+  background: var(--color-danger-light, #fef2f2);
+  color: var(--color-danger-dark, #991b1b);
+  font-size: 13px;
+}
+
+.defects-error button {
+  border: none;
+  background: none;
+  color: inherit;
+  cursor: pointer;
+}
+
+.defects-kpis {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 10px;
+}
+
+.defects-kpi {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px 14px;
+  border-radius: var(--radius-lg, 12px);
+  border: 1px solid var(--border-light, #e2e8f0);
+  background: var(--bg-surface, #ffffff);
+}
+
+.defects-kpi span {
+  font-size: 12px;
+  color: var(--text-muted, #64748b);
+}
+
+.defects-kpi strong {
+  font-size: 22px;
+  color: var(--text-main, #0f172a);
+}
+
+.defects-kpi.is-danger {
+  border-color: var(--color-danger-border, #fecaca);
+}
+
+.defects-kpi.is-danger strong {
+  color: var(--color-danger, #dc2626);
+}
+
+.defects-kpi.is-success strong {
+  color: var(--color-success, #16a34a);
+}
+
+.defects-kpi-wide {
+  grid-column: span 2;
+}
+
+.defects-company-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.defects-chip {
+  padding: 3px 9px;
+  border-radius: 999px;
+  border: 1px solid var(--color-danger-border, #fecaca);
+  background: var(--color-danger-light, #fef2f2);
+  color: var(--color-danger-dark, #991b1b);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.defects-filters {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 14px;
+}
+
+.defects-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.defects-filter-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.defects-filter-row select {
+  width: auto;
+  min-width: 160px;
+}
+
+.defects-search {
+  position: relative;
+  display: flex;
+  align-items: center;
+  flex: 1;
+  min-width: 200px;
+}
+
+.defects-search svg {
+  position: absolute;
+  left: 10px;
+  color: var(--text-muted, #64748b);
+  pointer-events: none;
+}
+
+.defects-search input {
+  padding-left: 30px;
+}
+
+.defects-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px 16px;
+  border: 1px solid var(--color-primary-border, #bfdbfe);
+}
+
+.defects-form-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.defects-form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 10px 12px;
+}
+
+.defects-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted, #64748b);
+}
+
+.defects-field-wide {
+  grid-column: 1 / -1;
+}
+
+.defects-photo-input {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 400;
+}
+
+.defects-photo-input input {
+  font-size: 12px;
+  max-width: 100%;
+}
+
+.defects-form-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.defects-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.defect-card {
+  display: flex;
+  gap: 12px;
+  padding: 12px 14px;
+  border-left: 4px solid var(--border-light, #e2e8f0);
+  transition: box-shadow var(--transition-fast, 0.15s);
+}
+
+.defect-card.status-offen {
+  border-left-color: var(--color-danger, #dc2626);
+}
+
+.defect-card.status-in_bearbeitung {
+  border-left-color: var(--color-warning, #f59e0b);
+}
+
+.defect-card.status-behoben {
+  border-left-color: var(--color-info, #2563eb);
+}
+
+.defect-card.status-abgenommen {
+  border-left-color: var(--color-success, #16a34a);
+}
+
+.defect-card.is-overdue {
+  background: color-mix(in srgb, var(--color-danger, #dc2626) 6%, var(--bg-surface, #ffffff));
+}
+
+.defect-card.is-focus {
+  box-shadow: 0 0 0 3px var(--color-primary, #2563eb);
+}
+
+.defect-photo {
+  flex-shrink: 0;
+  width: 92px;
+  height: 70px;
+  border-radius: var(--radius-md, 8px);
+  overflow: hidden;
+  border: 1px solid var(--border-light, #e2e8f0);
+}
+
+.defect-photo img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.defect-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.defect-title-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+}
+
+.defect-title {
+  font-size: 14px;
+}
+
+.defect-status,
+.defect-prio {
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.defect-status.status-offen {
+  background: var(--color-danger-light, #fef2f2);
+  color: var(--color-danger-dark, #991b1b);
+}
+
+.defect-status.status-in_bearbeitung {
+  background: var(--color-warning-light, #fffbeb);
+  color: var(--color-warning-dark, #92400e);
+}
+
+.defect-status.status-behoben {
+  background: var(--color-info-light, #eff6ff);
+  color: var(--color-info, #1d4ed8);
+}
+
+.defect-status.status-abgenommen {
+  background: var(--color-success-light, #f0fdf4);
+  color: var(--color-success-dark, #166534);
+}
+
+.defect-prio {
+  border: 1px solid var(--color-danger-border, #fecaca);
+  color: var(--color-danger, #dc2626);
+}
+
+.defect-meta,
+.defect-dates {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  font-size: 12px;
+  color: var(--text-muted, #64748b);
+}
+
+.defect-meta span,
+.defect-dates span {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.defect-desc {
+  font-size: 13px;
+  color: var(--text-main, #0f172a);
+}
+
+.defect-late {
+  color: var(--color-danger, #dc2626);
+  font-weight: 700;
+}
+
+.defect-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.defect-actions .btn {
+  font-size: 12px;
+  padding: 5px 10px;
+}
+
+@media (max-width: 640px) {
+  .defects-kpi-wide {
+    grid-column: 1 / -1;
+  }
+
+  .defect-card {
+    flex-direction: column;
+  }
+
+  .defect-photo {
+    width: 100%;
+    height: 140px;
+  }
+}

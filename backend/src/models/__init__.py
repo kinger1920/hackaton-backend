@@ -1,6 +1,7 @@
 from .appointment import Appointment
 from .chat import ChatSession, ChatSessionCreate, ChatSessionRead, ChatMessage, ChatMessageCreate, ChatMessageRead
 from .company import Company, CompanyCreate, CompanyRead, CompanyUpdate
+from .defect import Defect
 from .contract import Contract, ContractCreate, ContractRead, ContractUpdate
 from .document import ProjectDocument, UserProfile
 from .note import SiteNote, SiteNoteCreate, SiteNoteRead
@@ -61,4 +62,5 @@ __all__ = [
     "ChatMessage",
     "ChatMessageCreate",
     "ChatMessageRead",
+    "Defect",
 ]

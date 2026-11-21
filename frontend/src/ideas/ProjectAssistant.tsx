@@ -38,6 +38,7 @@ export const ProjectAssistant: React.FC = () => {
     const [transcribing, setTranscribing] = useState(false);
     const [audioHint, setAudioHint] = useState<string | null>(null);
     const [historyError, setHistoryError] = useState<string | null>(null);
+    const [suggestions, setSuggestions] = useState<string[]>(SUGGESTIONS);
     const endRef = useRef<HTMLDivElement>(null);
 
     const recorder = useAudioRecorder(async (blob) => {
@@ -68,6 +69,21 @@ export const ProjectAssistant: React.FC = () => {
             setAudioHint('Mikrofon nicht verfügbar (Berechtigung fehlt oder kein HTTPS). Bitte Frage eintippen.');
         }
     };
+
+    // Vorschlagsfragen aus den echten Projektdaten (Verzug, Mängel, Verträge …); feste Beispiele als Rückfall
+    useEffect(() => {
+        let cancelled = false;
+        api.getAssistantSuggestions(Number(activeProject.id))
+            .then((qs) => {
+                if (!cancelled && qs.length > 0) setSuggestions(qs);
+            })
+            .catch(() => {
+                if (!cancelled) setSuggestions(SUGGESTIONS);
+            });
+        return () => {
+            cancelled = true;
+        };
+    }, [activeProject.id]);
 
     // Verlauf des aktiven Projekts laden (bei Projektwechsel neu)
     useEffect(() => {
@@ -174,7 +190,7 @@ export const ProjectAssistant: React.FC = () => {
 
                 <div className="chat-composer">
                     <div className="chat-suggestions">
-                        {SUGGESTIONS.map((s) => (
+                        {suggestions.map((s) => (
                             <button key={s} className="idea-tab" onClick={() => ask(s)} disabled={busy}>
                                 {s}
                             </button>

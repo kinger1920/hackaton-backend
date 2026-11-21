@@ -16,7 +16,7 @@ import unicodedata
 from pydantic import BaseModel
 from sqlmodel import Session, select
 
-from src.models import Appointment, Company, Contract, FormalNotice, Project
+from src.models import Appointment, Company, Contract, DailyReport, Defect, FormalNotice, Project
 from src.schemas.analysis import WorkPackage
 from src.services import analysis, llm
 from src.services.letters import TYPE_NAMES
@@ -139,6 +139,32 @@ def _analysis_block(packages: list[WorkPackage], ref: dt.date) -> tuple[str, str
     return ANALYSIS_LABEL, " | ".join(lines)
 
 
+def defect_label(d: Defect) -> str:
+    return f"Mangel #{d.id} {d.title}"
+
+
+DEFECT_STATUS_DE = {"offen": "offen", "in_bearbeitung": "in Bearbeitung", "behoben": "behoben", "abgenommen": "abgenommen"}
+
+
+def _defect_text(d: Defect, ref: dt.date) -> str:
+    parts = [f"Status {DEFECT_STATUS_DE.get(d.status, d.status)}", f"festgestellt {_de(d.found_date)}"]
+    where = " · ".join(x for x in (d.house, d.level) if x)
+    if where or d.location:
+        parts.append(f"Ort: {d.location or where}")
+    if d.company:
+        parts.append(f"Firma: {d.company}")
+    if d.deadline:
+        late = d.status in ("offen", "in_bearbeitung") and d.deadline < ref
+        parts.append(f"Frist {_de(d.deadline)}" + (f" (seit {(ref - d.deadline).days} Tagen überfällig)" if late else ""))
+    if d.resolved_date:
+        parts.append(f"behoben {_de(d.resolved_date)}")
+    if d.accepted_date:
+        parts.append(f"abgenommen {_de(d.accepted_date)}")
+    if d.description:
+        parts.append(d.description)
+    return " | ".join(parts)
+
+
 def appointment_label(a: Appointment) -> str:
     return f"Termin {_de(a.date)} {a.title}"
 
@@ -159,6 +185,7 @@ def gather(session: Session, project: Project, ref: dt.date):
         packages, _, _ = analysis.evaluate_tasks(session, project, ref)
     except Exception:  # Analyse darf die Antwort nie verhindern
         packages = []
+    defects = session.exec(select(Defect).where(Defect.project_id == project.id).order_by(Defect.found_date)).all()
     appointments = session.exec(
         select(Appointment).where(Appointment.project_id == project.id).order_by(Appointment.date)
     ).all()
@@ -184,11 +211,13 @@ def gather(session: Session, project: Project, ref: dt.date):
         blocks.append((notice_label(n), f"{TYPE_NAMES.get(n.type, n.type)}, Status {n.status}, erstellt "
                                         f"{_de(n.created_at.date())}, an {n.recipient or '–'}. Betreff: "
                                         f"{n.subject or n.title or ''}. {n.body[:400]}"))
+    blocks += [(defect_label(d), _defect_text(d, ref)) for d in defects]
     for a in appointments:
         blocks.append((appointment_label(a), f"{a.title} am {_de(a.date)}{' ' + a.time if a.time else ''}"
                                              f" ({a.category}{', ' + a.trade if a.trade else ''})"
                                              f"{' – ' + a.description if a.description else ''}"))
-    raw = {"reports": reports, "notes": notes, "notices": notices, "contracts": contracts, "packages": packages}
+    raw = {"reports": reports, "notes": notes, "notices": notices, "contracts": contracts, "packages": packages,
+           "defects": defects}
     return blocks, raw
 
 
@@ -249,6 +278,20 @@ def offline_answer(question: str, blocks: list[tuple[str, str]], raw: dict, ref:
             sources += [report_label(r) for r in last]
         return text, sources
 
+    defects = raw.get("defects", [])
+    if _has(q, "mangel", "mangeln", "maengel") and not _has(q, "ruge", "ruege") and defects:
+        open_ = [d for d in defects if d.status in ("offen", "in_bearbeitung")]
+        late = [d for d in open_ if d.deadline and d.deadline < ref]
+        if not open_:
+            return "Keine offenen Mängel – alle sind behoben oder abgenommen.", [defect_label(d) for d in defects[-5:]]
+        open_.sort(key=lambda d: (d not in late, d.deadline or dt.date.max))
+        lines = [f"- #{d.id} {d.title} ({' · '.join(x for x in (d.house, d.level) if x) or d.location or 'Ort ?'}, "
+                 f"{d.company or 'Firma ?'}): {DEFECT_STATUS_DE.get(d.status, d.status)}"
+                 + (f", Frist {_de(d.deadline)}" if d.deadline else "")
+                 + (f" – {(ref - d.deadline).days} Tage überfällig" if d in late else "") for d in open_]
+        head = f"{len(open_)} offene(r) Mangel/Mängel, davon {len(late)} überfällig:"
+        return head + "\n" + "\n".join(lines), [defect_label(d) for d in open_]
+
     if _has(q, "brief", "schreiben", "freigegeben", "freigabe", "anzeige", "anmeldung", "mangelruge", "maengel"):
         open_ = [n for n in notices if n.status not in ("Freigegeben", "Exportiert", "approved", "exported")]
         if _has(q, "freigegeben", "freigabe", "offen") and notices:
@@ -292,6 +335,47 @@ def offline_answer(question: str, blocks: list[tuple[str, str]], raw: dict, ref:
                 "Tipp: Firmen-, Vorgangs- oder Ortsnamen in die Frage aufnehmen."), []
     lines = [f"- [{lbl}] {txt[:240]}{'…' if len(txt) > 240 else ''}" for lbl, txt in top]
     return "Passende Einträge (KI offline, daher ohne Zusammenfassung):\n" + "\n".join(lines), [lbl for lbl, _ in top]
+
+
+# ---------------------------------------------------------------- Vorschlagsfragen
+
+def suggestions(session: Session, project: Project, ref: dt.date, limit: int = 4) -> list[str]:
+    """Vorschlagsfragen aus den echten Projektdaten (statt fester Demo-Fragen)."""
+    out: list[str] = []
+    try:
+        packages, _, _ = analysis.evaluate_tasks(session, project, ref)
+    except Exception:
+        packages = []
+    late = sorted((p for p in packages if p.delayDays > 0), key=lambda p: -p.delayDays)
+    if late:
+        out.append(f"Warum ist „{late[0].name}“ im Verzug?")
+    elif packages:
+        running = [p for p in packages if 0 < p.actualPercent < 100] or [p for p in packages if p.actualPercent < 100]
+        if running:
+            out.append(f"Wie ist der Stand bei „{running[0].name}“?")
+    defects = session.exec(select(Defect).where(Defect.project_id == project.id)).all()
+    if any(d.status in ("offen", "in_bearbeitung") for d in defects):
+        out.append("Welche Mängel sind offen oder überfällig?")
+    incidents = session.exec(select(DailyReport).where(
+        DailyReport.project_id == project.id, DailyReport.report_date >= ref - dt.timedelta(days=14))).all()
+    if any((r.deviations_incidents or "").strip() for r in incidents):
+        out.append("Welche Behinderungen gab es letzte Woche?")
+    contracts = [c for c in session.exec(select(Contract).where(Contract.project_id == project.id)).all()
+                 if c.contractor_name]
+    if contracts:
+        c = max(contracts, key=lambda c: c.planned_workforce or 0)
+        out.append(f"Wie viele Leute muss {c.contractor_name} laut Vertrag stellen?")
+    drafts = session.exec(select(FormalNotice).where(FormalNotice.project_id == project.id,
+                                                     FormalNotice.status == "Entwurf")).all()
+    if drafts:
+        out.append("Welche Briefe sind noch nicht freigegeben?")
+    for generic in ("Was steht diese Woche laut Bauzeitenplan an?", "Fasse den Stand des Projekts kurz zusammen."):
+        out.append(generic)
+    seen: list[str] = []
+    for q in out:
+        if q not in seen:
+            seen.append(q)
+    return seen[:limit]
 
 
 # ---------------------------------------------------------------- Einstieg

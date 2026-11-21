@@ -11,6 +11,7 @@ from src.models import (
     ConstructionPlan,
     Contract,
     DailyReport,
+    Defect,
     FormalNotice,
     NoticeDraftData,
     PlanTask,
@@ -153,7 +154,7 @@ def delete_project(project_id: int, session: Session = Depends(get_session)):
     for photo in photos:
         session.delete(photo)
 
-    for model in (SiteNote, Appointment, ProjectDocument):
+    for model in (SiteNote, Appointment, ProjectDocument, Defect):
         rows = session.exec(select(model).where(model.project_id == project_id)).all()
         for row in rows:
             session.delete(row)

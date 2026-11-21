@@ -406,6 +406,11 @@ export interface BuildingEvent {
   reportDate?: string | null;
   photoId?: number | null;
   status?: string | null;
+  defectId?: number | null;
+  company?: string | null;
+  deadline?: string | null;
+  /** Mangel behoben/abgenommen ab diesem Tag → nicht mehr rot */
+  resolvedDate?: string | null;
 }
 
 export interface BuildingProgress {
@@ -417,6 +422,70 @@ export interface BuildingProgress {
   lastReportDate: string | null;
   tasks: BuildingTask[];
   events: BuildingEvent[];
+}
+
+// ---- Mängelmanagement (/api/defects) ----
+export type DefectStatus = 'offen' | 'in_bearbeitung' | 'behoben' | 'abgenommen';
+export type DefectPriority = 'niedrig' | 'mittel' | 'hoch';
+
+export interface Defect {
+  id: number;
+  project_id: number;
+  title: string;
+  description: string | null;
+  location: string | null;
+  house: string | null;
+  level: string | null;
+  trade: string | null;
+  company: string | null;
+  priority: DefectPriority;
+  status: DefectStatus;
+  found_date: string;
+  deadline: string | null;
+  resolved_date: string | null;
+  accepted_date: string | null;
+  photo_id: number | null;
+  notice_id: number | null;
+  task_id: number | null;
+  source: string;
+  reported_by: string | null;
+  is_overdue: boolean;
+  days_overdue: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface DefectInput {
+  project_id: number;
+  title: string;
+  description?: string | null;
+  location?: string | null;
+  house?: string | null;
+  level?: string | null;
+  trade?: string | null;
+  company?: string | null;
+  priority?: DefectPriority;
+  status?: DefectStatus;
+  found_date?: string | null;
+  deadline?: string | null;
+  photo_id?: number | null;
+  notice_id?: number | null;
+  task_id?: number | null;
+  source?: string;
+  reported_by?: string | null;
+}
+
+export type DefectPatch = Partial<Omit<DefectInput, 'project_id' | 'source' | 'reported_by'>> & {
+  resolved_date?: string | null;
+  accepted_date?: string | null;
+};
+
+export interface DefectSummary {
+  total: number;
+  by_status: Record<DefectStatus, number>;
+  open: number;
+  overdue: number;
+  by_company: { company: string; open: number; overdue: number }[];
 }
 
 /** Eintrag aus GET /api/assistant/history */
@@ -1431,6 +1500,63 @@ export const api = {
       body: JSON.stringify({ question, project_id: projectId }),
     });
     return handleResponse<AssistantAnswer>(res, 'Assistent nicht erreichbar');
+  },
+
+  // ---- Mängel ----
+  /** GET /api/defects – status: offen | in_bearbeitung | behoben | abgenommen | open (= offen + in Bearbeitung) */
+  async listDefects(projectId: number, filters: { status?: string; company?: string; house?: string; overdue?: boolean } = {}): Promise<Defect[]> {
+    const params = new URLSearchParams({ project_id: String(projectId) });
+    if (filters.status) params.set('status', filters.status);
+    if (filters.company) params.set('company', filters.company);
+    if (filters.house) params.set('house', filters.house);
+    if (filters.overdue !== undefined) params.set('overdue', String(filters.overdue));
+    const res = await fetch(`${API_BASE_URL}/api/defects?${params.toString()}`);
+    return handleResponse<Defect[]>(res, 'Mängel konnten nicht geladen werden');
+  },
+
+  async getDefectSummary(projectId: number): Promise<DefectSummary> {
+    const res = await fetch(`${API_BASE_URL}/api/defects/summary?project_id=${projectId}`);
+    return handleResponse<DefectSummary>(res, 'Mängelübersicht konnte nicht geladen werden');
+  },
+
+  async createDefect(data: DefectInput): Promise<Defect> {
+    const res = await fetch(`${API_BASE_URL}/api/defects`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    return handleResponse<Defect>(res, 'Mangel konnte nicht angelegt werden');
+  },
+
+  async updateDefect(defectId: number, changes: DefectPatch): Promise<Defect> {
+    const res = await fetch(`${API_BASE_URL}/api/defects/${defectId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(changes),
+    });
+    return handleResponse<Defect>(res, 'Mangel konnte nicht gespeichert werden');
+  },
+
+  async deleteDefect(defectId: number): Promise<void> {
+    const res = await fetch(`${API_BASE_URL}/api/defects/${defectId}`, { method: 'DELETE' });
+    await expectOk(res, 'Mangel konnte nicht gelöscht werden');
+  },
+
+  /** GET /api/defects/export/{docx|pdf} – Mängelliste; PDF 503 ohne Pango */
+  async downloadDefectList(projectId: number, format: 'pdf' | 'docx', status = 'open', company?: string): Promise<Blob> {
+    const params = new URLSearchParams({ project_id: String(projectId), status });
+    if (company) params.set('company', company);
+    const res = await fetch(`${API_BASE_URL}/api/defects/export/${format}?${params.toString()}`);
+    if (!res.ok) {
+      throw new Error(`Mängelliste (${format.toUpperCase()}) fehlgeschlagen: ${await errorDetail(res)}`);
+    }
+    return res.blob();
+  },
+
+  /** GET /api/assistant/suggestions?project_id= – Vorschlagsfragen aus den Projektdaten */
+  async getAssistantSuggestions(projectId: number): Promise<string[]> {
+    const res = await fetch(`${API_BASE_URL}/api/assistant/suggestions?project_id=${projectId}`);
+    return handleResponse<string[]>(res, 'Vorschläge konnten nicht geladen werden');
   },
 
   /** GET /api/progress/building?project_id= – Plan, Ist-Verlauf und Ereignisse je Haus/Ebene */

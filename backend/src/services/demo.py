@@ -10,6 +10,7 @@ Vorgangsdauern bleiben stimmig, Datumsangaben im Text wandern mit).
 """
 
 import datetime as dt
+import html
 import importlib.util
 import json
 from pathlib import Path
@@ -21,6 +22,7 @@ from src.models import (
     Appointment,
     Contract,
     DailyReport,
+    Defect,
     FormalNotice,
     NoticeDraftData,
     PlanTask,
@@ -80,6 +82,31 @@ EXTRA_TASKS = [
     ("B-280", "Wände 2.OG Haus C", "Rohbau", "2027-02-04", "2027-02-11", "Haus C · 2.OG (Achse B)"),
     ("B-290", "Dachdecke Haus C", "Rohbau", "2027-02-12", "2027-02-19", "Haus C · Dach (Achse B)"),
     ("B-299", "Dachabdichtung Haus C", "Dach", "2027-02-25", "2027-03-05", "Haus C · Dach (Achse B)"),
+]
+
+# Mängel der Demo (Seed-Daten, werden wie alles andere auf den Stichtag verschoben). Firmen = Seed-Firmen.
+DEMO_DEFECTS = [
+    dict(title="Fugenband nicht mittig eingebunden, Kiesnest am Sockel",
+         description="Arbeitsfugenband nicht mittig eingebunden sowie lokales Kiesnest (ca. 35 cm) am Sockelanschluss.",
+         location="Haus B · Gründung, Sockelanschluss Feld 3 (Achse A)", house="Haus B", level="Gründung",
+         trade="Rohbau", company="BetonTech Rohbau GmbH", priority="hoch", status="in_bearbeitung",
+         found="2026-11-19", deadline="2026-11-27", photo="mangel_fugenband_sockel_achse_a.svg", notice=True),
+    dict(title="Absturzsicherung Baugrube Achse B unvollständig",
+         description="Bauzaun an der Nordseite der Baugrube Achse B auf ca. 8 m geöffnet, Absturzkante ungesichert.",
+         location="Haus C · Gründung, Baugrube Nordseite (Achse B)", house="Haus C", level="Gründung",
+         trade="Erdbau", company="Erdbau Krause GmbH", priority="hoch", status="offen",
+         found="2026-11-17", deadline="2026-11-18"),
+    dict(title="Böschung Baugrube nach Starkregen ausgespült",
+         description="Böschung an Achse A auf ca. 4 m Länge ausgespült, Nachprofilieren und Abdecken erforderlich.",
+         location="Haus B · Gründung, Böschung Ost (Achse A)", house="Haus B", level="Gründung",
+         trade="Erdbau", company="Erdbau Krause GmbH", priority="mittel", status="abgenommen",
+         found="2026-11-10", deadline="2026-11-12", resolved="2026-11-11", accepted="2026-11-12",
+         photo="starkregen_baugrube_achse_a.svg"),
+    dict(title="Abplatzung an Fundamentkante F3",
+         description="Kantenabplatzung ca. 10 × 4 cm nach dem Ausschalen, Reprofilierung mit PCC-Mörtel.",
+         location="Haus B · Gründung, Fundament F3 (Achse A)", house="Haus B", level="Gründung",
+         trade="Rohbau", company="BetonTech Rohbau GmbH", priority="niedrig", status="behoben",
+         found="2026-11-16", deadline="2026-11-20", resolved="2026-11-19"),
 ]
 
 DEMO_APPOINTMENTS = [
@@ -210,6 +237,8 @@ DEMO_PHOTOS = [
 
 
 def _render_demo_svg(headline: str, subline: str, badge: str, date_str: str, bg: str, accent: str) -> bytes:
+    # Texte XML-escapen: ein "&" (z. B. "Fugenband & Kiesnest") macht das SVG sonst ungültig → Bild lädt nicht
+    headline, subline, badge = (html.escape(x, quote=False) for x in (headline, subline, badge))
     svg = f"""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 500" width="800" height="500">
   <defs>
     <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
@@ -413,6 +442,22 @@ def reset(session: Session, ref: dt.date) -> dict:
             "received_at": shift(dt.date(2026, 11, 20)).isoformat(),
         }, ensure_ascii=False),
     ))
+
+    # Mängel (Mängelmanagement): je Status ein Beispiel, einer überfällig, einer mit Brief + Foto verknüpft
+    session.flush()
+    photo_ids = {p.file_name: p.id for p in session.exec(select(SitePhoto).where(SitePhoto.project_id == project.id)).all()}
+    for item in DEMO_DEFECTS:
+        session.add(Defect(
+            project_id=project.id, title=item["title"], description=item["description"], location=item["location"],
+            house=item["house"], level=item["level"], trade=item["trade"], company=item["company"],
+            priority=item["priority"], status=item["status"], source="demo", reported_by="Max Mustermann",
+            found_date=shift(dt.date.fromisoformat(item["found"])),
+            deadline=shift(dt.date.fromisoformat(item["deadline"])) if item.get("deadline") else None,
+            resolved_date=shift(dt.date.fromisoformat(item["resolved"])) if item.get("resolved") else None,
+            accepted_date=shift(dt.date.fromisoformat(item["accepted"])) if item.get("accepted") else None,
+            photo_id=photo_ids.get(item.get("photo", "")),
+            notice_id=defect_notice.id if item.get("notice") else None,
+        ))
 
     # Protokolle & E-Mails sowie Standard-Profil anlegen
     for doc_item in DEFAULT_MINUTES_AND_EMAILS:

@@ -44,9 +44,13 @@ def test_demo_building(client):
     a120 = next(t for t in data["tasks"] if t["code"] == "A-120")
     assert a120["history"][-1] == {"date": "2026-11-13", "percent": 100}
 
-    defect = next(e for e in data["events"] if e["kind"] == "defect")
+    defect = next(e for e in data["events"] if e["kind"] == "defect" and e["noticeId"])  # Fugenband + Mängelrüge
     assert (defect["house"], defect["level"]) == ("Haus B", "Gründung")
-    assert a120["id"] in defect["taskIds"] and defect["noticeId"]
+    assert a120["id"] in defect["taskIds"] and defect["defectId"] and defect["status"] == "in_bearbeitung"
+    # verknüpfte Mängelrüge/Foto erscheinen nicht zusätzlich als eigenes Ereignis
+    assert not any(e["id"] == f"notice-{defect['noticeId']}" for e in data["events"])
+    done = next(e for e in data["events"] if e["kind"] == "defect" and e["status"] == "abgenommen")
+    assert done["resolvedDate"] == "2026-11-11"
     stillstand = [e for e in data["events"] if e["kind"] == "incident" and "Achse B" in e["detail"]]
     assert stillstand and all((e["house"], e["level"]) == ("Haus C", "Gründung") for e in stillstand)
 

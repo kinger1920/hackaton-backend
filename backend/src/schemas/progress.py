@@ -45,7 +45,11 @@ class BuildingEvent(BaseModel):
     noticeId: int | None = None
     reportDate: dt.date | None = None
     photoId: int | None = None
-    status: str | None = None  # Briefstatus (Entwurf/Freigegeben/…)
+    status: str | None = None  # Briefstatus (Entwurf/Freigegeben/…) bzw. Mangelstatus (offen/…/abgenommen)
+    defectId: int | None = None
+    company: str | None = None
+    deadline: dt.date | None = None
+    resolvedDate: dt.date | None = None  # ab hier ist der Mangel nicht mehr offen (behoben/abgenommen)
 
 
 class BuildingProgress(BaseModel):

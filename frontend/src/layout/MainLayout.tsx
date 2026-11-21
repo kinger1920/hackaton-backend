@@ -19,7 +19,8 @@ import {
     PanelLeftOpen,
     Sun,
     Moon,
-    PenLine
+    PenLine,
+    ClipboardList
 } from 'lucide-react';
 import {useOnlineStatus} from '../components/useOnlineStatus';
 import {todayIso} from '../utils/dates';
@@ -77,6 +78,7 @@ const NAV_GROUPS: NavGroup[] = [
         items: [
             // Idee #7: Live-Baufortschritt auf Grundriss mit Zeitregler
             {path: '/fortschritt', icon: <TrendingUp size={19}/>, labelKey: 'nav_progress_map', fallback: 'Baufortschritt'},
+            {path: '/maengel', icon: <ClipboardList size={19}/>, labelKey: 'nav_defects', fallback: 'Mängel'},
             // Idee #5: „Frag dein Projekt“-Chat mit Quellen
             {path: '/assistent', icon: <MessageSquare size={19}/>, labelKey: 'nav_assistant', fallback: 'Projekt-Assistent'},
             {path: '/projects', icon: <FolderKanban size={19}/>, labelKey: 'nav_projects'},

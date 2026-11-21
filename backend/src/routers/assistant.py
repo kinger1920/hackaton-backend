@@ -62,6 +62,13 @@ async def ask(req: AssistantAskRequest, session: Session = Depends(get_session))
     return AssistantAnswer(answer=answer, sources=sources, mode=mode, session_id=chat.id)
 
 
+@router.get("/suggestions", response_model=list[str])
+def suggestions(project_id: int, ref_date: dt.date | None = None, session: Session = Depends(get_session)) -> list[str]:
+    """Bis zu 4 Vorschlagsfragen aus den Projektdaten (Verzug, offene Mängel, Behinderungen, Verträge, Briefe)."""
+    project = _project_or_404(session, project_id)
+    return assistant.suggestions(session, project, ref_date or dt.date.today())
+
+
 @router.get("/history", response_model=list[AssistantMessage])
 def history(project_id: int, limit: int = 100, session: Session = Depends(get_session)) -> list[AssistantMessage]:
     """Bisheriger Chat-Verlauf des Projekts (älteste zuerst, höchstens `limit` neueste Nachrichten)."""

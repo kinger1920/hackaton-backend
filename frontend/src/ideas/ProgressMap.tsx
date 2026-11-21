@@ -1,6 +1,6 @@
 import React, {useCallback, useEffect, useMemo, useState} from 'react';
-import {useNavigate} from 'react-router-dom';
-import {AlertTriangle, Building2, CalendarClock, FileText, Mail, MapPin, Pause, Play, TrendingUp} from 'lucide-react';
+import {useLocation, useNavigate} from 'react-router-dom';
+import {AlertTriangle, Building2, CalendarClock, ClipboardList, FileText, Mail, MapPin, Pause, Play, TrendingUp} from 'lucide-react';
 import {useProjects} from '../context/ProjectContext';
 import {api, BuildingEvent, BuildingProgress, BuildingTask} from '../services/api';
 import {ComingSoonNote} from '../components/ComingSoon';
@@ -39,6 +39,7 @@ const SEVERITY: TaskState[] = ['planned', 'done', 'forecast', 'ontrack', 'warnin
 const DEFECT_COLOR = '#dc2626';
 const NOTICE_COLOR = '#f59e0b';
 const RECENT_DAYS = 10; // Vorkommnisse/Behinderungen so lange am Bauteil markieren
+const DEFECT_STATUS: Record<string, string> = {offen: 'offen', in_bearbeitung: 'in Bearbeitung', behoben: 'behoben', abgenommen: 'abgenommen'};
 const SITE = 'Baufeld';
 
 const EVENT_LABELS: Record<BuildingEvent['kind'], string> = {
@@ -160,7 +161,10 @@ export const ProgressMap: React.FC = () => {
     const [error, setError] = useState<string | null>(null);
     const [dayIndex, setDayIndex] = useState(0);
     const [playing, setPlaying] = useState(false);
-    const [selected, setSelected] = useState<string | null>(null);
+    const location = useLocation();
+    // Aus der Mängelliste: {house, level} → diese Ebene vorauswählen
+    const navTarget = (location.state as { house?: string | null; level?: string | null } | null) ?? null;
+    const [selected, setSelected] = useState<string | null>(navTarget?.house ? `${navTarget.house}|${navTarget.level ?? ''}` : null);
 
     const today = useMemo(startOfToday, []);
 
@@ -198,9 +202,10 @@ export const ProgressMap: React.FC = () => {
     }, [projectId, legacyStorageKey, today]);
 
     useEffect(() => {
-        setSelected(null);
+        if (!navTarget?.house) setSelected(null);
         setPlaying(false);
         load();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [load]);
 
     const rangeFrom = data?.rangeFrom ? d(data.rangeFrom) : today;
@@ -234,6 +239,8 @@ export const ProgressMap: React.FC = () => {
         [data, refDate.getTime()]);
 
     const isRecent = (e: BuildingEvent) => e.kind !== 'defect' && daysBetween(d(e.date), refDate) < RECENT_DAYS;
+    // Mangel ist am Stichtag offen, solange er nicht behoben/abgenommen ist
+    const isOpenDefect = (e: BuildingEvent) => e.kind === 'defect' && (!e.resolvedDate || d(e.resolvedDate) > refDate);
 
     const cells = useMemo(() => {
         const map = new Map<string, CellView>();
@@ -243,19 +250,19 @@ export const ProgressMap: React.FC = () => {
                 const tasks = views.filter((v) => v.task.house === house && v.task.level === level);
                 const evs = eventsUntil.filter((e) => e.house === house && e.level === level);
                 map.set(cellKey(house, level), aggregate(house, level, tasks,
-                    evs.filter((e) => e.kind === 'defect'), evs.filter(isRecent)));
+                    evs.filter(isOpenDefect), evs.filter(isRecent)));
             }
         }
         const siteTasks = views.filter((v) => !v.task.house);
         const siteEvents = eventsUntil.filter((e) => !e.house);
         map.set(cellKey(null, null), aggregate(SITE, '', siteTasks,
-            siteEvents.filter((e) => e.kind === 'defect'), siteEvents.filter(isRecent)));
+            siteEvents.filter(isOpenDefect), siteEvents.filter(isRecent)));
         return map;
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [data, views, eventsUntil]);
 
     const selectedCell = selected ? cells.get(selected) ?? null : null;
-    const openDefects = eventsUntil.filter((e) => e.kind === 'defect');
+    const openDefects = eventsUntil.filter(isOpenDefect);
     const overall = useMemo(() => {
         const withPlan = views.filter((v) => v.task.durationDays > 0);
         const total = withPlan.reduce((s, v) => s + v.task.durationDays, 0) || 1;
@@ -298,7 +305,8 @@ export const ProgressMap: React.FC = () => {
     };
 
     const openEvent = (e: BuildingEvent) => {
-        if (e.noticeId) navigate('/drafts', {state: {noticeId: e.noticeId}});
+        if (e.defectId) navigate('/maengel', {state: {focusId: e.defectId}});
+        else if (e.noticeId) navigate('/drafts', {state: {noticeId: e.noticeId}});
         else if (e.reportDate) navigate('/reports', {state: {date: e.reportDate}});
     };
 
@@ -633,16 +641,16 @@ export const ProgressMap: React.FC = () => {
                                                     <strong style={{fontSize: '13px'}}>Ereignisse bis Stichtag</strong>
                                                     {evs.slice().reverse().map((e) => (
                                                         <button key={e.id} type="button" className="bp-event" onClick={() => openEvent(e)}
-                                                                disabled={!e.noticeId && !e.reportDate}
-                                                                title={e.noticeId ? 'Brief öffnen' : e.reportDate ? 'Tagesbericht öffnen' : undefined}>
-                                                            <span className="bp-pill" style={{background: e.kind === 'defect' ? DEFECT_COLOR : NOTICE_COLOR}}>
-                                                                {EVENT_LABELS[e.kind]}
+                                                                disabled={!e.defectId && !e.noticeId && !e.reportDate}
+                                                                title={e.defectId ? 'In der Mängelliste öffnen' : e.noticeId ? 'Brief öffnen' : e.reportDate ? 'Tagesbericht öffnen' : undefined}>
+                                                            <span className="bp-pill" style={{background: e.kind !== 'defect' ? NOTICE_COLOR : isOpenDefect(e) ? DEFECT_COLOR : STATE_COLORS.done}}>
+                                                                {EVENT_LABELS[e.kind]}{e.kind === 'defect' && e.status ? ` · ${DEFECT_STATUS[e.status] ?? e.status}` : ''}
                                                             </span>
                                                             <span className="bp-event-text">
                                                                 <strong>{fmt(e.date)}</strong> {e.title}
                                                                 <span className="bp-muted"> · {e.source}{e.status ? ` (${e.status})` : ''}</span>
                                                             </span>
-                                                            {e.noticeId ? <Mail size={12}/> : e.reportDate ? <FileText size={12}/> : null}
+                                                            {e.defectId ? <ClipboardList size={12}/> : e.noticeId ? <Mail size={12}/> : e.reportDate ? <FileText size={12}/> : null}
                                                         </button>
                                                     ))}
                                                 </div>
@@ -653,8 +661,8 @@ export const ProgressMap: React.FC = () => {
                                             <button
                                                 className="btn btn-secondary"
                                                 style={{fontSize: '12px', alignSelf: 'flex-start'}}
-                                                onClick={() => navigate('/drafts', {
-                                                    state: {type: 'defect', keywords: `Mangel in ${selectedCell.house} · ${selectedCell.level}: `}
+                                                onClick={() => navigate('/maengel', {
+                                                    state: {newDefect: {house: selectedCell.house, level: selectedCell.level}}
                                                 })}
                                             >
                                                 <AlertTriangle size={12}/> Mangel erfassen

@@ -22,6 +22,7 @@ from sqlmodel import Session, select
 from src.models import (
     Contract,
     DailyReport,
+    Defect,
     FormalNotice,
     NoticeDraftData,
     PlanTask,
@@ -181,8 +182,30 @@ def build(session: Session, project: Project) -> BuildingProgress:
         ))
 
     events: list[BuildingEvent] = []
+    # Mängel aus dem Mängelmanagement (mit Status; behoben/abgenommen → ab resolvedDate nicht mehr rot)
+    defects = session.exec(select(Defect).where(Defect.project_id == project.id)).all()
+    linked_notices = {d.notice_id for d in defects if d.notice_id}
+    linked_photos = {d.photo_id for d in defects if d.photo_id}
+    by_id = {t.id: t for t in tasks}
+    for d in defects:
+        if d.house:
+            house, level = d.house, d.level
+            ids = [d.task_id] if d.task_id in by_id else [
+                t.id for t in tasks if t.house == house and t.level == level
+                and (t.plannedStart is None or t.plannedStart <= d.found_date)]
+        else:
+            house, level, ids = _place_event(f"{d.location or ''} {d.title}", d.found_date, tasks, axis_houses)
+        events.append(BuildingEvent(
+            id=f"defect-{d.id}", kind="defect", date=d.found_date, title=d.title,
+            detail=(d.description or d.location or "")[:400], house=house, level=level, taskIds=ids,
+            source=f"Mangel #{d.id}", noticeId=d.notice_id, photoId=d.photo_id, status=d.status,
+            defectId=d.id, company=d.company, deadline=d.deadline,
+            resolvedDate=d.resolved_date or d.accepted_date if d.status in ("behoben", "abgenommen") else None,
+        ))
     # Briefe: Mängel/Bedenken = Mangel, Behinderung/Mehrkosten = Behinderung
     for n in session.exec(select(FormalNotice).where(FormalNotice.project_id == project.id)).all():
+        if n.id in linked_notices:
+            continue  # Mängelrüge gehört zu einem Mangel oben – nicht doppelt zeigen
         kind = "defect" if n.type in ("defect", "concern") else "hindrance"
         day = n.created_at.date()
         house, level, ids = _place_event(_notice_location(session, n), day, tasks, axis_houses)
@@ -206,6 +229,8 @@ def build(session: Session, project: Project) -> BuildingProgress:
         ))
     # Foto-Befunde
     for p in session.exec(select(SitePhoto).where(SitePhoto.project_id == project.id)).all():
+        if p.id in linked_photos:
+            continue  # Foto gehört zu einem Mangel – dort verlinkt
         try:
             issues = [str(i) for i in json.loads(p.issues_json or "[]") if str(i).strip()]
         except ValueError:

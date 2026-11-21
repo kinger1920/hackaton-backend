@@ -66,3 +66,14 @@ def test_workday_helpers():
     assert add_workdays(dt.date(2026, 11, 20), 1) == dt.date(2026, 11, 23)
     assert add_workdays(dt.date(2026, 11, 23), -1) == dt.date(2026, 11, 20)
     assert workday_offset(dt.date(2026, 11, 13)) == -5
+
+
+def test_demo_photos_are_valid_svg(client):
+    """Regression: Texte mit "&" machten die Demo-SVGs ungültig (Bild lädt im Browser nicht)."""
+    import xml.etree.ElementTree as ET
+
+    _reset(client, "2026-11-22")
+    photos = client.get("/api/photos?project_id=1").json()
+    assert photos
+    for p in photos:
+        ET.fromstring(client.get(p["url"]).content)  # wirft bei ungültigem XML

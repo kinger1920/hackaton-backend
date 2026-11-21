@@ -15,7 +15,7 @@ from typing import Literal
 from pydantic import BaseModel
 from sqlmodel import Session, select
 
-from src.models import Contract, DailyReport, FormalNotice, PlanTask, Project, ReportProgress
+from src.models import Contract, DailyReport, Defect, FormalNotice, PlanTask, Project, ReportProgress
 from src.schemas.analysis import (
     Dashboard, DashboardAlert, DashboardKpis, DayAnalysis, DayItem, DayStats, DeviationItem,
     DraftType, ManpowerAvg, PlanAnalysis, WorkPackage,
@@ -370,6 +370,18 @@ def dashboard(session: Session, project: Project, ref: dt.date) -> Dashboard:
     ) for g in workforce_check(session, project, ref)]
     alerts += [DashboardAlert(severity=d.severity, title=d.title, description=d.impact, draftType=d.draftType,
                               source=d.sourceReport) for d in a.deviations[:5]]
+    # Überfällige Mängel (Frist vorbei, weder behoben noch abgenommen) – Vorschlag: Mängelrüge / Nachfrist
+    overdue = [m for m in session.exec(select(Defect).where(Defect.project_id == project.id)).all()
+               if m.status in ("offen", "in_bearbeitung") and m.deadline and m.deadline < ref]
+    alerts += [DashboardAlert(
+        severity="critical" if (ref - m.deadline).days >= 3 or m.priority == "hoch" else "warning",
+        title=f"Mangel überfällig: {m.title}",
+        description=(f"{m.company or 'Firma offen'} · Frist {_de(m.deadline)} ({(ref - m.deadline).days} Tag(e) überschritten)"
+                     f"{' · ' + ' · '.join(x for x in (m.house, m.level) if x) if m.house else ''}."),
+        draftType="defect", source=f"Mangel #{m.id}",
+        prefillText=(f"Mangel: {m.title}. Ort: {m.location or ' · '.join(x for x in (m.house, m.level) if x)}. "
+                     f"Firma: {m.company or 'unbekannt'}. Frist {_de(m.deadline)} ist abgelaufen, Mangel nicht beseitigt."),
+    ) for m in sorted(overdue, key=lambda m: m.deadline)]
     return Dashboard(
         kpis=DashboardKpis(delayDays=-a.overallDelta, spi=a.spi, criticalAlerts=a.criticalAlertsCount,
                            openDrafts=len(drafts), workersToday=_workers(today) if today else None),

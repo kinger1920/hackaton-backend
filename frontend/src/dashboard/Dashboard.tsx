@@ -16,7 +16,8 @@ import {
     AlertTriangle,
     LayoutDashboard,
     Wind,
-    Droplets
+    Droplets,
+    ClipboardList
 } from 'lucide-react';
 import './Dashboard.css';
 import '@frontend/src/index.css';
@@ -27,6 +28,7 @@ import {
     Company,
     Contract,
     DailyReportOut,
+    DefectSummary,
     WeatherResponse
 } from '../services/api';
 import {daysBetween, formatDe, parseIsoDate, startOfToday, todayIso} from '../utils/dates';
@@ -62,15 +64,19 @@ export const Dashboard: React.FC = () => {
     const [clientCompany, setClientCompany] = useState<Company | null>(null);
     // Live-Wetter am Projektort (GET /api/weather → Open-Meteo); null = nicht verfügbar
     const [liveWeather, setLiveWeather] = useState<WeatherResponse | null>(null);
+    // Mängel (GET /api/defects/summary); null = nicht verfügbar
+    const [defectSummary, setDefectSummary] = useState<DefectSummary | null>(null);
 
     const loadBackend = async () => {
         setLiveWeather(null);
-        const [rep, con, cli, wea] = await Promise.allSettled([
+        const [rep, con, cli, wea, def] = await Promise.allSettled([
             api.getReport(todayIso(), projectId),
             api.listContracts(projectId),
             api.listCompanies({ company_type: 'client' }),
-            api.getWeather(todayIso(), projectId)
+            api.getWeather(todayIso(), projectId),
+            api.getDefectSummary(projectId)
         ]);
+        setDefectSummary(def.status === 'fulfilled' ? def.value : null);
         setTodayReport(rep.status === 'fulfilled' && rep.value.id != null ? rep.value : null);
         setLiveWeather(wea.status === 'fulfilled' ? wea.value : null);
         setContracts(con.status === 'fulfilled' ? con.value : []);
@@ -417,6 +423,40 @@ export const Dashboard: React.FC = () => {
                     </div>
                     <div className="kpi-icon" style={{ backgroundColor: '#eff6ff', color: '#2563eb' }}>
                         <Users size={26} />
+                    </div>
+                </div>
+
+                {/* KACHEL: OFFENE MÄNGEL (echte Daten aus dem Mängelmanagement) */}
+                <div
+                    className="kpi-card interactive"
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => navigate('/maengel')}
+                    onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault();
+                            navigate('/maengel');
+                        }
+                    }}
+                    title="Klicken, um die Mängelliste zu öffnen"
+                >
+                    <div style={{ flex: 1 }}>
+                        <div className="kpi-label">Offene Mängel</div>
+                        <div className="kpi-value">{defectSummary ? defectSummary.open : '–'}</div>
+                        <div className={`kpi-sub ${defectSummary && defectSummary.overdue > 0 ? 'alert' : ''}`}>
+                            {!defectSummary
+                                ? 'Mängelliste nicht verfügbar'
+                                : defectSummary.overdue > 0
+                                    ? `${defectSummary.overdue} überfällig${defectSummary.by_company[0]?.overdue ? ` • ${defectSummary.by_company[0].company}` : ''}`
+                                    : `${defectSummary.by_status.behoben} warten auf Abnahme`}
+                        </div>
+                        <div className="kpi-click-hint">
+                            <Search size={12} />
+                            <span>Klick für Mängelliste</span>
+                        </div>
+                    </div>
+                    <div className="kpi-icon" style={{ backgroundColor: '#fef2f2', color: '#dc2626' }}>
+                        <ClipboardList size={26} />
                     </div>
                 </div>
 
