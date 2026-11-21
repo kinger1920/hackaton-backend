@@ -18,7 +18,8 @@ import {
     PanelLeftClose,
     PanelLeftOpen,
     Sun,
-    Moon
+    Moon,
+    PenLine
 } from 'lucide-react';
 import {useOnlineStatus} from '../components/useOnlineStatus';
 import {todayIso} from '../utils/dates';
@@ -55,7 +56,8 @@ const NAV_GROUPS: NavGroup[] = [
         fallback: 'Tagesgeschäft',
         items: [
             {path: '/dashboard', icon: <LayoutDashboard size={19}/>, labelKey: 'nav_dashboard'},
-            {path: '/capture', icon: <Mic size={19}/>, labelKey: 'nav_capture'},
+            {path: '/capture/voice', icon: <Mic size={19}/>, labelKey: 'nav_capture_voice', fallback: 'Spracherfassung'},
+            {path: '/capture/text', icon: <PenLine size={19}/>, labelKey: 'nav_capture_text', fallback: 'Schreiberfassung'},
             {path: '/reports', icon: <FileText size={19}/>, labelKey: 'nav_reports'},
             {path: '/termin', icon: <Calendar size={19}/>, labelKey: 'nav_termin'}
         ]

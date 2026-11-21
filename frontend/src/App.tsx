@@ -31,7 +31,9 @@ export const App: React.FC = () => {
             <Route path="/dashboard" element={<Dashboard />} />
             <Route path="/reports" element={<DailyReports />} />
             <Route path="/termin" element={<Termin />} />
-            <Route path="/capture" element={<VoiceOrText />} />
+            <Route path="/capture" element={<Navigate to="/capture/voice" replace />} />
+            <Route path="/capture/voice" element={<VoiceOrText key="voice" mode="voice" />} />
+            <Route path="/capture/text" element={<VoiceOrText key="text" mode="text" />} />
             <Route path="/analysis" element={<Navigate to="/dashboard" replace />} />
             <Route path="/alerts" element={<Navigate to="/dashboard" replace />} />
             <Route path="/profile" element={<Profile />} />
