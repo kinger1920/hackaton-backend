@@ -335,6 +335,18 @@ ${userProfile?.role || 'Bauleiter'} • ${companyName}`);
         URL.revokeObjectURL(url);
     };
 
+    // Druckt nur das Schreiben (.paper-content), nicht die ganze Seite. Die Klasse am <body>
+    // aktiviert die Druckregeln in LetterDrafts.css nur für diesen Druck (andere Seiten unberührt).
+    const printLetterOnly = () => {
+        document.body.classList.add('print-letter-only');
+        const cleanup = () => {
+            document.body.classList.remove('print-letter-only');
+            window.removeEventListener('afterprint', cleanup);
+        };
+        window.addEventListener('afterprint', cleanup);
+        window.print();
+    };
+
     const handleDownloadPdf = async () => {
         if (currentNotice?.id) {
             if (currentNotice.status === 'Entwurf') {
@@ -364,12 +376,16 @@ ${userProfile?.role || 'Bauleiter'} • ${companyName}`);
                 URL.revokeObjectURL(url);
                 return;
             } catch (err: any) {
-                console.warn('Backend PDF Export nicht verfügbar (Weasyprint), nutze Browser-Druck:', err);
-                window.print();
+                // Fehler nicht verschlucken: Backend-Meldung zeigen (z. B. 503 "Pango fehlt"),
+                // dann optional nur das Schreiben über den Browser drucken.
+                const reason = err?.message || 'Unbekannter Fehler';
+                if (window.confirm(`PDF-Export vom Server fehlgeschlagen:\n${reason}\n\nStattdessen nur das Schreiben über den Browser drucken?`)) {
+                    printLetterOnly();
+                }
                 return;
             }
         }
-        window.print();
+        printLetterOnly();
     };
 
     const handleSaveToDrafts = async () => {
@@ -713,6 +729,8 @@ ${userProfile?.role || 'Bauleiter'} • ${companyName}`);
               value={letterBody}
               onChange={(e) => setLetterBody(e.target.value)}
             />
+            {/* Nur für den Druck: ein <textarea> druckt bloß seinen sichtbaren Ausschnitt. */}
+            <div className="letter-body-print">{letterBody}</div>
           </div>
 
                     {/* Legal Disclaimer / Constraint Banner */}
