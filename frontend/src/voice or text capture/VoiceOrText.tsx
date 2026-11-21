@@ -109,6 +109,10 @@ export const VoiceOrText: React.FC<VoiceOrTextProps> = ({ mode = 'voice' }) => {
   const [isCapturing, setIsCapturing] = useState(false);
   const [lastDraft, setLastDraft] = useState<NoticeDraft | null>(null);
   const [aiQuestions, setAiQuestions] = useState<string[]>([]);
+  // Jeder POST /api/capture legt im Backend eine Notiz UND einen Brief-Entwurf an,
+  // POST /api/reports/{date}/fill ebenfalls eine Notiz → nichts doppelt auslösen.
+  const lastCapturedTextRef = useRef<string | null>(null);
+  const lastSavedContentRef = useRef<string | null>(null);
 
   // User-created custom text templates (stored in localStorage, empty by default)
   const [customTemplates, setCustomTemplates] = useState<CustomTextTemplate[]>(() => {
@@ -255,6 +259,12 @@ export const VoiceOrText: React.FC<VoiceOrTextProps> = ({ mode = 'voice' }) => {
   // AI Categorization: Parse general notes into categories via backend API or fallback
   const handleAutoCategorize = async (textToParse = generalNotes) => {
     if (!textToParse.trim()) return;
+    // gleicher Text wurde schon erfasst → kein zweiter Tagebucheintrag / Brief-Entwurf
+    if (lastCapturedTextRef.current === textToParse.trim()) {
+      setAiClassifiedSuccess(true);
+      setTimeout(() => setAiClassifiedSuccess(false), 3000);
+      return;
+    }
 
     setIsCapturing(true);
     setAiQuestions([]);
@@ -265,6 +275,7 @@ export const VoiceOrText: React.FC<VoiceOrTextProps> = ({ mode = 'voice' }) => {
         project_id: Number(activeProject.id)
       });
       setLastDraft(draft);
+      if (draft.site_note_id) lastCapturedTextRef.current = textToParse.trim();
 
       if (draft.questions && draft.questions.length > 0) {
         setAiQuestions(draft.questions);
@@ -449,6 +460,15 @@ Kategorisierte Stichpunkte:
 - Mängel / Qualität: ${categories.defect.join('; ') || 'Keine'}
 - Lieferungen & Material: ${categories.delivery.join('; ') || 'Keine'}`.trim();
 
+    // Zweimal „Speichern“ ohne Änderung → kein zweiter identischer Eintrag
+    if (lastSavedContentRef.current === content) {
+      if (showToast) {
+        setSaveSuccessMsg(true);
+        setTimeout(() => setSaveSuccessMsg(false), 4000);
+      }
+      return;
+    }
+
     // Tagebucheintrag im Backend; nur wenn das scheitert, lokal sichern (vorher immer doppelt gespeichert)
     try {
       await api.createSiteNote({
@@ -457,6 +477,7 @@ Kategorisierte Stichpunkte:
         category: payload.hasIncident ? 'incident' : 'progress',
         author: userName
       });
+      lastSavedContentRef.current = content;
     } catch (err) {
       console.warn('Backend nicht erreichbar – Notiz lokal gesichert:', err);
       saveProjectDocument({
@@ -486,7 +507,8 @@ Kategorisierte Stichpunkte:
 
     try {
       if (targetDailyReport) {
-        await handleSaveToDiary(false);
+        // /fill trägt in den Bericht ein UND legt selbst den Tagebucheintrag an →
+        // eigene Notiz nur, wenn das Backend nicht erreichbar ist (dann ggf. lokal).
         try {
           await api.fillReport(reportDate, {
             text: payload.combinedText,
@@ -494,6 +516,7 @@ Kategorisierte Stichpunkte:
           });
         } catch (err) {
           console.warn('Backend fillReport Fallback:', err);
+          await handleSaveToDiary(false);
         }
       }
 
