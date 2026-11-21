@@ -160,3 +160,34 @@ def test_llm_items_with_unknown_source_are_dropped(client, engine, monkeypatch):
     assert [a["task"] for a in data["actionItems"]] == ["Leitungspläne anfordern"]
     assert data["actionItems"][0]["source"] == "Tagesbericht 17.11.2026"  # Klammern entfernt
     assert data["vobRisks"][0]["recommendation"] == summary.RECOMMENDATIONS["delay"]
+
+
+BUG_TEXT = ("Baubesprechung 21.11.: Firma Müller Rohbau war heute nur mit 3 statt 12 Leuten vor Ort. "
+            "Beschluss: Architekt liefert die fehlenden Schalpläne bis 28.11.2026. "
+            "Bauleitung prüft eine Behinderungsanzeige.")
+
+
+@pytest.mark.parametrize("source_type,label", [(None, "Text"), ("minutes", "Protokoll")])
+def test_text_mode_keeps_items_when_llm_names_content_as_source(client, monkeypatch, source_type, label):
+    """Bug: KI nannte 'Baubesprechung 21.11.' statt 'Text' als Quelle → alle Listen waren leer."""
+    src = "Baubesprechung 21.11."
+
+    async def fake(system, user, schema, max_tokens=2048):
+        return schema(
+            executiveSummary=["Müller Rohbau unterbesetzt, Schalpläne fehlen."],
+            keyDecisions=[{"text": "Architekt liefert Schalpläne bis 28.11.2026", "source": src}],
+            actionItems=[{"task": "Schalpläne liefern", "responsible": "Architekt", "deadline": "28.11.2026",
+                          "priority": "Hoch", "source": src}],
+            vobRisks=[
+                {"title": "Unterbesetzung", "description": "3 statt 12", "linkType": "delay", "source": src},
+                {"title": "Fehlende Pläne", "description": "Schalpläne", "linkType": "delay", "source": src},
+            ],
+        )
+
+    monkeypatch.setattr(llm, "complete_json", fake)
+    body = {"text": BUG_TEXT} | ({"source_type": source_type} if source_type else {})
+    data = client.post("/api/summarize", json=body).json()
+    assert data["mode"] == "ai"
+    assert (len(data["keyDecisions"]), len(data["actionItems"]), len(data["vobRisks"])) == (1, 1, 2)
+    assert data["keyDecisionSources"] == [label]
+    assert {data["actionItems"][0]["source"], *(r["source"] for r in data["vobRisks"])} == {label}
