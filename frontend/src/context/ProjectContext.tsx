@@ -118,6 +118,31 @@ function normalizeProject(raw: any): Project {
     };
 }
 
+const sameFirm = (a?: string | null, b?: string | null) =>
+    (a ?? '').trim().toLowerCase() === (b ?? '').trim().toLowerCase();
+
+/**
+ * Das Projektformular legt je Nachunternehmer eine (projektübergreifende) Firma an; DELETE /projects
+ * lässt diese stehen. Nach dem Löschen entfernen wir daher Nachunternehmer-Firmen des Projekts,
+ * die in keinem verbleibenden Vertrag mehr vorkommen. Best effort – Fehler blockieren das Löschen nicht.
+ */
+async function removeOrphanedContractors(firmNames: string[]): Promise<void> {
+    const names = firmNames.filter((n) => n.trim());
+    if (names.length === 0) return;
+    try {
+        const [companies, contracts] = await Promise.all([
+            api.listCompanies({company_type: 'subcontractor'}),
+            api.listContracts()
+        ]);
+        const orphans = companies.filter(
+            (c) => names.some((n) => sameFirm(n, c.name)) && !contracts.some((k) => sameFirm(k.contractor_name, c.name))
+        );
+        await Promise.all(orphans.map((c) => api.deleteCompany(c.id)));
+    } catch (err) {
+        console.warn('Firmen des gelöschten Projekts konnten nicht aufgeräumt werden:', err);
+    }
+}
+
 export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({children}) => {
     const [projects, setProjects] = useState<Project[]>(DEFAULT_PROJECTS);
     const [isLoading, setIsLoading] = useState<boolean>(true);
@@ -180,7 +205,9 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({childr
             alert('Mindestens ein Bauprojekt muss im System verbleiben.');
             return;
         }
+        const firmNames = (projects.find((p) => p.id === id)?.contractors ?? []).map((c) => c.name);
         await api.deleteProject(id);
+        await removeOrphanedContractors(firmNames);
         const updated = projects.filter((p) => p.id !== id);
         setProjects(updated);
         if (activeProjectId === id && updated.length > 0) {
