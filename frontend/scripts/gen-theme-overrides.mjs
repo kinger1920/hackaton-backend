@@ -179,7 +179,9 @@ function collectInlineColours(dir) {
             for (const m of src.matchAll(re)) {
                 // skip var(--x, #fallback) – the variable already follows the theme
                 if (/var\(/.test(m[2])) continue;
-                const hex = m[2].match(/#[0-9a-fA-F]{6}\b|#[0-9a-fA-F]{3}\b/)?.[0];
+                // colour names count too (style={{backgroundColor: 'white'}})
+                const named = {white: '#ffffff', black: '#000000'}[m[2].trim().toLowerCase()];
+                const hex = named ?? m[2].match(/#[0-9a-fA-F]{6}\b|#[0-9a-fA-F]{3}\b/)?.[0];
                 if (!hex) continue;
                 const prop = m[1].startsWith('background') ? 'bg' : m[1] === 'color' ? 'color' : 'border';
                 add(prop, hex, rel);
@@ -263,7 +265,11 @@ for (const [key, files] of inline) {
     if (!rgb) continue;
     const src = `/* inline ${prop}: ${hex} – ${[...files].join(', ')} */`;
     if (prop === 'bg') {
-        const sel = (p) => [`[style*="background-color: ${rgb}"]`, `[style*="background: ${rgb}"]`].map((s) => `${p} ${s}`).join(',\n');
+        // browsers keep colour names as written ("background-color: white"), codes become rgb()
+        const keyword = hex === '#ffffff' ? 'white' : hex === '#000000' ? 'black' : null;
+        const variants = [`background-color: ${rgb}`, `background: ${rgb}`,
+            ...(keyword ? [`background-color: ${keyword}`, `background: ${keyword}`] : [])];
+        const sel = (p) => variants.map((v) => `${p} [style*="${v}"]`).join(',\n');
         if (BRAND_FILL[hex]) {
             inlineBoth.push(`${src}\n${sel(':root')} {\n    background-color: ${BRAND_FILL[hex]} !important;\n    color: var(--color-on-primary) !important;\n}`);
         } else if (bgToken(hex)) {

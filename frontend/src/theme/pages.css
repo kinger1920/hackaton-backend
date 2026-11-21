@@ -117,7 +117,6 @@
 :root .categories-container,
 :root .history-panel,
 :root .editor-panel,
-:root .summary-result-card,
 :root .chat-card,
 :root .progress-plan-card,
 :root .profile-section-card,
@@ -136,7 +135,6 @@
 :root .audio-card,
 :root .categories-container,
 :root .editor-panel,
-:root .summary-result-card,
 :root .profile-section-card,
 :root .history-panel {
     padding: 22px;
@@ -186,7 +184,6 @@
 :root .audio-title,
 :root .history-title,
 :root .editor-title,
-:root .section-block-title,
 :root .section-title,
 :root .create-project-title,
 :root .ld-step-title {
@@ -199,7 +196,6 @@
 :root .audio-title svg:not(.lucide-sparkles),
 :root .history-title svg:not(.lucide-sparkles),
 :root .editor-title svg:not(.lucide-sparkles),
-:root .section-block-title svg:not(.lucide-sparkles),
 :root .dash-subpanel-title svg:not(.lucide-sparkles),
 :root .create-project-title svg:not(.lucide-sparkles) {
     color: var(--color-primary);
@@ -229,9 +225,7 @@
 /* row titles inside lists */
 :root .masterdata-row-title,
 :root .idea-row-title,
-:root .history-item-title,
-:root .project-doc-title,
-:root .doc-title {
+:root .history-item-title {
     font-weight: 700;
     color: var(--text-main);
 }
@@ -242,8 +236,7 @@
 :root .idea-tabs,
 :root .masterdata-tabs,
 :root .modal-tabs,
-:root .dash-modal-tabs,
-:root .source-type-nav {
+:root .dash-modal-tabs {
     display: inline-flex;
     flex-wrap: wrap;
     align-self: flex-start;
@@ -259,8 +252,7 @@
 :root .idea-tab,
 :root .masterdata-tab,
 :root .modal-tab-btn,
-:root .dash-modal-tab,
-:root .source-tab-btn {
+:root .dash-modal-tab {
     display: inline-flex;
     align-items: center;
     gap: 6px;
@@ -279,8 +271,7 @@
 :root .idea-tab:hover,
 :root .masterdata-tab:hover,
 :root .modal-tab-btn:hover,
-:root .dash-modal-tab:hover,
-:root .source-tab-btn:hover {
+:root .dash-modal-tab:hover {
     color: var(--color-slate-800);
     background: transparent;
 }
@@ -288,8 +279,7 @@
 :root .idea-tab.active,
 :root .masterdata-tab.active,
 :root .modal-tab-btn.active,
-:root .dash-modal-tab.active,
-:root .source-tab-btn.active {
+:root .dash-modal-tab.active {
     background-color: var(--bg-surface);
     color: var(--color-primary);
     box-shadow: var(--shadow-md);
