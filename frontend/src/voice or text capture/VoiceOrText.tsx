@@ -13,15 +13,16 @@ import {
   DollarSign,
   Package,
   CheckCircle2,
-  BookOpen,
   Mail,
   HardHat,
-  Trash2
+  Trash2,
+  PenLine
 } from 'lucide-react';
 import { useProjects } from '../context/ProjectContext';
 import { saveProjectDocument } from '../context/ProjectDocuments';
 import { useLanguage } from '../context/LanguageContext';
-import { api, NoticeDraft } from '../services/api';
+import { api, NoticeDraft, NoticeType } from '../services/api';
+import { todayIso } from '../utils/dates';
 import { useAudioRecorder } from '../utils/useAudioRecorder';
 import '@frontend/src/index.css';
 import './VoiceOrText.css';
@@ -34,19 +35,50 @@ interface CategoryBullets {
   delivery: string[];
 }
 
-export const VoiceOrText: React.FC = () => {
+interface CustomTextTemplate {
+  id: string;
+  title: string;
+  text: string;
+}
+
+const CUSTOM_TEMPLATES_STORAGE_KEY = 'site_assistant_custom_text_templates';
+
+const AUDIO_CATEGORY_OPTIONS: {
+  key: keyof CategoryBullets;
+  labelKey: string;
+  renderIcon: () => React.ReactNode;
+}[] = [
+  { key: 'progress', labelKey: 'cap_cat_progress', renderIcon: () => <HardHat size={15} color="#2563eb" /> },
+  { key: 'hindrance', labelKey: 'cap_cat_hindrance', renderIcon: () => <AlertTriangle size={15} color="#ef4444" /> },
+  { key: 'cost', labelKey: 'cap_cat_cost', renderIcon: () => <DollarSign size={15} color="#d97706" /> },
+  { key: 'defect', labelKey: 'cap_cat_defect', renderIcon: () => <AlertTriangle size={15} color="#7c3aed" /> },
+  { key: 'delivery', labelKey: 'cap_cat_delivery', renderIcon: () => <Package size={15} color="#059669" /> }
+];
+
+export interface VoiceOrTextProps {
+  mode?: 'voice' | 'text';
+}
+
+export const VoiceOrText: React.FC<VoiceOrTextProps> = ({ mode = 'voice' }) => {
     const navigate = useNavigate();
   const { t } = useLanguage();
   const { activeProject } = useProjects();
   const userName = localStorage.getItem('userName') || t('role_site_manager');
+  const isVoiceMode = mode === 'voice';
 
   // Audio Recording States
   const [recordingSeconds, setRecordingSeconds] = useState(0);
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
   const [isPlayingAudio, setIsPlayingAudio] = useState(false);
   const [audioTranscript, setAudioTranscript] = useState('');
+  const [selectedAudioCategories, setSelectedAudioCategories] = useState<(keyof CategoryBullets)[]>([]);
   const timerRef = useRef<number | null>(null);
   const audioElementRef = useRef<HTMLAudioElement | null>(null);
+
+  // Bottom action toggles: "In Bautagesbericht" is always selected by default; "In Brief umwandeln" can be added
+  const [targetDailyReport, setTargetDailyReport] = useState(true);
+  const [targetLetterDraft, setTargetLetterDraft] = useState(false);
+  const [isExecutingActions, setIsExecutingActions] = useState(false);
 
   // General notes field (Sonstige Notizen)
   const [generalNotes, setGeneralNotes] = useState(
@@ -77,6 +109,31 @@ export const VoiceOrText: React.FC = () => {
   const [isCapturing, setIsCapturing] = useState(false);
   const [lastDraft, setLastDraft] = useState<NoticeDraft | null>(null);
   const [aiQuestions, setAiQuestions] = useState<string[]>([]);
+  // Jeder POST /api/capture legt im Backend eine Notiz UND einen Brief-Entwurf an,
+  // POST /api/reports/{date}/fill ebenfalls eine Notiz → nichts doppelt auslösen.
+  const lastCapturedTextRef = useRef<string | null>(null);
+  const lastSavedContentRef = useRef<string | null>(null);
+
+  // User-created custom text templates (stored in localStorage, empty by default)
+  const [customTemplates, setCustomTemplates] = useState<CustomTextTemplate[]>(() => {
+    try {
+      const raw = localStorage.getItem(CUSTOM_TEMPLATES_STORAGE_KEY);
+      if (!raw) return [];
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  });
+  const [isAddingTemplate, setIsAddingTemplate] = useState(false);
+  const [newTemplateTitle, setNewTemplateTitle] = useState('');
+  const [newTemplateText, setNewTemplateText] = useState('');
+
+  const toggleAudioCategory = (catKey: keyof CategoryBullets) => {
+    setSelectedAudioCategories((prev) =>
+      prev.includes(catKey) ? prev.filter((k) => k !== catKey) : [...prev, catKey]
+    );
+  };
 
   // Audio Playback Listener
   useEffect(() => {
@@ -97,11 +154,11 @@ export const VoiceOrText: React.FC = () => {
         setGeneralNotes((prev) => (prev ? prev + '\n' + res.text : res.text));
         handleAutoCategorize(res.text);
       } else {
-        setAudioTranscript('Transkription gerade nicht verfügbar (KI offline) – bitte Notiz unten eintippen.');
+        setAudioTranscript('Transkription gerade nicht verfügbar (KI offline) – bitte Kategorie auswählen.');
       }
     } catch (err) {
       console.warn('Transkription fehlgeschlagen:', err);
-      setAudioTranscript('Transkription fehlgeschlagen (Backend nicht erreichbar) – bitte Notiz unten eintippen.');
+      setAudioTranscript('Transkription fehlgeschlagen (Backend nicht erreichbar) – bitte Kategorie auswählen.');
     } finally {
       setIsTranscribing(false);
     }
@@ -167,15 +224,47 @@ export const VoiceOrText: React.FC = () => {
     }));
   };
 
-  // Quick preset click
-  const handleApplyPreset = (presetText: string) => {
-    setGeneralNotes((prev) => (prev ? prev + '\n' + presetText : presetText));
-    handleAutoCategorize(presetText);
+  const persistCustomTemplates = (next: CustomTextTemplate[]) => {
+    setCustomTemplates(next);
+    try {
+      localStorage.setItem(CUSTOM_TEMPLATES_STORAGE_KEY, JSON.stringify(next));
+    } catch (err) {
+      console.warn('Textvorlagen konnten nicht gespeichert werden:', err);
+    }
+  };
+
+  const handleInsertCustomTemplate = (templateText: string) => {
+    setGeneralNotes((prev) => (prev.trim() ? `${prev}\n${templateText}` : templateText));
+  };
+
+  const handleCreateCustomTemplate = () => {
+    const cleanText = newTemplateText.trim();
+    if (!cleanText) return;
+    const cleanTitle = newTemplateTitle.trim() || cleanText.slice(0, 40) + (cleanText.length > 40 ? '…' : '');
+    const created: CustomTextTemplate = {
+      id: `tpl-${Date.now()}`,
+      title: cleanTitle,
+      text: cleanText
+    };
+    persistCustomTemplates([created, ...customTemplates]);
+    setNewTemplateTitle('');
+    setNewTemplateText('');
+    setIsAddingTemplate(false);
+  };
+
+  const handleDeleteCustomTemplate = (id: string) => {
+    persistCustomTemplates(customTemplates.filter((tpl) => tpl.id !== id));
   };
 
   // AI Categorization: Parse general notes into categories via backend API or fallback
   const handleAutoCategorize = async (textToParse = generalNotes) => {
     if (!textToParse.trim()) return;
+    // gleicher Text wurde schon erfasst → kein zweiter Tagebucheintrag / Brief-Entwurf
+    if (lastCapturedTextRef.current === textToParse.trim()) {
+      setAiClassifiedSuccess(true);
+      setTimeout(() => setAiClassifiedSuccess(false), 3000);
+      return;
+    }
 
     setIsCapturing(true);
     setAiQuestions([]);
@@ -186,6 +275,7 @@ export const VoiceOrText: React.FC = () => {
         project_id: Number(activeProject.id)
       });
       setLastDraft(draft);
+      if (draft.site_note_id) lastCapturedTextRef.current = textToParse.trim();
 
       if (draft.questions && draft.questions.length > 0) {
         setAiQuestions(draft.questions);
@@ -205,18 +295,22 @@ export const VoiceOrText: React.FC = () => {
         if (impact && !updated.hindrance.includes(impact)) {
           updated.hindrance.push(impact);
         }
+        setSelectedAudioCategories((prev) => (prev.includes('hindrance') ? prev : [...prev, 'hindrance']));
       } else if (draft.type === 'cost') {
         if (!updated.cost.includes(summaryPoint)) {
           updated.cost = [summaryPoint, ...updated.cost];
         }
+        setSelectedAudioCategories((prev) => (prev.includes('cost') ? prev : [...prev, 'cost']));
       } else if (draft.type === 'defect') {
         if (!updated.defect.includes(summaryPoint)) {
           updated.defect = [summaryPoint, ...updated.defect];
         }
+        setSelectedAudioCategories((prev) => (prev.includes('defect') ? prev : [...prev, 'defect']));
       } else {
         if (!updated.progress.includes(summaryPoint)) {
           updated.progress = [summaryPoint, ...updated.progress];
         }
+        setSelectedAudioCategories((prev) => (prev.includes('progress') ? prev : [...prev, 'progress']));
       }
 
       setCategories(updated);
@@ -227,33 +321,42 @@ export const VoiceOrText: React.FC = () => {
       // Fallback detection rules based on construction terms
       const lower = textToParse.toLowerCase();
       const updated = { ...categories };
+      const detectedAudioCats: (keyof CategoryBullets)[] = [];
 
       if (lower.includes('bewehrt') || lower.includes('beton') || lower.includes('fertig') || lower.includes('rohbau')) {
         if (!updated.progress.includes('Bewehrung & Rohbauarbeiten Decke 1. OG')) {
           updated.progress = [...updated.progress, 'Bewehrung & Rohbauarbeiten Decke 1. OG'];
         }
+        detectedAudioCats.push('progress');
       }
       if (lower.includes('bagger') || lower.includes('defekt') || lower.includes('stillstand') || lower.includes('fehlt') || lower.includes('schacht')) {
         if (!updated.hindrance.includes('Stillstand Bagger / Fehlende TGA-Freigabe Schacht 3')) {
           updated.hindrance = [...updated.hindrance, 'Stillstand Bagger / Fehlende TGA-Freigabe Schacht 3'];
         }
+        detectedAudioCats.push('hindrance');
       }
       if (lower.includes('mehrkosten') || lower.includes('nachtrag') || lower.includes('altfundament') || lower.includes('meißel')) {
         if (!updated.cost.includes('Mehraufwand & Gerätestillstand Baugrund')) {
           updated.cost = [...updated.cost, 'Mehraufwand & Gerätestillstand Baugrund'];
         }
+        detectedAudioCats.push('cost');
       }
       if (lower.includes('feuchtigkeit') || lower.includes('mangel') || lower.includes('riss') || lower.includes('regen')) {
         if (!updated.defect.includes('Feuchtigkeitskontrolle im Treppenhaus erforderlich')) {
           updated.defect = [...updated.defect, 'Feuchtigkeitskontrolle im Treppenhaus erforderlich'];
         }
+        detectedAudioCats.push('defect');
       }
       if (lower.includes('angeliefert') || lower.includes('sattelzug') || lower.includes('stahl') || lower.includes('lieferschein')) {
         if (!updated.delivery.includes('Lieferung 2x Sattelzug Bewehrungsstahl B500B erfasst')) {
           updated.delivery = [...updated.delivery, 'Lieferung 2x Sattelzug Bewehrungsstahl B500B erfasst'];
         }
+        detectedAudioCats.push('delivery');
       }
 
+      if (detectedAudioCats.length > 0) {
+        setSelectedAudioCategories((prev) => Array.from(new Set([...prev, ...detectedAudioCats])));
+      }
       setCategories(updated);
       setAiClassifiedSuccess(true);
       setTimeout(() => setAiClassifiedSuccess(false), 3000);
@@ -262,10 +365,88 @@ export const VoiceOrText: React.FC = () => {
     }
   };
 
+  const buildCapturePayload = () => {
+    const selectedLabels = AUDIO_CATEGORY_OPTIONS
+      .filter((opt) => selectedAudioCategories.includes(opt.key))
+      .map((opt) => t(opt.labelKey));
+
+    if (isVoiceMode) {
+      const catSummary = selectedLabels.length > 0 ? selectedLabels.join(', ') : 'Keine Kategorie gewählt';
+      const transcriptText = audioTranscript.trim();
+      const combinedText = [transcriptText, selectedLabels.length > 0 ? `Kategorien: ${catSummary}` : '']
+        .filter(Boolean)
+        .join('\n');
+
+      const preferredType: NoticeType = selectedAudioCategories.includes('hindrance')
+        ? 'delay'
+        : selectedAudioCategories.includes('cost')
+          ? 'cost'
+          : selectedAudioCategories.includes('defect')
+            ? 'defect'
+            : 'delay';
+
+      return {
+        modeLabel: 'Spracherfassung',
+        titleSnippet: (transcriptText || catSummary).slice(0, 35),
+        hasIncident: selectedAudioCategories.includes('hindrance') || selectedAudioCategories.includes('defect'),
+        combinedText: combinedText || 'Sprachaufnahme erfasst',
+        keywords: transcriptText || catSummary,
+        preferredType,
+        selectedLabels
+      };
+    }
+
+    const combinedText = [
+      generalNotes.trim(),
+      categories.progress.length ? `Baufortschritt: ${categories.progress.join('; ')}` : '',
+      categories.hindrance.length ? `Behinderungen: ${categories.hindrance.join('; ')}` : '',
+      categories.cost.length ? `Mehrkosten: ${categories.cost.join('; ')}` : '',
+      categories.defect.length ? `Mängel: ${categories.defect.join('; ')}` : '',
+      categories.delivery.length ? `Lieferungen: ${categories.delivery.join('; ')}` : ''
+    ]
+      .filter(Boolean)
+      .join('\n');
+
+    const preferredType: NoticeType =
+      categories.hindrance.length > 0
+        ? 'delay'
+        : categories.cost.length > 0
+          ? 'cost'
+          : categories.defect.length > 0
+            ? 'defect'
+            : 'delay';
+
+    const keywords =
+      preferredType === 'cost'
+        ? categories.cost.join('. ') || generalNotes.trim()
+        : preferredType === 'defect'
+          ? categories.defect.join('. ') || generalNotes.trim()
+          : categories.hindrance.join('. ') || generalNotes.trim();
+
+    return {
+      modeLabel: 'Schreiberfassung',
+      titleSnippet: generalNotes.slice(0, 35),
+      hasIncident: categories.hindrance.length > 0,
+      combinedText,
+      keywords,
+      preferredType,
+      selectedLabels
+    };
+  };
+
   // Save current capture to Project Diary & Backend DB
-  const handleSaveToDiary = async () => {
+  const handleSaveToDiary = async (showToast = true) => {
     const today = new Date().toLocaleDateString('de-DE');
-    const content = `Schnellerfassung & Sprachnotiz — ${today}
+    const payload = buildCapturePayload();
+    const content = isVoiceMode
+      ? `${payload.modeLabel} — ${today}
+Bauprojekt: ${activeProject.name} (${activeProject.number})
+Erfasser: ${userName}
+Ausgewählte Kategorien: ${payload.selectedLabels.join(', ') || 'Keine Auswahl'}
+
+Transkript / Sprachnotiz:
+${audioTranscript || 'Audio-Aufnahme ohne Transkript'}`.trim()
+      : `${payload.modeLabel} — ${today}
 Bauprojekt: ${activeProject.name} (${activeProject.number})
 Erfasser: ${userName}
 
@@ -279,21 +460,31 @@ Kategorisierte Stichpunkte:
 - Mängel / Qualität: ${categories.defect.join('; ') || 'Keine'}
 - Lieferungen & Material: ${categories.delivery.join('; ') || 'Keine'}`.trim();
 
+    // Zweimal „Speichern“ ohne Änderung → kein zweiter identischer Eintrag
+    if (lastSavedContentRef.current === content) {
+      if (showToast) {
+        setSaveSuccessMsg(true);
+        setTimeout(() => setSaveSuccessMsg(false), 4000);
+      }
+      return;
+    }
+
     // Tagebucheintrag im Backend; nur wenn das scheitert, lokal sichern (vorher immer doppelt gespeichert)
     try {
       await api.createSiteNote({
         project_id: Number(activeProject.id),
         content,
-        category: categories.hindrance.length > 0 ? 'incident' : 'progress',
+        category: payload.hasIncident ? 'incident' : 'progress',
         author: userName
       });
+      lastSavedContentRef.current = content;
     } catch (err) {
       console.warn('Backend nicht erreichbar – Notiz lokal gesichert:', err);
       saveProjectDocument({
         id: `doc-${activeProject.id}-quick-${Date.now()}`,
         projectId: activeProject.id,
         type: 'diary',
-        title: `Schnellerfassung: ${generalNotes.slice(0, 35)}...`,
+        title: `${payload.modeLabel}: ${payload.titleSnippet}...`,
         date: today,
         authorOrSender: userName,
         content,
@@ -302,8 +493,64 @@ Kategorisierte Stichpunkte:
       });
     }
 
-    setSaveSuccessMsg(true);
-    setTimeout(() => setSaveSuccessMsg(false), 4000);
+    if (showToast) {
+      setSaveSuccessMsg(true);
+      setTimeout(() => setSaveSuccessMsg(false), 4000);
+    }
+  };
+
+  const handleExecuteActions = async () => {
+    if (!targetDailyReport && !targetLetterDraft) return;
+    setIsExecutingActions(true);
+    const payload = buildCapturePayload();
+    const reportDate = todayIso();
+
+    try {
+      if (targetDailyReport) {
+        // /fill trägt in den Bericht ein UND legt selbst den Tagebucheintrag an →
+        // eigene Notiz nur, wenn das Backend nicht erreichbar ist (dann ggf. lokal).
+        try {
+          await api.fillReport(reportDate, {
+            text: payload.combinedText,
+            project_id: Number(activeProject.id)
+          });
+        } catch (err) {
+          console.warn('Backend fillReport Fallback:', err);
+          await handleSaveToDiary(false);
+        }
+      }
+
+      if (targetLetterDraft) {
+        if (lastDraft?.notice_id) {
+          navigate('/drafts', { state: { noticeId: lastDraft.notice_id } });
+          return;
+        }
+        try {
+          const draft = await api.captureText({
+            text: payload.combinedText,
+            project_id: Number(activeProject.id),
+            force_type: payload.preferredType
+          });
+          setLastDraft(draft);
+          if (draft.notice_id) {
+            navigate('/drafts', { state: { noticeId: draft.notice_id } });
+            return;
+          }
+        } catch (err) {
+          console.warn('Backend captureText für Briefentwurf Fallback:', err);
+        }
+        navigate('/drafts', {
+          state: { type: payload.preferredType, keywords: payload.keywords }
+        });
+        return;
+      }
+
+      if (targetDailyReport) {
+        navigate('/reports', { state: { date: reportDate } });
+      }
+    } finally {
+      setIsExecutingActions(false);
+    }
   };
 
   const formatSeconds = (sec: number) => {
@@ -312,10 +559,215 @@ Kategorisierte Stichpunkte:
     return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
   };
 
+  const renderCustomTemplates = () => (
+    <div className="custom-templates-section">
+      <div className="custom-templates-header">
+        <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--color-slate-700)' }}>
+          Eigene Standardtexte ({customTemplates.length})
+        </span>
+        <button
+          type="button"
+          className="btn btn-secondary"
+          style={{ fontSize: '11px', padding: '4px 10px' }}
+          onClick={() => setIsAddingTemplate((prev) => !prev)}
+        >
+          {isAddingTemplate ? <X size={12} /> : <Plus size={12} />}
+          <span>{isAddingTemplate ? 'Abbrechen' : 'Neuen Standardtext erstellen'}</span>
+        </button>
+      </div>
+
+      {isAddingTemplate && (
+        <div className="custom-template-form">
+          <input
+            type="text"
+            className="bullet-input"
+            placeholder="Titel / Kurzname (optional, z. B. 'Tagesabschluss Rohbau')"
+            value={newTemplateTitle}
+            onChange={(e) => setNewTemplateTitle(e.target.value)}
+          />
+          <textarea
+            className="form-textarea"
+            rows={3}
+            placeholder="Standardtext eingeben, der später per Klick ins Notizfeld eingefügt werden kann..."
+            value={newTemplateText}
+            onChange={(e) => setNewTemplateText(e.target.value)}
+          />
+          <div className="custom-template-actions">
+            <button
+              type="button"
+              className="btn btn-secondary"
+              style={{ fontSize: '11px', padding: '4px 8px' }}
+              onClick={() => setNewTemplateText(generalNotes)}
+              disabled={!generalNotes.trim()}
+            >
+              Aktuelles Textfeld übernehmen
+            </button>
+            <button
+              type="button"
+              className="btn btn-primary"
+              style={{ fontSize: '11px', padding: '5px 12px' }}
+              onClick={handleCreateCustomTemplate}
+              disabled={!newTemplateText.trim()}
+            >
+              Vorlage speichern
+            </button>
+          </div>
+        </div>
+      )}
+
+      {customTemplates.length > 0 ? (
+        <div className="presets-group">
+          {customTemplates.map((tpl) => (
+            <div key={tpl.id} className="custom-template-chip">
+              <button
+                type="button"
+                className="custom-template-insert-btn"
+                onClick={() => handleInsertCustomTemplate(tpl.text)}
+                title="Text direkt in das Notizfeld einfügen"
+              >
+                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  <strong>{tpl.title}</strong>
+                  {tpl.title !== tpl.text && (
+                    <span style={{ color: 'var(--text-muted)', marginLeft: '6px' }}>
+                      — {tpl.text.slice(0, 60)}
+                      {tpl.text.length > 60 ? '…' : ''}
+                    </span>
+                  )}
+                </span>
+                <Plus size={14} color="var(--color-primary)" style={{ flexShrink: 0 }} />
+              </button>
+              <button
+                type="button"
+                className="custom-template-delete-btn"
+                onClick={() => handleDeleteCustomTemplate(tpl.id)}
+                title="Vorlage löschen"
+              >
+                <Trash2 size={13} />
+              </button>
+            </div>
+          ))}
+        </div>
+      ) : (
+        !isAddingTemplate && (
+          <p style={{ fontSize: '12px', color: 'var(--text-muted)', margin: 0 }}>
+            Noch keine eigenen Standardtexte gespeichert. Über „Neuen Standardtext erstellen“ kannst du eigene Textbausteine anlegen und per Klick einfügen.
+          </p>
+        )
+      )}
+    </div>
+  );
+
+  const renderAiFeedback = () => (
+    <>
+      {isTranscribing && (
+        <div style={{ fontSize: '12px', color: 'var(--color-primary)', fontWeight: 600 }}>
+          ⏳ Audio wird über Whisper transkribiert...
+        </div>
+      )}
+
+      {aiClassifiedSuccess && (
+        <div style={{ fontSize: '12px', color: '#16a34a', fontWeight: 600 }}>
+          ✓ Sachverhalt erfolgreich per KI erfasst!
+        </div>
+      )}
+
+      {lastDraft?.notice_id && (
+        <div
+          style={{
+            marginTop: '10px',
+            padding: '10px 12px',
+            backgroundColor: '#f0fdf4',
+            border: '1px solid #bbf7d0',
+            borderRadius: 'var(--radius-md)',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            fontSize: '12px',
+            color: '#166534'
+          }}
+        >
+          <span>
+            ✓ <strong>VOB-Brief #{lastDraft.notice_id}</strong> ({lastDraft.type}) automatisch im Backend angelegt.
+          </span>
+          <button
+            type="button"
+            className="btn btn-primary"
+            style={{ fontSize: '11px', padding: '4px 8px' }}
+            onClick={() => navigate('/drafts', { state: { noticeId: lastDraft.notice_id } })}
+          >
+            Zum Entwurf →
+          </button>
+        </div>
+      )}
+
+      {aiQuestions.length > 0 && (
+        <div
+          style={{
+            marginTop: '10px',
+            padding: '10px 12px',
+            backgroundColor: '#fffbeb',
+            border: '1px solid #fde68a',
+            borderRadius: 'var(--radius-md)',
+            fontSize: '12px',
+            color: '#92400e'
+          }}
+        >
+          <strong>ℹ️ Offene Rückfragen der KI für den VOB-Brief:</strong>
+          <ul style={{ margin: '6px 0 0 16px', padding: 0 }}>
+            {aiQuestions.map((q, idx) => (
+              <li key={idx} style={{ marginBottom: '2px' }}>
+                {q}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </>
+  );
+
+  const renderGeneralNotesBox = () => (
+    <div className="general-notes-box">
+      <div className="general-notes-header">
+        <span className="general-notes-title">
+          <FileText size={16} color="var(--color-slate-700)" />
+          <span>{t('cap_general_notes_title')}</span>
+        </span>
+
+        <button
+          type="button"
+          className="btn btn-secondary"
+          style={{ fontSize: '11px', padding: '4px 8px', color: 'var(--color-primary)' }}
+          onClick={() => handleAutoCategorize()}
+          disabled={isCapturing}
+          title={t('cap_btn_auto_categorize')}
+        >
+          <Sparkles size={12} />
+          <span>{isCapturing ? 'KI analysiert...' : t('cap_btn_auto_categorize')}</span>
+        </button>
+      </div>
+
+      <p style={{ fontSize: '12px', color: 'var(--text-muted)', margin: 0 }}>
+        {t('cap_general_notes_desc')}
+      </p>
+
+      <textarea
+        className="form-textarea"
+        rows={5}
+        placeholder="z. B. 'Betonprüfer war um 14 Uhr da, Schacht 3 blockiert, 24t Stahl geliefert, Elektriker braucht Freigabe...'"
+        value={generalNotes}
+        onChange={(e) => setGeneralNotes(e.target.value)}
+      />
+
+      {renderAiFeedback()}
+
+      {renderCustomTemplates()}
+    </div>
+  );
+
   return (
     <div className="capture-container">
-            {/* Hidden audio element for actual recording playback */}
-      {audioUrl && (
+      {/* Hidden audio element for actual recording playback */}
+      {isVoiceMode && audioUrl && (
         <audio ref={audioElementRef} src={audioUrl} />
       )}
 
@@ -323,12 +775,14 @@ Kategorisierte Stichpunkte:
       <section className="capture-hero">
         <div className="capture-hero-left">
           <div className="capture-hero-icon">
-            <Mic size={28} />
+            {isVoiceMode ? <Mic size={28} /> : <PenLine size={28} />}
           </div>
           <div>
-            <h1 className="capture-hero-title">{t('cap_title')}</h1>
+            <h1 className="capture-hero-title">
+              {isVoiceMode ? t('cap_voice_title') : t('cap_text_title')}
+            </h1>
             <p className="capture-hero-sub">
-              {t('cap_sub')} <strong>{activeProject.name}</strong>
+              {isVoiceMode ? t('cap_voice_sub') : t('cap_text_sub')} <strong>{activeProject.name}</strong>
             </p>
           </div>
         </div>
@@ -347,7 +801,7 @@ Kategorisierte Stichpunkte:
           <button
             type="button"
             className="btn btn-primary"
-            onClick={handleSaveToDiary}
+            onClick={() => handleSaveToDiary()}
           >
             <CheckCircle2 size={16} />
             <span>{t('btn_save')}</span>
@@ -384,11 +838,9 @@ Kategorisierte Stichpunkte:
         </div>
       )}
 
-      {/* 2-Column Main Grid */}
-      <div className="capture-grid">
-        {/* Left Column: Audio Recording & General Notes Area */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-          {/* Audio Recording Card */}
+      {isVoiceMode ? (
+        <div className="capture-stack">
+          {/* Spracherfassung: Nur Audio-Optionen */}
           <div className="audio-card">
             <div className="audio-header">
               <span className="audio-title">
@@ -497,151 +949,38 @@ Kategorisierte Stichpunkte:
               </div>
             )}
 
-            {/* Quick Demo Presets */}
-            <div className="presets-group">
-              <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--color-slate-600)' }}>
-                {t('cap_presets_title')}
+            {renderAiFeedback()}
+
+            {/* Multi-select Problem / Category Assignment */}
+            <div className="audio-category-selector">
+              <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--color-slate-700)' }}>
+                Kategorie / Problem zuordnen (Mehrfachauswahl möglich):
               </span>
-
-              <div
-                className="preset-chip"
-                onClick={() =>
-                  handleApplyPreset(
-                    'Hydraulikdefekt an Kettenbagger 24t Tiefbau seit 10:15 Uhr. 3 Mann Tiefbau stehen still. Freigabepläne Schacht 3 fehlen weiterhin.'
-                  )
-                }
-              >
-                <span>⚠️ Baggerstillstand & TGA-Planungsverzug</span>
-                <Plus size={14} color="var(--color-primary)" />
-              </div>
-
-              <div
-                className="preset-chip"
-                onClick={() =>
-                  handleApplyPreset(
-                    'Bewehrung Decke über 1. OG Bauteil B zu 80% fertig. 12 Eisenflechter Fa. BetonTech vor Ort. Prüfstatiker Dr. Lang für 15:30 Uhr bestellt.'
-                  )
-                }
-              >
-                <span>🏗️ Deckenbewehrung & Prüfstatik</span>
-                <Plus size={14} color="var(--color-primary)" />
-              </div>
-
-              <div
-                className="preset-chip"
-                onClick={() =>
-                  handleApplyPreset(
-                    'Starkregen und Sturmböen. Baugrubensohle C überflutet, Erdarbeiten um 11:00 Uhr abgebrochen. Feuchtigkeit im Treppenhauskern.'
-                  )
-                }
-              >
-                <span>🌧️ Schlechtwetter & Wassereintritt</span>
-                <Plus size={14} color="var(--color-primary)" />
+              <div className="audio-category-grid">
+                {AUDIO_CATEGORY_OPTIONS.map((opt) => {
+                  const isSelected = selectedAudioCategories.includes(opt.key);
+                  return (
+                    <button
+                      key={opt.key}
+                      type="button"
+                      className={`audio-category-chip ${isSelected ? 'selected' : ''}`}
+                      onClick={() => toggleAudioCategory(opt.key)}
+                      aria-pressed={isSelected}
+                    >
+                      {opt.renderIcon()}
+                      <span>{t(opt.labelKey)}</span>
+                      {isSelected && <CheckCircle2 size={14} color="var(--color-primary)" />}
+                    </button>
+                  );
+                })}
               </div>
             </div>
-          </div>
-
-          {/* General Notes Field (Sonstiges / Freitext) */}
-          <div className="general-notes-box">
-            <div className="general-notes-header">
-              <span className="general-notes-title">
-                <FileText size={16} color="var(--color-slate-700)" />
-                <span>{t('cap_general_notes_title')}</span>
-              </span>
-
-              <button
-                type="button"
-                className="btn btn-secondary"
-                style={{ fontSize: '11px', padding: '4px 8px', color: 'var(--color-primary)' }}
-                onClick={() => handleAutoCategorize()}
-                disabled={isCapturing}
-                title={t('cap_btn_auto_categorize')}
-              >
-                <Sparkles size={12} />
-                <span>{isCapturing ? 'KI analysiert...' : t('cap_btn_auto_categorize')}</span>
-              </button>
-            </div>
-
-            <p style={{ fontSize: '12px', color: 'var(--text-muted)', margin: 0 }}>
-              {t('cap_general_notes_desc')}
-            </p>
-
-            <textarea
-              className="form-textarea"
-              rows={5}
-              placeholder="z. B. 'Betonprüfer war um 14 Uhr da, Schacht 3 blockiert, 24t Stahl geliefert, Elektriker braucht Freigabe...'"
-              value={generalNotes}
-              onChange={(e) => setGeneralNotes(e.target.value)}
-            />
-
-            {isTranscribing && (
-              <div style={{ fontSize: '12px', color: 'var(--color-primary)', fontWeight: 600 }}>
-                ⏳ Audio wird über Whisper transkribiert...
-              </div>
-            )}
-
-            {aiClassifiedSuccess && (
-              <div style={{ fontSize: '12px', color: '#16a34a', fontWeight: 600 }}>
-                ✓ Sachverhalt erfolgreich per KI erfasst!
-              </div>
-            )}
-
-            {lastDraft?.notice_id && (
-              <div
-                style={{
-                  marginTop: '10px',
-                  padding: '10px 12px',
-                  backgroundColor: '#f0fdf4',
-                  border: '1px solid #bbf7d0',
-                  borderRadius: 'var(--radius-md)',
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                  fontSize: '12px',
-                  color: '#166534'
-                }}
-              >
-                <span>
-                  ✓ <strong>VOB-Brief #{lastDraft.notice_id}</strong> ({lastDraft.type}) automatisch im Backend angelegt.
-                </span>
-                <button
-                  type="button"
-                  className="btn btn-primary"
-                  style={{ fontSize: '11px', padding: '4px 8px' }}
-                  onClick={() => navigate('/drafts', { state: { noticeId: lastDraft.notice_id } })}
-                >
-                  Zum Entwurf →
-                </button>
-              </div>
-            )}
-
-            {aiQuestions.length > 0 && (
-              <div
-                style={{
-                  marginTop: '10px',
-                  padding: '10px 12px',
-                  backgroundColor: '#fffbeb',
-                  border: '1px solid #fde68a',
-                  borderRadius: 'var(--radius-md)',
-                  fontSize: '12px',
-                  color: '#92400e'
-                }}
-              >
-                <strong>ℹ️ Offene Rückfragen der KI für den VOB-Brief:</strong>
-                <ul style={{ margin: '6px 0 0 16px', padding: 0 }}>
-                  {aiQuestions.map((q, idx) => (
-                    <li key={idx} style={{ marginBottom: '2px' }}>
-                      {q}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
           </div>
         </div>
-
-        {/* Right Column: Categorized Bullet Points (Kategorien-Stichpunkte) */}
-        <div className="categories-container">
+      ) : (
+        <div className="capture-stack">
+          {/* 1. Kategorisierte Stichpunkte (oben) */}
+          <div className="categories-container">
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border-light)', paddingBottom: '14px' }}>
             <div>
               <h2 style={{ margin: 0, fontSize: '16px', fontWeight: 700, color: 'var(--color-slate-900)' }}>
@@ -881,8 +1220,12 @@ Kategorisierte Stichpunkte:
               </button>
             </div>
           </div>
+          </div>
+
+          {/* 2. Allgemeines Notizfeld (unten) */}
+          {renderGeneralNotesBox()}
         </div>
-      </div>
+      )}
 
       {/* Action Bar Footer */}
       <section className="capture-actions-bar">
@@ -891,46 +1234,47 @@ Kategorisierte Stichpunkte:
             {t('cap_action_bar_title')}
           </span>
           <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
-            {t('cap_action_bar_sub')}
+            Ziel auswählen (Mehrfachauswahl möglich)
           </div>
         </div>
 
-        <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
-          <button
-            type="button"
-            className="btn btn-secondary"
-            onClick={() => navigate('/summary')}
-            title={t('cap_btn_to_summary')}
-          >
-            <BookOpen size={16} />
-            <span>{t('cap_btn_to_summary')}</span>
-          </button>
+        <div className="action-toggle-group">
+          <label className={`action-toggle-chip ${targetDailyReport ? 'active' : ''}`}>
+            <input
+              type="checkbox"
+              checked={targetDailyReport}
+              onChange={(e) => setTargetDailyReport(e.target.checked)}
+            />
+            <FileText size={15} />
+            <span>In Bautagesbericht</span>
+          </label>
 
-          <button
-            type="button"
-            className="btn btn-secondary"
-            style={{ color: '#b45309' }}
-            onClick={() =>
-              navigate('/drafts', {
-                state: lastDraft?.notice_id
-                  ? { noticeId: lastDraft.notice_id }
-                  : { type: 'delay', keywords: categories.hindrance.join('. ') }
-              })
-            }
-            title={t('cap_btn_gen_vob')}
-          >
-            <Mail size={16} />
-            <span>{t('cap_btn_gen_vob')}</span>
-          </button>
+          <label className={`action-toggle-chip ${targetLetterDraft ? 'active' : ''}`}>
+            <input
+              type="checkbox"
+              checked={targetLetterDraft}
+              onChange={(e) => setTargetLetterDraft(e.target.checked)}
+            />
+            <Mail size={15} />
+            <span>In Brief umwandeln</span>
+          </label>
 
           <button
             type="button"
             className="btn btn-primary"
-            onClick={() => navigate('/reports')}
-            title={t('cap_btn_to_report')}
+            onClick={handleExecuteActions}
+            disabled={isExecutingActions || (!targetDailyReport && !targetLetterDraft)}
           >
-            <FileText size={16} />
-            <span>{t('cap_btn_to_report')}</span>
+            <CheckCircle2 size={16} />
+            <span>
+              {isExecutingActions
+                ? 'Wird ausgeführt...'
+                : targetDailyReport && targetLetterDraft
+                  ? 'In Bautagesbericht & Brief'
+                  : targetLetterDraft
+                    ? 'In Brief umwandeln'
+                    : 'In Bautagesbericht'}
+            </span>
           </button>
         </div>
       </section>

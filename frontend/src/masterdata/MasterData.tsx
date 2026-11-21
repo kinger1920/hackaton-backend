@@ -503,7 +503,7 @@ const ContractsTab: React.FC<{ projectId: number; onError: (msg: string) => void
                                         .filter(Boolean).join(' • ') || '–'}
                                 </div>
                                 <div className="masterdata-row-meta">
-                                    📎 {c.file_name || 'PDF'} • hochgeladen {formatDate(c.uploaded_at)}
+                                    📎 {c.file_name || 'ohne Datei'} • {c.file_name ? 'hochgeladen' : 'angelegt'} {formatDate(c.uploaded_at)}
                                     {c.extracted_text ? ` • ${c.extracted_text.length.toLocaleString('de-DE')} Zeichen ausgelesen` : ' • kein Text erkannt'}
                                 </div>
                                 {c.vob_notes && <div className="masterdata-row-meta">⚖️ {c.vob_notes}</div>}
@@ -513,12 +513,17 @@ const ContractsTab: React.FC<{ projectId: number; onError: (msg: string) => void
                                     className="btn btn-secondary"
                                     onClick={() => handleParse(c)}
                                     disabled={parsingId === c.id || !c.extracted_text}
-                                    title={c.extracted_text ? 'Sollstärke, Firma, Gewerk und Fristen per KI auslesen' : 'Kein Text im PDF (Scan?)'}
+                                    title={c.extracted_text
+                                        ? 'Sollstärke, Firma, Gewerk und Fristen per KI auslesen'
+                                        : c.file_name
+                                            ? 'Kein Text im PDF (Scan?)'
+                                            : 'Keine Datei hinterlegt – zum Auslesen den Vertrag als PDF hochladen'}
                                 >
                                     {parsingId === c.id ? <RefreshCw size={14}/> : <Sparkles size={14}/>}
                                 </button>
                                 <button className="btn btn-secondary" onClick={() => handleShowText(c)} title="Ausgelesenen Text anzeigen"><Eye size={14}/></button>
-                                <button className="btn btn-secondary" onClick={() => handleDownload(c)} title="PDF herunterladen"><Download size={14}/></button>
+                                <button className="btn btn-secondary" onClick={() => handleDownload(c)} disabled={!c.file_name}
+                                        title={c.file_name ? 'PDF herunterladen' : 'Keine Datei hinterlegt (z. B. Demo- oder Projektformular-Vertrag)'}><Download size={14}/></button>
                                 <button className="btn btn-secondary" onClick={() => startEdit(c)} title="Bearbeiten"><Pencil size={14}/></button>
                                 <button className="btn btn-danger" onClick={() => handleDelete(c)} title="Löschen"><Trash2 size={14}/></button>
                             </div>

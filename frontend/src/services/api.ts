@@ -717,6 +717,10 @@ async function errorDetail(res: Response): Promise<string> {
         })
         .join('; ');
     }
+    // 409 bei der Freigabe: {missing_fields, questions} → Rückfragen als lesbaren Text zeigen
+    if (Array.isArray(detail?.questions) && detail.questions.length > 0) {
+      return `Pflichtangaben fehlen – ${detail.questions.join(' ')}`;
+    }
     if (detail) return JSON.stringify(detail);
   } catch {
     // kein JSON
@@ -765,6 +769,7 @@ export const api = {
           ? 'wav'
           : 'webm';
     const formData = new FormData();
+    // Feldname muss "audio" heißen (Backend: `audio: UploadFile`), sonst 422
     formData.append('audio', file, `recording.${ext}`);
     formData.append('lang', lang);
 
