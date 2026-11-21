@@ -114,6 +114,41 @@ def seed_plan(session: Session, project: Project) -> dict[str, PlanTask]:
     return existing
 
 
+def seed_all(session: Session, project: Project) -> tuple[dict[str, PlanTask], int]:
+    """Plan, Berichte und Fortschritt für ein Projekt anlegen/ergänzen (ohne Commit). Auch von Tests genutzt."""
+    tasks = seed_plan(session, project)
+    existing = {r.report_date: r for r in session.exec(
+        select(DailyReport).where(DailyReport.project_id == project.id)).all()}
+    created = 0
+    for number, (day, (weather, crew, done, incidents)) in enumerate(DAYS.items(), start=120):
+        date = dt.date.fromisoformat(day)
+        report = existing.get(date)
+        if report is None:
+            report = DailyReport(
+                project_id=project.id, report_date=date,
+                summary=done.split(".")[0] + ".",
+                weather=json.dumps(weather, ensure_ascii=False),
+                workforce=json.dumps(crew, ensure_ascii=False),
+                equipment=json.dumps(EQUIP if crew is CREW_NORMAL else EQUIP[:1], ensure_ascii=False),
+                work_completed=done, deviations_incidents=incidents or None, status="finalized",
+            )
+            created += 1
+        # Neue Spalten auch bei älteren Seed-Berichten nachtragen (nur wenn leer).
+        report.report_number = report.report_number or number
+        report.workforce_count = report.workforce_count or sum(c["workers"] for c in crew)
+        report.trades = report.trades or json.dumps([c["trade"] for c in crew], ensure_ascii=False)
+        report.deliveries = report.deliveries or DELIVERIES.get(day)
+        session.add(report)
+        session.flush()
+        for code, percent in PROGRESS.get(day, {}).items():
+            known = session.exec(select(ReportProgress).where(
+                ReportProgress.report_id == report.id, ReportProgress.task_id == tasks[code].id)).first()
+            if known is None:
+                session.add(ReportProgress(report_id=report.id, task_id=tasks[code].id,
+                                           percent=percent, source="nutzer"))
+    return tasks, created
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--project-id", type=int, default=None, help="Projekt-ID (Default: erstes Projekt)")
@@ -126,36 +161,7 @@ def main() -> None:
         if project is None:
             sys.exit("Kein Projekt gefunden – zuerst ein Projekt anlegen (POST /projects).")
 
-        tasks = seed_plan(session, project)
-        existing = {r.report_date: r for r in session.exec(
-            select(DailyReport).where(DailyReport.project_id == project.id)).all()}
-        created = 0
-        for number, (day, (weather, crew, done, incidents)) in enumerate(DAYS.items(), start=120):
-            date = dt.date.fromisoformat(day)
-            report = existing.get(date)
-            if report is None:
-                report = DailyReport(
-                    project_id=project.id, report_date=date,
-                    summary=done.split(".")[0] + ".",
-                    weather=json.dumps(weather, ensure_ascii=False),
-                    workforce=json.dumps(crew, ensure_ascii=False),
-                    equipment=json.dumps(EQUIP if crew is CREW_NORMAL else EQUIP[:1], ensure_ascii=False),
-                    work_completed=done, deviations_incidents=incidents or None, status="finalized",
-                )
-                created += 1
-            # Neue Spalten auch bei älteren Seed-Berichten nachtragen (nur wenn leer).
-            report.report_number = report.report_number or number
-            report.workforce_count = report.workforce_count or sum(c["workers"] for c in crew)
-            report.trades = report.trades or json.dumps([c["trade"] for c in crew], ensure_ascii=False)
-            report.deliveries = report.deliveries or DELIVERIES.get(day)
-            session.add(report)
-            session.flush()
-            for code, percent in PROGRESS.get(day, {}).items():
-                known = session.exec(select(ReportProgress).where(
-                    ReportProgress.report_id == report.id, ReportProgress.task_id == tasks[code].id)).first()
-                if known is None:
-                    session.add(ReportProgress(report_id=report.id, task_id=tasks[code].id,
-                                               percent=percent, source="nutzer"))
+        tasks, created = seed_all(session, project)
         session.commit()
         print(f"Projekt #{project.id} ({project.name}): Plan '{PLAN_TITLE}' mit {len(tasks)} Vorgängen, "
               f"{created} Tagesberichte neu, {len(DAYS) - created} vorhanden (ergänzt).")
