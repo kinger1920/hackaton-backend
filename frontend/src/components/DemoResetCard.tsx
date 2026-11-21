@@ -50,7 +50,7 @@ export const DemoResetCard: React.FC = () => {
                 <RotateCcw size={18}/> Demo zurücksetzen
             </h2>
             <p style={{fontSize: '13px', color: 'var(--text-muted)', margin: '0 0 12px'}}>
-                Setzt die Jury-Demo auf einen festen Stand: Projekt, Firmen und Verträge, Bauzeitenplan, Tagesberichte und Diktate.
+                Setzt die Demo-Daten auf einen festen Stand zurück: Projekt, Firmen und Verträge, Bauzeitenplan, Tagesberichte und Diktate.
                 Der letzte Demo-Bericht liegt auf dem letzten Werktag vor dem Bezugsdatum.
             </p>
 

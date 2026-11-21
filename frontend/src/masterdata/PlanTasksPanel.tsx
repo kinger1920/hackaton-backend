@@ -165,7 +165,7 @@ export const PlanTasksPanel: React.FC<{ planId: number; onError: (msg: string) =
 
             <div className="plan-tasks-hint">
                 CSV-Spalten (Deutsch oder Englisch): <code>Nr</code>, <code>Vorgang</code>, <code>Gewerk</code>, <code>Anfang</code>, <code>Ende</code> –
-                Datum als TT.MM.JJJJ. Excel bitte als CSV speichern. PDF wird per KI/Regeln gelesen und immer erst als Vorschau gezeigt.
+                Datum als TT.MM.JJJJ. Excel bitte als CSV speichern. PDF wird ausgelesen und immer erst als Vorschau gezeigt.
             </div>
 
             {importMsg && <div className="plan-tasks-ok">✓ {importMsg}</div>}
@@ -176,7 +176,7 @@ export const PlanTasksPanel: React.FC<{ planId: number; onError: (msg: string) =
                     <div className="plan-tasks-toolbar">
                         <strong>
                             <FileText size={14}/> Vorschau: {preview.tasks.length} Vorgänge
-                            ({preview.mode === 'csv' ? 'CSV' : preview.mode === 'ai' ? 'PDF, von KI gelesen' : 'PDF, regelbasiert'}) – noch nichts gespeichert
+                            ({preview.mode === 'csv' ? 'CSV' : 'PDF'}) – noch nichts gespeichert
                         </strong>
                         <div style={{display: 'flex', gap: '6px'}}>
                             <button className="btn btn-secondary" onClick={() => setPreview(null)}>Verwerfen</button>

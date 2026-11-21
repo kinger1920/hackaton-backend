@@ -1,7 +1,6 @@
 import React, {useEffect, useRef, useState} from 'react';
 import {useLocation, useNavigate} from 'react-router-dom';
 import {
-    Sparkles,
     AlertTriangle,
     Copy,
     Download,
@@ -13,7 +12,6 @@ import {
     Mail,
     Check,
     CalendarRange,
-    Info,
     BookOpen,
     Users,
     MapPin,
@@ -286,7 +284,7 @@ export const Summary: React.FC = () => {
                 : [`– ${t('su_none')}`]),
             '',
             t('su_sec_risks').toUpperCase(),
-            ...(s.vobRisks.length ? s.vobRisks.map((r) => `⚠ ${r.title}: ${r.description} – ${r.recommendation} (${r.source ?? ''})`) : [`– ${t('su_none')}`]),
+            ...(s.vobRisks.length ? s.vobRisks.map((r) => `- ${r.title}: ${r.description} – ${r.recommendation} (${r.source ?? ''})`) : [`– ${t('su_none')}`]),
             '',
             s.traceabilityNotes
         ].join('\n');
@@ -380,7 +378,6 @@ ${s.vobRisks.length ? s.vobRisks.map((r) => `<p><strong>${escapeHtml(r.title)}</
                     <div className="tp-title-icon"><BookOpen size={22}/></div>
                     <div>
                         <h1>{t('sum_title')}</h1>
-                        <p>{t('su_sub')} <strong>{activeProject.name}</strong></p>
                     </div>
                 </div>
                 {toast && (
@@ -396,7 +393,6 @@ ${s.vobRisks.length ? s.vobRisks.map((r) => `<p><strong>${escapeHtml(r.title)}</
                 <div className="su-input-card">
                     <section className="su-step">
                         <h2 className="su-step-title"><span className="su-step-num">1</span>{t('su_step_input')}</h2>
-                        <p className="su-hint">{t('su_input_hint')}</p>
 
                         <textarea
                             className="form-textarea su-textarea"
@@ -473,14 +469,13 @@ ${s.vobRisks.length ? s.vobRisks.map((r) => `<p><strong>${escapeHtml(r.title)}</
                             onClick={handleSummarizeText}
                             disabled={!inputText.trim() || busy !== null || isExtracting}
                         >
-                            <Sparkles size={18}/>
+                            <BookOpen size={17}/>
                             <span>{busy === 'text' ? t('su_busy') : t('su_btn_summarize')}</span>
                         </button>
                     </section>
 
                     <section className="su-step">
                         <h2 className="su-step-title"><span className="su-step-num">2</span>{t('su_step_project')}</h2>
-                        <p className="su-hint">{t('su_project_hint')}</p>
                         <div className="su-period-row">
                             <button
                                 type="button"
@@ -488,7 +483,6 @@ ${s.vobRisks.length ? s.vobRisks.map((r) => `<p><strong>${escapeHtml(r.title)}</
                                 onClick={() => handleSummarizePeriod('day')}
                                 disabled={busy !== null}
                             >
-                                <Sparkles size={15}/>
                                 <span>{busy === 'day' ? t('su_busy') : t('su_btn_today')}</span>
                             </button>
                             <button
@@ -497,7 +491,6 @@ ${s.vobRisks.length ? s.vobRisks.map((r) => `<p><strong>${escapeHtml(r.title)}</
                                 onClick={() => handleSummarizePeriod('week')}
                                 disabled={busy !== null}
                             >
-                                <Sparkles size={15}/>
                                 <span>{busy === 'week' ? t('su_busy') : t('su_btn_week')}</span>
                             </button>
                             <button
@@ -506,7 +499,6 @@ ${s.vobRisks.length ? s.vobRisks.map((r) => `<p><strong>${escapeHtml(r.title)}</
                                 onClick={() => handleSummarizePeriod('month')}
                                 disabled={busy !== null}
                             >
-                                <Sparkles size={15}/>
                                 <span>{busy === 'month' ? t('su_busy') : t('su_btn_month')}</span>
                             </button>
                         </div>
@@ -550,12 +542,6 @@ ${s.vobRisks.length ? s.vobRisks.map((r) => `<p><strong>${escapeHtml(r.title)}</
                     <div className="su-toolbar">
                         <div className="su-toolbar-title">
                             <span>{summary ? summary.title : t('su_result')}</span>
-                            {summary && (
-                                <span className={`su-mode ${summary.mode}`}
-                                      title={summary.mode === 'ai' ? t('su_mode_ai_hint') : t('su_mode_offline_hint')}>
-                                    {summary.mode === 'ai' ? t('su_mode_ai') : t('su_mode_offline')}
-                                </span>
-                            )}
                         </div>
                         <div className="su-toolbar-actions">
                             <button className="doc-btn" onClick={handleCopy} disabled={!summary} title={t('btn_copy')}>
@@ -595,12 +581,6 @@ ${s.vobRisks.length ? s.vobRisks.map((r) => `<p><strong>${escapeHtml(r.title)}</
                         </div>
                     ) : (
                         <div className="su-result-body su-print-area">
-                            {summary.mode === 'offline' && (
-                                <div className="su-message info">
-                                    <Info size={15}/>
-                                    <span>{t('su_offline_note')}</span>
-                                </div>
-                            )}
 
                             {(summary.periodFrom || summary.periodTo) && (
                                 <div className="su-period">

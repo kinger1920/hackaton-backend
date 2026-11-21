@@ -12,7 +12,7 @@ import {
     X,
     UploadCloud,
     RefreshCw,
-    Sparkles,
+    FileSearch,
     ListTree,
     CheckCircle2,
     PauseCircle,
@@ -98,9 +98,6 @@ export const MasterData: React.FC = () => {
                     <div className="tp-title-icon"><Building2 size={22}/></div>
                     <div>
                         <h1>{t('nav_masterdata', 'Stammdaten')}</h1>
-                        <p>
-                            Firmen, Verträge und Bauzeitenpläne für <strong>{activeProject.name}</strong>
-                        </p>
                     </div>
                 </div>
             </div>
@@ -286,7 +283,7 @@ const CompaniesTab: React.FC<{ onError: (msg: string) => void }> = ({onError}) =
                                     {[c.trade, c.contact_person, c.phone, c.email].filter(Boolean).join(' • ') || '–'}
                                 </div>
                                 {c.address && <div className="masterdata-row-meta">{c.address}</div>}
-                                {c.vob_rules && <div className="masterdata-row-meta">⚖️ {c.vob_rules}</div>}
+                                {c.vob_rules && <div className="masterdata-row-meta">VOB: {c.vob_rules}</div>}
                             </div>
                             <div className="masterdata-row-actions">
                                 <button className="btn btn-secondary" onClick={() => startEdit(c)} title="Bearbeiten"><Pencil size={14}/></button>
@@ -485,10 +482,10 @@ const ContractsTab: React.FC<{ projectId: number; onError: (msg: string) => void
                             .filter(Boolean).join(' • ') || '–'}
                     </div>
                     <div className="masterdata-row-meta">
-                        📎 {c.file_name || 'ohne Datei'} • {c.file_name ? 'hochgeladen' : 'angelegt'} {formatDate(c.uploaded_at)}
+                        {c.file_name || 'ohne Datei'} • {c.file_name ? 'hochgeladen' : 'angelegt'} {formatDate(c.uploaded_at)}
                         {c.extracted_text ? ` • ${c.extracted_text.length.toLocaleString('de-DE')} Zeichen ausgelesen` : ' • kein Text erkannt'}
                     </div>
-                    {c.vob_notes && <div className="masterdata-row-meta">⚖️ {c.vob_notes}</div>}
+                    {c.vob_notes && <div className="masterdata-row-meta">VOB: {c.vob_notes}</div>}
                 </div>
                 <div className="masterdata-row-actions">
                     <button
@@ -510,12 +507,12 @@ const ContractsTab: React.FC<{ projectId: number; onError: (msg: string) => void
                         onClick={() => handleParse(c)}
                         disabled={parsingId === c.id || !c.extracted_text}
                         title={c.extracted_text
-                            ? 'Sollstärke, Firma, Gewerk und Fristen per KI auslesen'
+                            ? 'Sollstärke, Firma, Gewerk und Fristen auslesen'
                             : c.file_name
                                 ? 'Kein Text im PDF (Scan?)'
                                 : 'Keine Datei hinterlegt – zum Auslesen den Vertrag als PDF hochladen'}
                     >
-                        {parsingId === c.id ? <RefreshCw size={14}/> : <Sparkles size={14}/>}
+                        {parsingId === c.id ? <RefreshCw size={14}/> : <FileSearch size={14}/>}
                     </button>
                     <button className="btn btn-secondary" onClick={() => handleShowText(c)} title="Ausgelesenen Text anzeigen"><Eye size={14}/></button>
                     <button className="btn btn-secondary" onClick={() => handleDownload(c)} disabled={!c.file_name}
@@ -555,7 +552,7 @@ const ContractsTab: React.FC<{ projectId: number; onError: (msg: string) => void
                         </button>
                     </div>
                     <span className="masterdata-hint">
-                        Aktive Verträge werden automatisch ausgelesen und stehen der KI (Sollstärke, VOB-Regeln) als Kontext zur Verfügung.
+                        Aktive Verträge werden ausgelesen und bei Sollstärke-Prüfungen sowie VOB-Hinweisen berücksichtigt.
                     </span>
                 </div>
                 <div style={{display: 'flex', gap: '8px'}}>
@@ -661,7 +658,7 @@ const ContractsTab: React.FC<{ projectId: number; onError: (msg: string) => void
                             <div>
                                 <strong>Vertrag ausgelesen: {parseView.contract.title}</strong>
                                 <div style={{fontSize: '12px', color: 'var(--text-muted)'}}>
-                                    {parseView.result.mode === 'ai' ? 'Von der KI gelesen' : 'Regelbasiert (KI nicht verfügbar)'} • Vorschlag, wird erst nach Klick gespeichert
+                                    Ausgelesener Vorschlag – wird erst nach Klick gespeichert
                                 </div>
                             </div>
                             <button onClick={() => setParseView(null)} style={{background: 'none', border: 'none', cursor: 'pointer'}}><X size={16}/></button>
@@ -815,7 +812,7 @@ const PlansTab: React.FC<{ projectId: number; onError: (msg: string) => void }> 
                                         {p.title} <span className="badge badge-info">v{p.version || '1.0'}</span>
                                     </div>
                                     <div className="masterdata-row-meta">
-                                        {p.file_name ? `📎 ${p.file_name} • ` : ''}angelegt {formatDate(p.uploaded_at)}
+                                        {p.file_name ? `${p.file_name} • ` : ''}angelegt {formatDate(p.uploaded_at)}
                                     </div>
                                 </div>
                                 <div className="masterdata-row-actions">

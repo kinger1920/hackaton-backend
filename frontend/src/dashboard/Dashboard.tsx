@@ -13,7 +13,10 @@ import {
     CheckCircle2,
     ArrowRight,
     AlertCircle,
-    LayoutDashboard
+    AlertTriangle,
+    LayoutDashboard,
+    Wind,
+    Droplets
 } from 'lucide-react';
 import './Dashboard.css';
 import '@frontend/src/index.css';
@@ -338,9 +341,6 @@ export const Dashboard: React.FC = () => {
                     <div className="tp-title-icon"><LayoutDashboard size={22} /></div>
                     <div>
                         <h1 className="welcome-title">{t('dash_hello')}, {userName}!</h1>
-                        <p className="welcome-desc">
-                            {t('hdr_active_project')} <strong>{activeProject.name}</strong> ({activeProject.number}) • {t('dash_phase')}: {activeProject.phase}
-                        </p>
                     </div>
                 </div>
                 <div className="hero-stats">
@@ -405,8 +405,8 @@ export const Dashboard: React.FC = () => {
                         <div className="kpi-label">Baustellenwetter</div>
                         <div className="kpi-value">{weatherData.temp}°C • {weatherData.condition}</div>
                         <div className="kpi-weather-details">
-                            <span className="kpi-weather-chip">💨 {weatherData.wind}</span>
-                            <span className="kpi-weather-chip">💧 {weatherData.rainRisk}</span>
+                            <span className="kpi-weather-chip" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}><Wind size={12} /> {weatherData.wind}</span>
+                            <span className="kpi-weather-chip" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}><Droplets size={12} /> {weatherData.rainRisk}</span>
                         </div>
                         <div className="kpi-sub" style={{ marginTop: '6px' }}>
                             {weatherData.concreteStatus}
@@ -489,9 +489,6 @@ export const Dashboard: React.FC = () => {
                         </div>
                         <div>
                             <h2 className="dash-recent-title">Zuletzt geöffnete Bauprojekte</h2>
-                            <p className="dash-recent-sub">
-                                Schneller Wechsel zwischen Ihren Baustellen & Projekten
-                            </p>
                         </div>
                     </div>
 
@@ -721,8 +718,8 @@ export const Dashboard: React.FC = () => {
                             {/* 24/7 Notfall-Hotline */}
                             <div className="dash-emergency-box">
                                 <div>
-                                    <div style={{ fontSize: '11px', color: '#991b1b', fontWeight: 700, textTransform: 'uppercase' }}>
-                                        🚨 Sofortiger Notfall / Havariedienst (24/7)
+                                    <div style={{ fontSize: '11px', color: '#991b1b', fontWeight: 700, textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                                        <AlertTriangle size={12} /> Sofortiger Notfall / Havariedienst (24/7)
                                     </div>
                                     <a href={`tel:${clientData.hotline24h.replace(/\s+/g, '')}`} className="dash-emergency-hotline">
                                         <Phone size={18} />

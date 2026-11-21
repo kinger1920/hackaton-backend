@@ -170,7 +170,6 @@ export const DeadlineRadar: React.FC<{ embedded?: boolean }> = ({embedded = fals
                     <div className="idea-icon"><AlarmClock size={22}/></div>
                     <div>
                         <h1>Fristen-Radar</h1>
-                        <p>Alle Fristen aus Briefen, Bauzeitenplan und Terminen für <strong>{activeProject.name}</strong></p>
                     </div>
                 </div>
                 <button className="btn btn-secondary" onClick={load} disabled={loading}>
@@ -210,7 +209,7 @@ export const DeadlineRadar: React.FC<{ embedded?: boolean }> = ({embedded = fals
                                 </div>
                                 {i.detail && <div className="idea-row-meta">{i.detail}</div>}
                                 <div className="idea-row-meta">
-                                    <FileText size={11}/> {i.source}{i.vob ? ` • ⚖️ ${i.vob}` : ''}
+                                    <FileText size={11}/> {i.source}{i.vob ? ` • ${i.vob}` : ''}
                                 </div>
                             </div>
                             {i.noticeId && (

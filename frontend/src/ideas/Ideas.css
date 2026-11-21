@@ -371,8 +371,8 @@
 
 @media (max-width: 640px) {
   .idea-page.chat-page {
-    height: calc(100vh - var(--stripe-h, 6px) - var(--hdr-h, 50px) - 28px);
-    height: calc(100dvh - var(--stripe-h, 6px) - var(--hdr-h, 50px) - 28px);
+    height: calc(100vh - var(--stripe-h, 6px) - var(--hdr-h, 58px) - 28px);
+    height: calc(100dvh - var(--stripe-h, 6px) - var(--hdr-h, 58px) - 28px);
     min-height: 360px;
   }
 

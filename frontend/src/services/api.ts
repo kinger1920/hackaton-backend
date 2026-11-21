@@ -785,7 +785,7 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(req),
     });
-    return handleResponse<NoticeDraft>(res, 'Fehler bei der KI-Erfassung');
+    return handleResponse<NoticeDraft>(res, 'Fehler bei der Erfassung');
   },
 
   async transcribeAudio(file: Blob, lang: string = 'de'): Promise<TranscribeResponse> {
@@ -812,7 +812,7 @@ export const api = {
     const res = await fetch(`${API_BASE_URL}/api/notices/${noticeId}/review`, {
       method: 'POST',
     });
-    return handleResponse<ReviewResponse>(res, 'Fehler beim KI-Review');
+    return handleResponse<ReviewResponse>(res, 'Fehler bei der Prüfung');
   },
 
   // ---- Notices Endpoints ----
@@ -1001,7 +1001,7 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(req),
     });
-    return handleResponse<FillResponse>(res, 'Fehler beim Ausfüllen des Tagesberichts per KI');
+    return handleResponse<FillResponse>(res, 'Fehler beim Ausfüllen des Tagesberichts');
   },
 
   /** GET /api/reports/{date}/pdf|docx – 404 wenn der Tag nicht gespeichert ist, 503 wenn Pango fehlt (PDF). */

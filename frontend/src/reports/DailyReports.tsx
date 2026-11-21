@@ -22,7 +22,7 @@ import {
   Eye,
   PenLine
 } from 'lucide-react';
-import { ComingSoonNote, isNotImplemented } from '../components/ComingSoon';
+import { isNotImplemented } from '../components/ComingSoon';
 import { addDays, deToIso, isoToDe, toIsoDate as dateToIso, todayIso } from '../utils/dates';
 import { useProjects } from '../context/ProjectContext';
 import {
@@ -191,7 +191,7 @@ export const DailyReports: React.FC = () => {
     } catch (err) {
       setWeatherHint(
         isNotImplemented(err)
-          ? 'Automatisches Wetter (Standort + Datum, beweisrelevant für Behinderungen) ist vorbereitet – das Backend liefert es noch nicht. Bitte vorerst von Hand eintragen.'
+          ? 'Wetterdaten stehen auf diesem Server aktuell nicht zur Verfügung. Bitte von Hand eintragen.'
           : `Wetter konnte nicht geladen werden: ${(err as Error)?.message ?? err}`
       );
     } finally {
@@ -612,9 +612,6 @@ export const DailyReports: React.FC = () => {
           </div>
           <div>
             <h1 className="reports-title">{t('rep_title')}</h1>
-            <p className="reports-subtitle">
-              {t('rep_sub')} <strong>{activeProject.name}</strong> ({activeProject.number}) • {t('rep_author')} {userName}
-            </p>
           </div>
         </div>
 
@@ -1079,7 +1076,11 @@ export const DailyReports: React.FC = () => {
                 </div>
               </div>
 
-              {weatherHint && <ComingSoonNote endpoint="GET /api/weather?project_id=&date=">{weatherHint}</ComingSoonNote>}
+              {weatherHint && (
+                <div style={{ fontSize: '12px', color: '#92400e', backgroundColor: '#fffbeb', border: '1px solid #fde68a', borderRadius: 'var(--radius-md)', padding: '8px 12px' }}>
+                  {weatherHint}
+                </div>
+              )}
 
               {/* Anwesenheit je Firma (Backend: attendance) – Basis für den Sollstärken-Check gegen die Verträge */}
               <div className="form-group">
@@ -1250,14 +1251,14 @@ export const DailyReports: React.FC = () => {
                       >
                         <img src={p.url} alt={p.fileName} style={{ width: '100%', height: '90px', objectFit: 'cover', display: 'block' }} />
                         <div style={{ padding: '6px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                          {p.status === 'analyzing' && <span>KI analysiert…</span>}
+                          {p.status === 'analyzing' && <span>Wird ausgewertet…</span>}
                           {p.status === 'done' && p.result && (
                             <>
                               <span><strong>{p.result.caption}</strong></span>
                               {p.result.issues.length > 0 && <span style={{ color: '#b91c1c' }}>Mängel: {p.result.issues.join(', ')}</span>}
                             </>
                           )}
-                          {p.status === 'unavailable' && <span style={{ color: '#92400e' }}>Fotoanalyse folgt (Backend)</span>}
+                          {p.status === 'unavailable' && <span style={{ color: '#92400e' }}>Fotoauswertung nicht verfügbar</span>}
                           {p.status === 'error' && <span style={{ color: '#b91c1c' }}>{p.error}</span>}
                           <button
                             type="button"
@@ -1353,7 +1354,6 @@ export const DailyReports: React.FC = () => {
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <strong style={{ fontSize: '14px' }}>{dayAnalysis.title}</strong>
                 <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
-                  <span className="badge badge-info">{dayAnalysis.mode === 'ai' ? 'KI' : 'Regeln'}</span>
                   <button
                     type="button"
                     onClick={() => setDayAnalysis(null)}

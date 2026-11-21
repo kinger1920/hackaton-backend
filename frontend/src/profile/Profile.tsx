@@ -95,7 +95,6 @@ export const Profile: React.FC = () => {
                         <div className="tp-title-icon"><User size={22}/></div>
                         <div>
                             <h1>{t('nav_profile')}</h1>
-                            <p>{t('pf_sub')}</p>
                         </div>
                     </div>
                     {savedSuccess && (

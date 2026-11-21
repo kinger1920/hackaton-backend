@@ -5,7 +5,7 @@ import {
   Square,
   Play,
   Pause,
-  Sparkles,
+  Tags,
   Plus,
   X,
   FileText,
@@ -154,11 +154,11 @@ export const VoiceOrText: React.FC<VoiceOrTextProps> = ({ mode = 'voice' }) => {
         setGeneralNotes((prev) => (prev ? prev + '\n' + res.text : res.text));
         handleAutoCategorize(res.text);
       } else {
-        setAudioTranscript('Transkription gerade nicht verfügbar (KI offline) – bitte Kategorie auswählen.');
+        setAudioTranscript('Transkription aktuell nicht verfügbar – bitte Kategorie auswählen.');
       }
     } catch (err) {
       console.warn('Transkription fehlgeschlagen:', err);
-      setAudioTranscript('Transkription fehlgeschlagen (Backend nicht erreichbar) – bitte Kategorie auswählen.');
+      setAudioTranscript('Transkription fehlgeschlagen – bitte Kategorie auswählen.');
     } finally {
       setIsTranscribing(false);
     }
@@ -661,13 +661,13 @@ Kategorisierte Stichpunkte:
     <>
       {isTranscribing && (
         <div style={{ fontSize: '12px', color: 'var(--color-primary)', fontWeight: 600 }}>
-          Audio wird über Whisper transkribiert...
+          Audio wird transkribiert…
         </div>
       )}
 
       {aiClassifiedSuccess && (
         <div style={{ fontSize: '12px', color: '#16a34a', fontWeight: 600 }}>
-          ✓ Sachverhalt erfolgreich per KI erfasst!
+          ✓ Sachverhalt zugeordnet
         </div>
       )}
 
@@ -687,7 +687,7 @@ Kategorisierte Stichpunkte:
           }}
         >
           <span>
-            ✓ <strong>VOB-Brief #{lastDraft.notice_id}</strong> ({lastDraft.type}) automatisch im Backend angelegt.
+            ✓ <strong>VOB-Brief #{lastDraft.notice_id}</strong> ({lastDraft.type}) angelegt.
           </span>
           <button
             type="button"
@@ -712,7 +712,7 @@ Kategorisierte Stichpunkte:
             color: '#92400e'
           }}
         >
-          <strong>Offene Rückfragen der KI für den VOB-Brief:</strong>
+          <strong>Offene Rückfragen für den VOB-Brief:</strong>
           <ul style={{ margin: '6px 0 0 16px', padding: 0 }}>
             {aiQuestions.map((q, idx) => (
               <li key={idx} style={{ marginBottom: '2px' }}>
@@ -741,14 +741,10 @@ Kategorisierte Stichpunkte:
           disabled={isCapturing}
           title={t('cap_btn_auto_categorize')}
         >
-          <Sparkles size={12} />
-          <span>{isCapturing ? 'KI analysiert...' : t('cap_btn_auto_categorize')}</span>
+          <Tags size={12} />
+          <span>{isCapturing ? 'Wird zugeordnet…' : t('cap_btn_auto_categorize')}</span>
         </button>
       </div>
-
-      <p style={{ fontSize: '12px', color: 'var(--text-muted)', margin: 0 }}>
-        {t('cap_general_notes_desc')}
-      </p>
 
       <textarea
         className="form-textarea"
@@ -781,9 +777,6 @@ Kategorisierte Stichpunkte:
             <h1 className="capture-hero-title">
               {isVoiceMode ? t('cap_voice_title') : t('cap_text_title')}
             </h1>
-            <p className="capture-hero-sub">
-              {isVoiceMode ? t('cap_voice_sub') : t('cap_text_sub')} <strong>{activeProject.name}</strong>
-            </p>
           </div>
         </div>
       </section>
@@ -965,9 +958,6 @@ Kategorisierte Stichpunkte:
               <h2 style={{ margin: 0, fontSize: '16px', fontWeight: 700, color: 'var(--color-slate-900)' }}>
                 {t('cap_categories_title')}
               </h2>
-              <p style={{ margin: '4px 0 0 0', fontSize: '12px', color: 'var(--text-muted)' }}>
-                {t('cap_categories_sub')}
-              </p>
             </div>
 
             <button
@@ -976,7 +966,7 @@ Kategorisierte Stichpunkte:
               style={{ fontSize: '11px', padding: '4px 8px' }}
               onClick={() => handleAutoCategorize()}
             >
-              <Sparkles size={12} />
+              <Tags size={12} />
               <span>{t('cap_btn_reclassify')}</span>
             </button>
           </div>
@@ -1212,9 +1202,6 @@ Kategorisierte Stichpunkte:
           <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--color-slate-800)' }}>
             {t('cap_action_bar_title')}
           </span>
-          <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
-            Ziel auswählen (Mehrfachauswahl möglich)
-          </div>
         </div>
 
         <div className="action-toggle-group">

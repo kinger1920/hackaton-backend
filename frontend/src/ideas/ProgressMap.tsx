@@ -210,7 +210,6 @@ export const ProgressMap: React.FC = () => {
                     <div className="idea-icon"><TrendingUp size={22}/></div>
                     <div>
                         <h1>Baufortschritt</h1>
-                        <p>Was wann wo gebaut werden muss – und was schon gebaut ist • {activeProject.name}</p>
                     </div>
                 </div>
             </div>

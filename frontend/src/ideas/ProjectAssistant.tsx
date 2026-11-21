@@ -1,15 +1,10 @@
 import React, {useEffect, useRef, useState} from 'react';
-import {MessageSquare, Mic, Send, Sparkles, Square} from 'lucide-react';
+import {MessageSquare, Mic, Send, Square} from 'lucide-react';
 import {useProjects} from '../context/ProjectContext';
 import {api} from '../services/api';
 import {useAudioRecorder} from '../utils/useAudioRecorder';
-import {ComingSoonBadge, ComingSoonNote, isNotImplemented} from '../components/ComingSoon';
+import {isNotImplemented} from '../components/ComingSoon';
 import './Ideas.css';
-
-/**
- * Idee #5: „Frag dein Projekt“ – Chat über Tagesberichte, Notizen, Briefe und Verträge, jede Antwort mit Quellen.
- * Frontend fertig; Backend folgt (POST /api/assistant/ask). Die Chat-Tabellen (ChatSession/ChatMessage) gibt es schon.
- */
 
 interface Message {
     role: 'user' | 'assistant';
@@ -30,14 +25,13 @@ export const ProjectAssistant: React.FC = () => {
     const [messages, setMessages] = useState<Message[]>([
         {
             role: 'assistant',
-            text: `Hallo! Ich beantworte Fragen zu „${activeProject.name}“ – auf Basis von Tagesberichten, Tagebuch, Briefen und Verträgen. Jede Antwort nennt ihre Quellen.`
+            text: `Fragen zu „${activeProject.name}“ – auf Basis von Tagesberichten, Notizen, Briefen und Verträgen.`
         }
     ]);
     const [input, setInput] = useState('');
     const [busy, setBusy] = useState(false);
     const [transcribing, setTranscribing] = useState(false);
     const [audioHint, setAudioHint] = useState<string | null>(null);
-    const [backendMissing, setBackendMissing] = useState(false);
     const endRef = useRef<HTMLDivElement>(null);
 
     const recorder = useAudioRecorder(async (blob) => {
@@ -49,7 +43,7 @@ export const ProjectAssistant: React.FC = () => {
             if (text) {
                 setInput((prev) => (prev.trim() ? `${prev.trim()} ${text}` : text));
             } else {
-                setAudioHint('Spracherkennung ist aktuell nicht verfügbar (KI offline) – bitte Frage eintippen.');
+                setAudioHint('Spracherkennung aktuell nicht verfügbar – bitte Frage eintippen.');
             }
         } catch (err) {
             setAudioHint(`Audio-Transkription fehlgeschlagen: ${(err as Error)?.message ?? err}`);
@@ -86,10 +80,9 @@ export const ProjectAssistant: React.FC = () => {
             reply = {role: 'assistant', text: res.answer, sources: res.sources};
         } catch (err) {
             if (isNotImplemented(err)) {
-                setBackendMissing(true);
                 reply = {
                     role: 'assistant',
-                    text: 'Der Projekt-Assistent ist im Frontend vorbereitet, das Backend dafür fehlt noch. Bis dahin: Zusammenfassungen (Woche/Monat) und die Soll/Ist-Analyse im Dashboard nutzen.'
+                    text: 'Die Projektabfrage steht auf diesem Server aktuell nicht zur Verfügung. Nutzen Sie bis dahin die Zusammenfassungen (Woche/Monat) oder die Auswertung im Dashboard.'
                 };
             } else {
                 reply = {role: 'assistant', text: `Fehler: ${(err as Error)?.message ?? err}`};
@@ -105,10 +98,7 @@ export const ProjectAssistant: React.FC = () => {
                 <div className="idea-title-group">
                     <div className="idea-icon"><MessageSquare size={22}/></div>
                     <div>
-                        <h1 style={{display: 'flex', alignItems: 'center', gap: '8px'}}>
-                            Projekt-Assistent <ComingSoonBadge/>
-                        </h1>
-                        <p>Frag dein Projekt – Antworten mit Quellenangabe, keine Rechtsberatung</p>
+                        <h1>Projekt-Assistent</h1>
                     </div>
                 </div>
             </div>
@@ -130,7 +120,6 @@ export const ProjectAssistant: React.FC = () => {
                     <div className="chat-suggestions">
                         {SUGGESTIONS.map((s) => (
                             <button key={s} className="idea-tab" onClick={() => ask(s)} disabled={busy}>
-                                <Sparkles size={11} style={{display: 'inline', marginRight: '4px'}}/>
                                 {s}
                             </button>
                         ))}
@@ -176,13 +165,6 @@ export const ProjectAssistant: React.FC = () => {
                     </form>
                 </div>
             </div>
-
-            {backendMissing && (
-                <ComingSoonNote endpoint="POST /api/assistant/ask {question, project_id} → {answer, sources[], mode}">
-                    Backend-Aufgabe: Fragen per LLM über Tagesberichte, SiteNotes, Briefe und Vertragstexte beantworten,
-                    nur mit existierenden Quellen (wie bei /api/summarize), Verlauf in ChatSession/ChatMessage speichern.
-                </ComingSoonNote>
-            )}
         </div>
     );
 };

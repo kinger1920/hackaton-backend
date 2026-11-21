@@ -351,7 +351,7 @@ Teilnehmer: Hr. Mustermann (Bauleitung), Fr. Arch. Schmidt (Planung), Hr. Ing. W
     date: '19.11.2026',
     authorOrSender: 'Fa. Glas & Türbau Hoffmann GmbH',
     content: `Von: Glas & Türbau Hoffmann GmbH <vertrieb@hoffmann-tueren.de>
-An: Bauleitung SiteAI <bauleitung@bau-ag.de>
+An: Bauleitung <bauleitung@bau-ag.de>
 Datum: 19.11.2026, 14:32 Uhr
 Betreff: AW: Liefertermin Brandschutzelemente T30-RS Baulos 4
 

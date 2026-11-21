@@ -260,7 +260,7 @@
 /* Right: live preview (white paper in both themes) */
 .pf-preview-card {
     position: sticky;
-    top: 80px;
+    top: 16px;
     min-width: 0;
     overflow: hidden;
     background-color: var(--bg-surface);

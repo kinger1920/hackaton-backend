@@ -200,6 +200,7 @@ export const Projects: React.FC = () => {
         });
         setEditingId(proj.id);
         setShowCreateForm(true);
+        document.querySelector('.app-scroll')?.scrollTo({top: 0, behavior: 'smooth'});
         window.scrollTo({top: 0, behavior: 'smooth'});
     };
 
@@ -261,7 +262,6 @@ export const Projects: React.FC = () => {
                     <div className="tp-title-icon"><FolderKanban size={22}/></div>
                     <div className="projects-title-group">
                         <h1>{t('proj_title')}</h1>
-                        <p>{t('proj_sub')}</p>
                     </div>
                 </div>
 

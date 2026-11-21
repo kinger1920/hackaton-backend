@@ -12,9 +12,7 @@ import {
     CheckCircle2,
     CheckSquare,
     Edit3,
-    Sparkles,
     PenLine,
-    Wand2,
     Search,
     FolderOpen,
     Trash2,
@@ -1194,7 +1192,6 @@ export const LetterDrafts: React.FC = () => {
                     <div className="tp-title-icon"><Mail size={22}/></div>
                     <div>
                         <h1>{t('ld_title')}</h1>
-                        <p>{t('ld_sub')}</p>
                     </div>
                 </div>
 
@@ -1512,7 +1509,7 @@ export const LetterDrafts: React.FC = () => {
                                 disabled={locked || busy !== null || serverOnline === false}
                                 title={serverOnline === false ? t('ld_server_offline') : t('ld_btn_ai_hint')}
                             >
-                                <Wand2 size={16}/>
+                                <PenLine size={16}/>
                                 <span>{busy === 'ai' ? t('ld_busy') : t('ld_btn_ai')}</span>
                             </button>
                         </div>
@@ -1543,7 +1540,7 @@ export const LetterDrafts: React.FC = () => {
                                     disabled={busy !== null || serverOnline === false}
                                     title={serverOnline === false ? t('ld_server_offline') : t('ld_btn_review_hint')}
                                 >
-                                    <Sparkles size={14}/>
+                                    <CheckSquare size={14}/>
                                     <span>{busy === 'review' ? t('ld_busy') : t('ld_btn_review')}</span>
                                 </button>
                             </div>
@@ -1562,7 +1559,7 @@ export const LetterDrafts: React.FC = () => {
 
                         {reviewHints.length > 0 && (
                             <div className="ld-message review">
-                                <Sparkles size={15}/>
+                                <CheckSquare size={15}/>
                                 <div>
                                     <strong>{t('ld_review_title')}</strong>
                                     <ul>

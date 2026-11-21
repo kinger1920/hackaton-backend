@@ -1,4 +1,4 @@
-import React, {useEffect, useState} from 'react';
+import React, {useEffect, useRef, useState} from 'react';
 import {Outlet, useNavigate, useLocation} from 'react-router-dom';
 import {
     HardHat,
@@ -120,9 +120,11 @@ export const MainLayout: React.FC = () => {
         () => (localStorage.getItem(SIDEBAR_KEY) === 'collapsed' ? 'collapsed' : 'pinned')
     );
     const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+    const scrollRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
         setMobileMenuOpen(false);
+        scrollRef.current?.scrollTo({top: 0});
     }, [location.pathname]);
 
     useEffect(() => {
@@ -186,7 +188,7 @@ export const MainLayout: React.FC = () => {
     const status = !isOnline
         ? {dot: 'off', text: t('hdr_device_offline', 'Offline'), title: t('hdr_device_offline_hint', 'Gerät ist offline – Offline-Modus folgt (Profil → Offline & App)')}
         : !health
-            ? {dot: 'off', text: t('hdr_backend_offline', 'Backend offline'), title: t('hdr_backend_offline_hint', 'Backend nicht erreichbar – Seiten zeigen Beispieldaten')}
+            ? {dot: 'off', text: t('hdr_backend_offline', 'Offline'), title: t('hdr_backend_offline_hint', 'Backend nicht erreichbar – Seiten zeigen Beispieldaten')}
             : {
                 dot: health.pdf_export ? '' : 'warn',
                 text: t('hdr_backend_online', 'Backend online'),
@@ -212,7 +214,7 @@ export const MainLayout: React.FC = () => {
                         <HardHat size={20}/>
                     </div>
                     <div className="app-brand-text">
-                        <div className="app-brand-title">Site<span>AI</span> Assistant</div>
+                        <div className="app-brand-title">Bau<span>Manager</span></div>
                         <div className="app-brand-sub">Bautagesbericht &amp; Planung</div>
                     </div>
                     <button
@@ -359,10 +361,12 @@ export const MainLayout: React.FC = () => {
                     </div>
                 </header>
 
-                {/* Dynamic Route Outlet */}
-                <main className="app-content">
-                    <Outlet/>
-                </main>
+                {/* Scrollable content area inside the workspace box */}
+                <div className="app-scroll" ref={scrollRef}>
+                    <main className="app-content">
+                        <Outlet/>
+                    </main>
+                </div>
             </div>
         </div>
     );

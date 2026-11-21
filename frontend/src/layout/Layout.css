@@ -8,11 +8,13 @@
 .app-shell {
     --sb-open: 248px;
     --sb-closed: 64px;
-    --hdr-h: 54px;
-    --chip-h: 32px;
+    --hdr-h: 68px;
+    --chip-h: 36px;
 
     display: flex;
-    min-height: 100vh;
+    height: 100vh;
+    height: 100dvh;
+    overflow: hidden;
     background-color: var(--bg-page);
     color: var(--text-main);
 }
@@ -304,15 +306,16 @@
 .app-main {
     flex: 1;
     min-width: 0;
-    overflow-x: clip;
+    height: 100%;
+    overflow: hidden;
     display: flex;
     flex-direction: column;
     padding-top: var(--stripe-h, 6px);
 }
 
 .app-header {
-    position: sticky;
-    top: var(--stripe-h, 6px);
+    flex-shrink: 0;
+    position: relative;
     z-index: 30;
     height: var(--hdr-h);
     display: flex;
@@ -391,9 +394,10 @@
 
 /* Project selector chip */
 .hdr-project {
+    flex: 1 1 auto;
     min-width: 0;
-    max-width: min(440px, 100%);
-    padding: 0 4px 0 12px;
+    max-width: min(580px, 100%);
+    padding: 0 8px 0 14px;
 }
 
 .hdr-project-label {
@@ -447,6 +451,15 @@
 .hdr-dot.off {
     background-color: #ef4444;
     box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.18);
+}
+
+/* Scrollable workspace box below the fixed top bar */
+.app-scroll {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    overflow-x: hidden;
+    scrollbar-gutter: stable;
 }
 
 /* Page content */
@@ -517,8 +530,8 @@
 
 @media (max-width: 640px) {
     .app-shell {
-        --hdr-h: 50px;
-        --chip-h: 30px;
+        --hdr-h: 58px;
+        --chip-h: 34px;
     }
 
     .app-header {
@@ -545,5 +558,14 @@
 
     .app-header .lang-switcher-btn {
         padding: 0 9px;
+    }
+}
+
+@media print {
+    .app-shell,
+    .app-main,
+    .app-scroll {
+        height: auto !important;
+        overflow: visible !important;
     }
 }

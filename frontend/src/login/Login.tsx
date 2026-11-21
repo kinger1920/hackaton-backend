@@ -100,22 +100,12 @@ export const Login: React.FC = () => {
                         fontSize: '22px',
                         fontWeight: 700,
                         color: 'var(--text-main)',
-                        margin: '0 0 6px 0',
+                        margin: '0 0 22px 0',
                         textAlign: 'center'
                     }}
                 >
-                    AI Bauleiter Assistent
+                    Bauleiter-Portal
                 </h1>
-                <p
-                    style={{
-                        fontSize: '14px',
-                        color: 'var(--text-muted)',
-                        margin: '0 0 24px 0',
-                        textAlign: 'center'
-                    }}
-                >
-                    {t('login_subtitle')}
-                </p>
 
                 <div className="form-group" style={{marginBottom: '20px'}}>
                     <label htmlFor="nameInput" className="form-label">

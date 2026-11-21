@@ -530,12 +530,12 @@ export const Termin: React.FC = () => {
     /** Termine des sichtbaren Zeitraums als .ics (Outlook, Google, Apple) */
     const exportIcs = () => {
         const esc = (s: string) => s.replace(/\\/g, '\\\\').replace(/[,;]/g, (m) => `\\${m}`).replace(/\n/g, '\\n');
-        const lines = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//SiteAI Assistant//Terminplaner//DE'];
+        const lines = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//BauManager//Terminplaner//DE'];
         allAppts
             .filter((a) => a.date >= iso(rangeFrom) && a.date <= iso(rangeTo))
             .forEach((a) => {
                 const d = a.date.replace(/-/g, '');
-                lines.push('BEGIN:VEVENT', `UID:${a.id}@siteai`, `SUMMARY:${esc(a.title)}`);
+                lines.push('BEGIN:VEVENT', `UID:${a.id}@baumanager`, `SUMMARY:${esc(a.title)}`);
                 if (a.time) lines.push(`DTSTART:${d}T${a.time.slice(0, 5).replace(':', '')}00`);
                 else lines.push(`DTSTART;VALUE=DATE:${d}`);
                 const desc = [CATEGORY[a.category]?.label, a.trade, a.description, a.vobReference].filter(Boolean).join(' • ');
@@ -567,9 +567,6 @@ export const Termin: React.FC = () => {
                     <div className="tp-title-icon"><CalendarIcon size={22}/></div>
                     <div>
                         <h1 className="tp-title">{t('nav_termin', 'Terminplaner')}</h1>
-                        <p className="tp-sub">
-                            Rückblick (Berichte, Mängel, Fotos) und Planung (Arbeiten je Tag, Termine) • <strong>{activeProject.name}</strong>
-                        </p>
                     </div>
                 </div>
                 <div className="tp-header-actions">
@@ -745,7 +742,7 @@ export const Termin: React.FC = () => {
                                 {autoInfo.sourceLabel ? ` • Quelle: ${autoInfo.sourceLabel}` : ''}
                             </div>
                             {autoInfo.description && <div>{autoInfo.description}</div>}
-                            {autoInfo.vobReference && <div className="tp-appt-meta">⚖️ {autoInfo.vobReference}</div>}
+                            {autoInfo.vobReference && <div className="tp-appt-meta">VOB: {autoInfo.vobReference}</div>}
                         </div>
                         <p className="tp-auto-hint">
                             {autoInfo.source === 'workforce'
@@ -802,11 +799,12 @@ export const Termin: React.FC = () => {
                             <div className="tp-appt-meta">
                                 Aufnahmedatum: {fmt(parseIso(activePhoto.report_date), {day: '2-digit', month: '2-digit', year: 'numeric'})}
                                 {' • '}Datei: {activePhoto.file_name}
-                                {' • '}Analyse: {activePhoto.mode === 'ai' ? 'KI' : 'Regelbasiert'}
                             </div>
                             {activePhoto.diary_text && <div><strong>Tagebuch-Eintrag:</strong> {activePhoto.diary_text}</div>}
                             {activePhoto.issues.length > 0 && (
-                                <div style={{color: '#b91c1c', fontWeight: 600}}>⚠️ {activePhoto.issues.join(' • ')}</div>
+                                <div style={{color: '#b91c1c', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '5px'}}>
+                                    <AlertTriangle size={13}/> {activePhoto.issues.join(' • ')}
+                                </div>
                             )}
                         </div>
                         <div className="tp-modal-actions">
@@ -1142,7 +1140,10 @@ const DayDetail: React.FC<{
                             <div className="tp-photo-body">
                                 <div className="tp-photo-caption" title={p.caption}>{p.caption}</div>
                                 {p.issues.length > 0 && (
-                                    <div className="tp-photo-issue" title={p.issues.join(', ')}>⚠️ {p.issues[0]}</div>
+                                    <div className="tp-photo-issue" title={p.issues.join(', ')} style={{display: 'flex', alignItems: 'center', gap: '3px'}}>
+                                        <AlertTriangle size={11} style={{flexShrink: 0}}/>
+                                        <span>{p.issues[0]}</span>
+                                    </div>
                                 )}
                             </div>
                             <button
@@ -1285,7 +1286,7 @@ const DayDetail: React.FC<{
                                 {isAuto && a.sourceLabel ? ` • ${a.sourceLabel}` : ''}
                             </div>
                             {a.description && <div className="tp-appt-desc">{a.description}</div>}
-                            {a.vobReference && <div className="tp-appt-meta">⚖️ {a.vobReference}</div>}
+                            {a.vobReference && <div className="tp-appt-meta">VOB: {a.vobReference}</div>}
                             {a.category === 'deadline' && (
                                 <button className="tp-link danger" onClick={() => navigate('/drafts', {
                                     state: {type: 'delay', keywords: [a.title, a.description, `Frist: ${dateDe}`].filter(Boolean).join('. ')}
