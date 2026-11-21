@@ -259,11 +259,21 @@ def _clean_source(source: str) -> str:
     return source.strip().strip("[]").strip()
 
 
-async def _llm_summary(context: str, labels: set[str]) -> dict | None:
-    """LLM-Zusammenfassung; Punkte mit unbekannter Quelle werden verworfen (Traceability)."""
+async def _llm_summary(context: str, labels: set[str], single_source: str | None = None) -> dict | None:
+    """LLM-Zusammenfassung mit Quelle je Punkt (Traceability).
+
+    Zeitraum-Modus (mehrere Berichte/Briefe): Punkte, deren Quelle kein Label aus dem Input ist,
+    werden verworfen – sonst könnte die KI eine Quelle erfinden.
+    Text-Modus (`single_source` gesetzt): Es gibt nur EIN Dokument, also stammt jeder Punkt daraus.
+    Die KI nennt dort oft eine inhaltliche Quelle ("Baubesprechung 21.11.") statt des Labels "Text";
+    früher wurden dadurch alle Beschlüsse/Punkte/Risiken verworfen. Jetzt bekommt jeder Punkt das Label.
+    """
     result = await llm.complete_json(SYSTEM_PROMPT, context, _LLMSummary, max_tokens=1500)
     if result is None:
         return None
+    if single_source:
+        for item in (*result.keyDecisions, *result.actionItems, *result.vobRisks):
+            item.source = single_source
     ok = lambda s: _clean_source(s) in labels  # noqa: E731
     decisions = [d for d in result.keyDecisions if ok(d.source)]
     actions = [a for a in result.actionItems if ok(a.source)]
@@ -373,7 +383,7 @@ async def summarize_text(text: str, source_type: str | None, project: Project | 
     label = SOURCE_TYPE_LABELS.get(source_type or "", "Text")
     title = f"Zusammenfassung: {label}" + (f" • {project.name}" if project else "")
     clipped = text.strip()[:MAX_CONTEXT_CHARS]
-    content = await _llm_summary(f"[{label}] {clipped}", {label})
+    content = await _llm_summary(f"[{label}] {clipped}", {label}, single_source=label)
     mode = "ai"
     if content is None:
         content, mode = _offline_text(clipped, label), "offline"
