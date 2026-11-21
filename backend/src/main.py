@@ -10,6 +10,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from src.database import init_db
 
+from src.routers.notes import router as notes_router
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -25,6 +26,7 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+app.include_router(notes_router)
 
 @app.get("/")
 async def root():
