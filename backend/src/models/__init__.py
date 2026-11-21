@@ -1,4 +1,5 @@
 from .chat import ChatSession, ChatSessionCreate, ChatSessionRead, ChatMessage, ChatMessageCreate, ChatMessageRead
+from .contract import Contract, ContractCreate, ContractRead, ContractUpdate
 from .note import SiteNote, SiteNoteCreate, SiteNoteRead
 from .notice import FormalNotice, FormalNoticeCreate, FormalNoticeRead
 from .notice_draft import NoticeDraftData
@@ -19,6 +20,10 @@ __all__ = [
     "ProjectCreate",
     "ProjectUpdate",
     "ProjectRead",
+    "Contract",
+    "ContractCreate",
+    "ContractUpdate",
+    "ContractRead",
     "ConstructionPlan",
     "ConstructionPlanCreate",
     "ConstructionPlanUpdate",
