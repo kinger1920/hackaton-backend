@@ -277,12 +277,34 @@
     color: var(--chrome-text-muted);
 }
 
+.app-sidebar-close {
+    display: none;
+    margin-left: auto;
+    width: 30px;
+    height: 30px;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--chrome-border);
+    background: var(--chrome-bg-raised);
+    color: var(--chrome-text);
+    font-size: 20px;
+    line-height: 1;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    cursor: pointer;
+}
+
+.app-sidebar-backdrop {
+    display: none;
+}
+
 /* --------------------------------------------------------------------------
    Main column + top bar
    -------------------------------------------------------------------------- */
 .app-main {
     flex: 1;
     min-width: 0;
+    overflow-x: clip;
     display: flex;
     flex-direction: column;
     padding-top: var(--stripe-h, 6px);
@@ -296,8 +318,8 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 16px;
-    padding: 0 22px;
+    gap: 12px;
+    padding: 0 clamp(12px, 2vw, 22px);
     background-color: color-mix(in srgb, var(--chrome-bg) 86%, transparent);
     backdrop-filter: blur(12px);
     -webkit-backdrop-filter: blur(12px);
@@ -311,6 +333,14 @@
     align-items: center;
     gap: 8px;
     min-width: 0;
+}
+
+.app-header-left {
+    flex: 1 1 auto;
+}
+
+.app-header-right {
+    flex-shrink: 0;
 }
 
 /* One shared look for everything in the top bar */
@@ -337,6 +367,7 @@
     justify-content: center;
     width: var(--chip-h);
     padding: 0;
+    flex-shrink: 0;
     cursor: pointer;
 }
 
@@ -361,7 +392,7 @@
 /* Project selector chip */
 .hdr-project {
     min-width: 0;
-    max-width: 440px;
+    max-width: min(440px, 100%);
     padding: 0 4px 0 12px;
 }
 
@@ -371,6 +402,7 @@
     letter-spacing: 0.06em;
     text-transform: uppercase;
     color: var(--chrome-accent);
+    flex-shrink: 0;
 }
 
 .hdr-project select {
@@ -422,7 +454,7 @@
     width: 100%;
     max-width: 1320px;
     margin: 0 auto;
-    padding: 24px 28px;
+    padding: clamp(14px, 2.5vw, 24px) clamp(12px, 3vw, 28px);
 }
 
 /* Narrow screens: hide the less important chips */
@@ -430,5 +462,88 @@
     .hdr-weather,
     .hdr-status-text {
         display: none;
+    }
+}
+
+/* Tablet & Mobile: turn fixed sidebar into slide-over drawer */
+@media (max-width: 960px) {
+    .app-sidebar-slot,
+    .app-shell.collapsed .app-sidebar-slot {
+        width: 0;
+    }
+
+    .app-sidebar,
+    .app-shell.collapsed .app-sidebar {
+        width: min(280px, 84vw);
+        transform: translateX(-105%);
+        transition: transform 0.24s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.24s ease;
+        z-index: 70;
+    }
+
+    .app-shell.mobile-open .app-sidebar {
+        transform: translateX(0);
+        box-shadow: var(--shadow-lg);
+    }
+
+    /* Always show full nav labels inside the mobile drawer */
+    .app-shell.collapsed .app-sidebar .app-nav-label,
+    .app-shell.collapsed .app-sidebar .app-brand-text,
+    .app-shell.collapsed .app-sidebar .app-user-info {
+        opacity: 1;
+        pointer-events: auto;
+    }
+
+    .app-shell.collapsed .app-sidebar .app-nav-group {
+        font-size: 10.5px;
+        height: 24px;
+        margin: 10px 0 4px;
+        padding: 0 10px;
+        background-color: transparent;
+    }
+
+    .app-sidebar-close {
+        display: inline-flex;
+    }
+
+    .app-shell.mobile-open .app-sidebar-backdrop {
+        display: block;
+        position: fixed;
+        inset: var(--stripe-h, 6px) 0 0 0;
+        background: rgba(15, 23, 42, 0.45);
+        backdrop-filter: blur(2px);
+        z-index: 65;
+    }
+}
+
+@media (max-width: 640px) {
+    .app-shell {
+        --hdr-h: 50px;
+        --chip-h: 30px;
+    }
+
+    .app-header {
+        gap: 6px;
+    }
+
+    .app-header-left,
+    .app-header-right {
+        gap: 6px;
+    }
+
+    .hdr-project-label {
+        display: none;
+    }
+
+    .hdr-project {
+        padding: 0 4px 0 8px;
+        max-width: 100%;
+    }
+
+    .hdr-chip {
+        padding: 0 9px;
+    }
+
+    .app-header .lang-switcher-btn {
+        padding: 0 9px;
     }
 }

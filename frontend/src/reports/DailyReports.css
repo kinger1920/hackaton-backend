@@ -944,7 +944,7 @@
 
 @media (max-width: 640px) {
   .reports-folder-tabs {
-    padding: 0 14px;
+    padding: 0 10px;
     gap: 6px;
   }
 
@@ -957,6 +957,45 @@
   .reports-folder-tab.active::before,
   .reports-folder-tab.active::after {
     display: none;
+  }
+
+  .editor-panel,
+  .history-panel,
+  .modal-content {
+    padding: 16px;
+  }
+
+  .modal-overlay {
+    padding: 10px;
+  }
+
+  .reports-title-area {
+    flex: 1 1 100%;
+  }
+
+  .reference-banner,
+  .trade-add-row {
+    flex-wrap: wrap;
+  }
+
+  .report-view-section {
+    overflow-x: auto;
+  }
+
+  .report-view-table {
+    min-width: 480px;
+  }
+
+  .reports-history-dropdown-menu {
+    right: 0;
+    left: auto;
+    width: min(340px, calc(100vw - 24px));
+  }
+}
+
+@media (max-width: 480px) {
+  .attendance-row {
+    grid-template-columns: 1fr;
   }
 }
 

@@ -1442,4 +1442,104 @@
     background: #1d4ed8;
 }
 
+/* ==========================================================================
+   RESPONSIVE ADJUSTMENTS (Tablet & Mobile)
+   ========================================================================== */
+.dashboard-content {
+    padding: clamp(14px, 2.5vw, 32px);
+}
+
+.welcome-hero {
+    flex-wrap: wrap;
+    gap: 16px;
+}
+
+.hero-stats {
+    flex-wrap: wrap;
+    gap: 12px;
+}
+
+.kpi-grid {
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 230px), 1fr));
+    gap: clamp(12px, 2vw, 20px);
+}
+
+.dash-analysis-kpi-grid {
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 190px), 1fr));
+}
+
+.dash-workers-grid {
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr));
+}
+
+.dash-recent-grid {
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
+}
+
+.dash-trades-container {
+    overflow-x: auto;
+}
+
+@media (max-width: 768px) {
+    .dash-recent-header,
+    .dash-subpanel-header,
+    .doc-item,
+    .capture-actions,
+    .dash-emergency-box,
+    .dash-contact-row {
+        flex-wrap: wrap;
+        gap: 10px;
+    }
+
+    .dash-modal-search {
+        width: 100%;
+    }
+
+    .dash-modal-tabs {
+        width: 100%;
+        flex-wrap: wrap;
+    }
+}
+
+@media (max-width: 640px) {
+    .hero-stats {
+        width: 100%;
+    }
+
+    .hero-stat-card {
+        flex: 1 1 110px;
+        padding: 10px 12px;
+    }
+
+    .kpi-card {
+        padding: 16px;
+    }
+
+    .kpi-value {
+        font-size: 22px;
+    }
+
+    .dash-recent-projects-section {
+        margin-top: 20px;
+        padding: 16px;
+    }
+
+    .dash-analysis-subpanel {
+        padding: 14px;
+    }
+
+    .dash-modal-overlay {
+        padding: 10px;
+    }
+
+    .dash-modal-header,
+    .dash-modal-toolbar,
+    .dash-modal-body {
+        padding: 14px 16px;
+    }
+
+    .dash-emergency-hotline {
+        font-size: 16px;
+    }
+}
 

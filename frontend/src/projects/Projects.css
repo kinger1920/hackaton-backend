@@ -566,3 +566,51 @@
     border-top: 1px solid var(--border-light);
 }
 
+.projects-grid {
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr));
+}
+
+.projects-header-actions {
+    flex-wrap: wrap;
+    gap: 12px;
+}
+
+@media (max-width: 640px) {
+    .create-project-card,
+    .project-card {
+        padding: 16px;
+    }
+
+    .form-section {
+        padding: 14px;
+    }
+
+    .form-section-head,
+    .project-card-footer,
+    .form-actions {
+        flex-wrap: wrap;
+        gap: 10px;
+    }
+
+    .proj-modal-overlay {
+        padding: 10px;
+    }
+
+    .proj-modal-header,
+    .proj-modal-body,
+    .proj-modal-footer {
+        padding: 14px 16px;
+    }
+}
+
+@media (max-width: 480px) {
+    .project-figures,
+    .contractor-row {
+        grid-template-columns: 1fr;
+    }
+
+    .project-contractors li {
+        flex-wrap: wrap;
+    }
+}
+

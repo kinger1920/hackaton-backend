@@ -54,18 +54,19 @@ export const Login: React.FC = () => {
         <div
             style={{
                 position: 'relative',
-        display: 'flex',
-        justifyContent: 'center',
-        alignItems: 'center',
-        minHeight: '100vh',
-        backgroundColor: 'var(--color-slate-900)',
-        padding: '20px'
-      }}
-    >
-      {/* Top right language switcher on login page */}
-      <div style={{ position: 'fixed', top: '20px', right: '24px', zIndex: 100 }}>
-        <LanguageSwitcher />
-      </div>
+                display: 'flex',
+                flexDirection: 'column',
+                justifyContent: 'center',
+                alignItems: 'center',
+                minHeight: '100dvh',
+                backgroundColor: 'var(--color-slate-900)',
+                padding: '64px 16px 24px'
+            }}
+        >
+            {/* Top right language switcher on login page */}
+            <div style={{position: 'fixed', top: '14px', right: '16px', zIndex: 100}}>
+                <LanguageSwitcher/>
+            </div>
             <form
                 onSubmit={handleSubmit}
                 className="card"
@@ -75,7 +76,7 @@ export const Login: React.FC = () => {
                     alignItems: 'center',
                     width: '100%',
                     maxWidth: '400px',
-                    padding: '36px 32px',
+                    padding: 'clamp(22px, 5vw, 36px) clamp(18px, 5vw, 32px)',
                     boxShadow: 'var(--shadow-xl)'
                 }}
             >

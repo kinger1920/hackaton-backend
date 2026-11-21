@@ -346,3 +346,49 @@
     font-size: 13px;
     font-weight: 600;
 }
+
+@media (max-width: 1024px) {
+    .pf-preview-card {
+        position: static;
+    }
+}
+
+@media (max-width: 640px) {
+    .pf-header {
+        flex-wrap: wrap;
+        gap: 12px;
+    }
+
+    .pf-toast {
+        margin-left: 0;
+    }
+
+    .pf-form-card,
+    .profile-section-card {
+        padding: 16px;
+    }
+
+    .pf-paper {
+        padding: 20px 18px;
+        font-size: 14px;
+    }
+
+    .pf-paper-sender {
+        max-width: 100%;
+    }
+
+    .pf-segment {
+        flex-wrap: wrap;
+        border-radius: var(--radius-md);
+    }
+
+    .pf-segment button {
+        padding: 6px 12px;
+        font-size: 12.5px;
+    }
+
+    .pf-actions {
+        flex-wrap: wrap;
+    }
+}
+

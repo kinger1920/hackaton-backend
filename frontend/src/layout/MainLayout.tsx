@@ -115,11 +115,30 @@ export const MainLayout: React.FC = () => {
 
     const isActive = (path: string) => location.pathname === path;
 
-    // Sidebar: pinned (icons + text) or collapsed (icons only). Remembered.
+    // Sidebar: pinned (icons + text) or collapsed (icons only). Remembered on desktop.
     const [sidebarMode, setSidebarMode] = useState<SidebarMode>(
         () => (localStorage.getItem(SIDEBAR_KEY) === 'collapsed' ? 'collapsed' : 'pinned')
     );
+    const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
+    useEffect(() => {
+        setMobileMenuOpen(false);
+    }, [location.pathname]);
+
+    useEffect(() => {
+        if (!mobileMenuOpen) return;
+        const onKeyDown = (e: KeyboardEvent) => {
+            if (e.key === 'Escape') setMobileMenuOpen(false);
+        };
+        window.addEventListener('keydown', onKeyDown);
+        return () => window.removeEventListener('keydown', onKeyDown);
+    }, [mobileMenuOpen]);
+
     const toggleSidebar = () => {
+        if (typeof window !== 'undefined' && window.matchMedia('(max-width: 960px)').matches) {
+            setMobileMenuOpen((prev) => !prev);
+            return;
+        }
         const next: SidebarMode = sidebarMode === 'pinned' ? 'collapsed' : 'pinned';
         setSidebarMode(next);
         localStorage.setItem(SIDEBAR_KEY, next);
@@ -177,9 +196,15 @@ export const MainLayout: React.FC = () => {
             };
 
     return (
-        <div className={`app-shell ${sidebarMode === 'collapsed' ? 'collapsed' : ''}`}>
+        <div className={`app-shell ${sidebarMode === 'collapsed' ? 'collapsed' : ''} ${mobileMenuOpen ? 'mobile-open' : ''}`}>
             {/* Space holder so the page sits next to the (fixed) sidebar */}
             <div className="app-sidebar-slot" aria-hidden="true"/>
+
+            <div
+                className="app-sidebar-backdrop"
+                aria-hidden="true"
+                onClick={() => setMobileMenuOpen(false)}
+            />
 
             <aside className="app-sidebar" aria-label={t('nav_aria', 'Hauptnavigation')}>
                 <div className="app-sidebar-brand">
@@ -190,6 +215,14 @@ export const MainLayout: React.FC = () => {
                         <div className="app-brand-title">Site<span>AI</span> Assistant</div>
                         <div className="app-brand-sub">Bautagesbericht &amp; Planung</div>
                     </div>
+                    <button
+                        type="button"
+                        className="app-sidebar-close"
+                        onClick={() => setMobileMenuOpen(false)}
+                        aria-label={t('btn_close', 'Schließen')}
+                    >
+                        ×
+                    </button>
                 </div>
 
                 <nav className="app-nav">
@@ -203,7 +236,10 @@ export const MainLayout: React.FC = () => {
                                         key={item.path}
                                         type="button"
                                         className={`app-nav-item ${isActive(item.path) ? 'active' : ''}`}
-                                        onClick={() => navigate(item.path)}
+                                        onClick={() => {
+                                            navigate(item.path);
+                                            setMobileMenuOpen(false);
+                                        }}
                                         title={sidebarMode === 'collapsed' ? label : undefined}
                                         aria-current={isActive(item.path) ? 'page' : undefined}
                                     >
@@ -220,7 +256,10 @@ export const MainLayout: React.FC = () => {
                     <button
                         type="button"
                         className={`app-user ${isActive('/profile') ? 'active' : ''}`}
-                        onClick={() => navigate('/profile')}
+                        onClick={() => {
+                            navigate('/profile');
+                            setMobileMenuOpen(false);
+                        }}
                         title={t('nav_profile')}
                     >
                         <div className="app-avatar">{userName.charAt(0).toUpperCase()}</div>

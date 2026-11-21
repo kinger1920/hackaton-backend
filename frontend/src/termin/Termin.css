@@ -1308,6 +1308,87 @@
   gap: 8px;
 }
 
+/* ---------- Responsive ---------- */
+@media (max-width: 900px) {
+  .tp-week-col {
+    min-height: auto;
+  }
+
+  .tp-cell {
+    min-height: 82px;
+    padding: 5px;
+  }
+}
+
+@media (max-width: 768px) {
+  .tp-toolbar {
+    gap: 8px;
+    padding: 10px;
+  }
+
+  .tp-segment {
+    width: 100%;
+  }
+
+  .tp-segment button {
+    flex: 1;
+    padding: 6px 8px;
+    font-size: 12.5px;
+    text-align: center;
+  }
+
+  .tp-nav {
+    min-width: 0;
+    width: 100%;
+    flex-wrap: wrap;
+  }
+
+  .tp-search {
+    min-width: 0;
+    width: 100%;
+  }
+
+  .tp-main {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    padding: 10px;
+  }
+
+  .tp-month {
+    min-width: 540px;
+  }
+}
+
+@media (max-width: 640px) {
+  .tp-form-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .tp-form-grid .span-2 {
+    grid-column: auto;
+  }
+
+  .tp-check {
+    margin-top: 4px;
+  }
+
+  .tp-modal {
+    max-height: 90vh;
+    overflow-y: auto;
+    padding: 14px;
+  }
+
+  .tp-modal-actions {
+    flex-wrap: wrap;
+  }
+}
+
+@media (max-width: 420px) {
+  .tp-year {
+    grid-template-columns: 1fr;
+  }
+}
+
 /* ---------- Druck ---------- */
 @media print {
   .tp-header-actions,
@@ -1321,3 +1402,4 @@
     grid-template-columns: 1fr;
   }
 }
+

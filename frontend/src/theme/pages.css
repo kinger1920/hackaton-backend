@@ -16,7 +16,7 @@
 :root .welcome-title,
 :root .tp-title {
     margin: 0 0 2px 0;
-    font-size: 22px;
+    font-size: clamp(19px, 2.2vw, 23px);
     font-weight: 700;
     line-height: 1.25;
     letter-spacing: -0.02em;
@@ -34,7 +34,7 @@
 :root .welcome-desc,
 :root .tp-sub {
     margin: 0;
-    font-size: 13.5px;
+    font-size: clamp(12.5px, 1.3vw, 13.5px);
     font-weight: 400;
     line-height: 1.45;
     color: var(--text-muted);
@@ -78,7 +78,7 @@
 }
 
 :root .welcome-hero {
-    margin-bottom: 22px;
+    margin-bottom: clamp(16px, 2.2vw, 22px);
 }
 
 :root .tp-title-group,
@@ -89,6 +89,7 @@
     align-items: center;
     gap: 12px;
     min-width: 0;
+    flex: 1 1 240px;
 }
 
 :root .capture-hero-icon,
@@ -120,7 +121,7 @@
 :root .projects-wrapper,
 :root .profile-wrapper,
 :root .drafts-container {
-    gap: 20px;
+    gap: clamp(14px, 2vw, 20px);
 }
 
 /* --------------------------------------------------------------------------
@@ -154,7 +155,7 @@
 :root .summary-result-card,
 :root .profile-section-card,
 :root .history-panel {
-    padding: 22px;
+    padding: clamp(14px, 2.2vw, 22px);
 }
 
 /* Tactile micro-feedback on interactive cards without cartoonish bouncing */

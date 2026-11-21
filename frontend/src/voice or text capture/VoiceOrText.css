@@ -549,3 +549,31 @@
   background: #fef2f2;
 }
 
+@media (max-width: 640px) {
+  .capture-hero,
+  .audio-card,
+  .categories-container,
+  .capture-actions-bar {
+    padding: 16px;
+  }
+
+  .recorded-player,
+  .bullet-input-row,
+  .custom-template-chip {
+    flex-wrap: wrap;
+  }
+
+  .bullet-input {
+    min-width: 0;
+  }
+
+  .record-action-area {
+    padding: 18px 14px;
+  }
+
+  .audio-category-chip,
+  .action-toggle-chip {
+    width: 100%;
+    justify-content: flex-start;
+  }
+}

@@ -879,3 +879,52 @@
     line-height: 1.45;
 }
 
+@media (max-width: 1024px) {
+    .su-result-card {
+        position: static;
+    }
+}
+
+@media (max-width: 640px) {
+    .summary-header {
+        flex-wrap: wrap;
+    }
+
+    .su-input-card {
+        padding: 16px;
+    }
+
+    .su-result-body {
+        padding: 16px;
+        gap: 16px;
+    }
+
+    .su-empty {
+        padding: 36px 18px;
+    }
+
+    .su-textarea {
+        min-height: 180px;
+    }
+
+    .su-contract-picker-row,
+    .su-schedule-form {
+        flex-wrap: wrap;
+        width: 100%;
+    }
+
+    .su-contract-picker-row .btn,
+    .su-schedule-form .form-input {
+        width: 100%;
+    }
+
+    .su-action-meta,
+    .su-action-buttons {
+        padding-left: 0;
+    }
+
+    .su-toolbar-title > span:first-child {
+        white-space: normal;
+    }
+}
+

@@ -443,3 +443,28 @@
     grid-template-columns: 1fr 1fr;
   }
 }
+
+@media (max-width: 640px) {
+  .masterdata-row-actions {
+    justify-content: flex-start;
+    width: 100%;
+  }
+
+  .masterdata-form-actions {
+    flex-wrap: wrap;
+  }
+
+  .masterdata-form {
+    padding: 12px;
+  }
+
+  .plan-tasks {
+    padding: 10px;
+  }
+}
+
+@media (max-width: 520px) {
+  .plan-new {
+    grid-template-columns: 1fr;
+  }
+}

@@ -1794,6 +1794,7 @@ export const LetterDrafts: React.FC = () => {
                     ) : filteredLetters.length === 0 ? (
                         <div className="ld-empty"><p>{t('ld_empty_filter')}</p></div>
                     ) : (
+                        <div className="ld-table-wrap">
                         <table className="ld-table">
                             <colgroup>
                                 <col className="ld-col-type"/>
@@ -1891,6 +1892,7 @@ export const LetterDrafts: React.FC = () => {
                             })}
                             </tbody>
                         </table>
+                        </div>
                     )}
                 </div>
             )}

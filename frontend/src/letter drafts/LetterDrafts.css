@@ -1078,6 +1078,114 @@
 }
 
 /* --------------------------------------------------------------------------
+   Responsive adjustments
+   -------------------------------------------------------------------------- */
+.ld-table-wrap {
+    width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+}
+
+.ld-table {
+    min-width: 680px;
+}
+
+@media (max-width: 1024px) {
+    .letter-paper-card {
+        position: static;
+    }
+}
+
+@media (max-width: 640px) {
+    .drafts-header {
+        flex-wrap: wrap;
+    }
+
+    .generator-card {
+        padding: 16px;
+    }
+
+    .ld-fields-grid,
+    .ld-generate-row {
+        grid-template-columns: 1fr;
+    }
+
+    .paper-toolbar,
+    .ld-actions,
+    .ld-result-bar {
+        flex-wrap: wrap;
+    }
+
+    .paper-content {
+        padding: 18px 16px;
+        font-size: 14px;
+        display: flex;
+        flex-direction: column;
+    }
+
+    .ld-draft-stamp {
+        position: static;
+        align-self: flex-end;
+        margin-bottom: 10px;
+    }
+
+    .ld-sender-line {
+        max-width: 100%;
+    }
+
+    .ld-letter-head {
+        flex-direction: column;
+        gap: 12px;
+        margin-bottom: 18px;
+    }
+
+    .ld-meta-block {
+        text-align: left;
+    }
+
+    .letter-body-editable {
+        min-height: 300px;
+        font-size: 14px;
+    }
+
+    .ld-filter-bar {
+        padding: 12px;
+    }
+
+    .ld-filter-select,
+    .ld-date-range {
+        width: 100%;
+        flex: 1 1 100%;
+    }
+
+    .ld-date-range {
+        flex-wrap: wrap;
+    }
+
+    .ld-date-range .form-input {
+        flex: 1 1 120px;
+        width: auto;
+        min-width: 0;
+    }
+}
+
+@media (max-width: 520px) {
+    .type-selector-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .ld-toggle {
+        width: 100%;
+    }
+
+    .ld-toggle-btn {
+        font-size: 12.5px;
+        padding: 7px 8px;
+        gap: 5px;
+    }
+}
+
+/* --------------------------------------------------------------------------
    Print: only the letter sheet.
    Active while <body> carries "print-letter-only" (set by printLetter in LetterDrafts.tsx),
    so printing other pages is unaffected. Hides everything that neither is, contains
