@@ -44,3 +44,16 @@ def create_site_note(
     session.commit()
     session.refresh(db_note)
     return db_note
+
+
+@router.delete("/{note_id}", status_code=status.HTTP_204_NO_CONTENT, tags=["Site Notes"])
+def delete_site_note(
+        note_id: int,
+        session: Session = Depends(get_session)
+):
+    note = session.get(SiteNote, note_id)
+    if not note:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="SiteNote not found")
+
+    session.delete(note)
+    session.commit()
