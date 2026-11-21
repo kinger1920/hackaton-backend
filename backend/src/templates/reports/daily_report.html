@@ -1,0 +1,83 @@
+<!doctype html>
+<!-- Bautagesbericht für den PDF-Export (WeasyPrint). Gefüllt von services/report_documents.py.
+     Inhalt kommt fertig aus Bericht + Analyse (Code) – hier nur Layout. -->
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<title>Bautagesbericht Nr. {{ d.number }} – {{ d.date }}</title>
+<style>
+  @page {
+    size: A4;
+    margin: 16mm 18mm 20mm 20mm;
+    @bottom-left { content: "{{ d.footer }}"; font-family: "Helvetica Neue", Helvetica, Arial, sans-serif; font-size: 7pt; color: #666; }
+    @bottom-right { content: "Seite " counter(page) " von " counter(pages); font-family: "Helvetica Neue", Helvetica, Arial, sans-serif; font-size: 7pt; color: #666; }
+  }
+  body { font-family: "Helvetica Neue", Helvetica, Arial, sans-serif; font-size: 9.5pt; line-height: 1.35; color: #111; }
+  h1 { font-size: 15pt; margin: 0 0 1mm; }
+  .sub { color: #555; margin-bottom: 4mm; }
+  .draft-badge { color: #c01c1c; font-weight: bold; margin-bottom: 3mm; }
+  /* Wasserzeichen: position fixed wiederholt sich in WeasyPrint auf jeder Seite. */
+  .watermark { position: fixed; top: 105mm; left: 0; width: 100%; text-align: center; font-size: 88pt; font-weight: bold;
+               color: rgba(192, 28, 28, 0.13); transform: rotate(-35deg); z-index: -1; letter-spacing: 6pt; }
+  table { width: 100%; border-collapse: collapse; margin: 1mm 0 4mm; }
+  th, td { border: 0.5pt solid #bbb; padding: 1.4mm 2mm; text-align: left; vertical-align: top; }
+  th { background: #f1f3f5; font-weight: bold; }
+  .meta td:first-child { width: 34mm; color: #444; background: #fafafa; }
+  h2 { font-size: 10.5pt; margin: 4mm 0 1.5mm; border-bottom: 0.5pt solid #999; padding-bottom: 0.8mm; }
+  .text { white-space: pre-wrap; margin: 0 0 2mm; }
+  .num { text-align: right; width: 16mm; }
+  .late { color: #c01c1c; font-weight: bold; }
+  .cols { display: flex; gap: 6mm; }
+  .cols > div { flex: 1; }
+  ul { margin: 1mm 0 2mm; padding-left: 5mm; }
+  .sign { display: flex; gap: 12mm; margin-top: 14mm; page-break-inside: avoid; }
+  .sign div { flex: 1; border-top: 0.6pt solid #111; padding-top: 1.5mm; font-size: 8.5pt; color: #333; }
+</style>
+</head>
+<body>
+  {% if d.is_draft %}<div class="watermark">ENTWURF</div>{% endif %}
+  <h1>Bautagesbericht Nr. {{ d.number }}</h1>
+  <div class="sub">{{ d.weekday }}, {{ d.date }} · {{ d.company }}</div>
+  {% if d.is_draft %}<div class="draft-badge">ENTWURF – nicht abgeschlossen</div>{% endif %}
+
+  <table class="meta">
+    <tr><td>Bauvorhaben</td><td>{{ d.project_name }}{% if d.project_number %} ({{ d.project_number }}){% endif %}</td></tr>
+    {% if d.project_location %}<tr><td>Ort</td><td>{{ d.project_location }}</td></tr>{% endif %}
+    <tr><td>Bauleitung</td><td>{{ d.site_manager }}</td></tr>
+    <tr><td>Wetter</td><td>{{ d.weather }}</td></tr>
+    <tr><td>Personal</td><td>{{ d.workforce }}</td></tr>
+    <tr><td>Gewerke</td><td>{{ d.trades }}</td></tr>
+  </table>
+
+  <h2>Ausgeführte Arbeiten</h2>
+  <p class="text">{{ d.work_completed }}</p>
+  <h2>Vorkommnisse / Behinderungen</h2>
+  <p class="text">{{ d.incidents }}</p>
+  <h2>Lieferungen / Abnahmen / Prüfungen</h2>
+  <p class="text">{{ d.deliveries }}</p>
+
+  {% if d.progress %}
+  <h2>Soll/Ist je Vorgang (Bauzeitenplan)</h2>
+  <table>
+    <tr><th>Code</th><th>Vorgang</th><th class="num">Soll %</th><th class="num">Ist %</th><th class="num">Verzug AT</th><th>Status</th></tr>
+    {% for r in d.progress %}
+    <tr><td>{{ r.code }}</td><td>{{ r.title }}</td><td class="num">{{ r.plan }}</td><td class="num">{{ r.actual }}</td>
+        <td class="num{% if r.delay != '0,0' %} late{% endif %}">{{ r.delay }}</td><td>{{ r.status }}</td></tr>
+    {% endfor %}
+  </table>
+  {% endif %}
+
+  <h2>Tagesauswertung</h2>
+  <div class="cols">
+    <div><strong>Was lief gut</strong>
+      <ul>{% for i in d.went_well %}<li>{{ i }}</li>{% else %}<li>–</li>{% endfor %}</ul></div>
+    <div><strong>Was lief schlecht</strong>
+      <ul>{% for i in d.went_badly %}<li>{{ i }}</li>{% else %}<li>–</li>{% endfor %}</ul></div>
+  </div>
+
+  <div class="sign">
+    <div>Ort, Datum / Bauleiter ({{ d.site_manager }})</div>
+    <div>Ort, Datum / Auftraggeber bzw. Bauüberwachung</div>
+  </div>
+</body>
+</html>

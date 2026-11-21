@@ -5,10 +5,12 @@ Inhalt (Betreff, Brieftext) kommt unverändert aus dem FormalNotice – hier ent
 Jedes Dokument trägt den Hinweis "Keine Rechtsberatung" und das Freigabe-Audit (wer/wann).
 
 macOS-Hinweis: WeasyPrint braucht Pango (`brew install pango`) und den Suchpfad
-`DYLD_FALLBACK_LIBRARY_PATH=/opt/homebrew/lib` (muss VOR dem Start von Python gesetzt sein).
+`DYLD_FALLBACK_LIBRARY_PATH=/opt/homebrew/lib` (muss VOR dem Start von Python gesetzt sein –
+`scripts/dev.sh` erledigt das). Ob PDF geht, zeigt `GET /health` → `pdf_export`.
 """
 
 import datetime as dt
+import functools
 import io
 import re
 from dataclasses import dataclass
@@ -28,8 +30,24 @@ TEMPLATE_DIR = Path(__file__).resolve().parent.parent / "templates" / "letters"
 _jinja = Environment(loader=FileSystemLoader(TEMPLATE_DIR), autoescape=select_autoescape(["html"]))
 
 
+PDF_UNAVAILABLE_HINT = (
+    "PDF-Export nicht verfügbar: WeasyPrint findet Pango nicht. Server mit `backend/scripts/dev.sh` "
+    "starten (setzt den Pfad) bzw. einmalig `brew install pango`. Der Word-Export (.docx) funktioniert."
+)
+
+
 class PdfUnavailable(Exception):
     """WeasyPrint kann seine Systembibliotheken (Pango) nicht laden."""
+
+
+@functools.cache
+def pdf_available() -> bool:
+    """True, wenn WeasyPrint samt Pango geladen werden kann (einmal geprüft, dann gecacht)."""
+    try:
+        import weasyprint  # noqa: F401
+    except OSError:
+        return False
+    return True
 
 
 @dataclass
@@ -82,14 +100,10 @@ def filename(notice: FormalNotice, project: Project | None, ext: str) -> str:
 
 def render_pdf(notice: FormalNotice, data: NoticeDraftData, project: Project) -> bytes:
     """Freigegebener Brief → PDF-Bytes. Fehler: PdfUnavailable, wenn Pango fehlt."""
-    try:
-        # Spät importieren: Fehlen die Systembibliotheken, läuft der Rest der App trotzdem.
-        import weasyprint
-    except OSError as e:
-        raise PdfUnavailable(
-            "WeasyPrint findet Pango nicht. macOS: `brew install pango` und "
-            "DYLD_FALLBACK_LIBRARY_PATH=/opt/homebrew/lib setzen."
-        ) from e
+    if not pdf_available():
+        raise PdfUnavailable(PDF_UNAVAILABLE_HINT)
+    # Spät importieren: Fehlen die Systembibliotheken, läuft der Rest der App trotzdem.
+    import weasyprint
 
     html = _jinja.get_template("notice.html").render(**vars(_letter_data(notice, data, project)))
     return weasyprint.HTML(string=html).write_pdf()

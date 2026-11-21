@@ -14,6 +14,12 @@ class DailyReportBase(SQLModel):
     work_completed: Optional[str] = None
     deviations_incidents: Optional[str] = None
     status: str = Field(default="draft")  # draft, reviewed, finalized, exported
+    # Ergänzt für das Formular im Frontend (DailyReports.tsx). Nullable, damit ältere DBs per
+    # Spalten-Ergänzung in database.py weiterlaufen.
+    report_number: Optional[int] = None  # laufende Nr. des Bautagesberichts
+    workforce_count: Optional[int] = None  # Personal gesamt (Personen)
+    trades: Optional[str] = None  # JSON-Liste: ["Rohbau (Fa. BetonTech)", "Tiefbau"]
+    deliveries: Optional[str] = None  # Lieferungen, Abnahmen & Prüfungen
 
 
 class DailyReport(DailyReportBase, table=True):

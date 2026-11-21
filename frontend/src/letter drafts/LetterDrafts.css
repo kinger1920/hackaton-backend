@@ -1,20 +1,22 @@
 /* ==========================================================================
-   LETTER DRAFTS STYLES
+   LETTER DRAFTS (Briefentwürfe)
    Uses design tokens from global index.css
    ========================================================================== */
 
 .drafts-container {
-    max-width: 1200px;
+    max-width: 1240px;
     width: 100%;
+    min-width: 0;
     display: flex;
     flex-direction: column;
-    gap: 24px;
+    gap: 20px;
 }
 
 .drafts-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
+    gap: 16px;
 }
 
 .drafts-header h1 {
@@ -29,11 +31,104 @@
     color: var(--text-muted);
 }
 
-/* Two Column Layout: Generator on Left, Paper Preview on Right */
+.drafts-container .toast-success {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 14px;
+    border-radius: var(--radius-full);
+    background-color: var(--color-success-light);
+    border: 1px solid var(--color-success-border);
+    color: var(--color-success-dark);
+    font-size: 13px;
+    font-weight: 600;
+}
+
+/* --------------------------------------------------------------------------
+   Sliding toggle: Neuer Brief | Meine Briefe
+   -------------------------------------------------------------------------- */
+.ld-toggle-row {
+    display: flex;
+    justify-content: center;
+}
+
+.ld-toggle {
+    position: relative;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    width: 420px;
+    max-width: 100%;
+    padding: 4px;
+    border-radius: var(--radius-full);
+    background-color: var(--color-slate-100);
+    border: 1px solid var(--color-slate-200);
+}
+
+.ld-toggle-thumb {
+    position: absolute;
+    top: 4px;
+    bottom: 4px;
+    left: 4px;
+    width: calc(50% - 4px);
+    border-radius: var(--radius-full);
+    background-color: var(--bg-surface);
+    box-shadow: var(--shadow-md);
+    transition: transform 0.28s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.ld-toggle-thumb.right {
+    transform: translateX(100%);
+}
+
+.ld-toggle-btn {
+    position: relative;
+    z-index: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 9px 16px;
+    border: none;
+    background: none;
+    border-radius: var(--radius-full);
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--color-slate-500);
+    cursor: pointer;
+    transition: color var(--transition-fast);
+}
+
+.ld-toggle-btn:hover {
+    color: var(--color-slate-800);
+}
+
+.ld-toggle-btn.active {
+    color: var(--color-primary);
+}
+
+.ld-count {
+    min-width: 22px;
+    padding: 1px 7px;
+    border-radius: var(--radius-full);
+    background-color: var(--color-slate-200);
+    color: var(--color-slate-700);
+    font-size: 12px;
+    font-weight: 700;
+}
+
+.ld-toggle-btn.active .ld-count {
+    background-color: var(--color-primary-light);
+    color: var(--color-primary);
+}
+
+/* --------------------------------------------------------------------------
+   Two-column editor
+   -------------------------------------------------------------------------- */
 .drafts-split-layout {
     display: grid;
-    grid-template-columns: 1fr 1.2fr;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr);
     gap: 24px;
+    align-items: start;
 }
 
 @media (max-width: 1024px) {
@@ -42,28 +137,86 @@
     }
 }
 
-/* Generator Form Card */
 .generator-card {
+    min-width: 0;
     background-color: var(--bg-surface);
     border-radius: var(--radius-lg);
     border: 1px solid var(--border-light);
-    padding: 24px;
+    padding: 22px;
     box-shadow: var(--shadow-sm);
     display: flex;
     flex-direction: column;
-    gap: 20px;
+    gap: 18px;
 }
 
+.ld-editing-banner {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 9px 12px;
+    border-radius: var(--radius-md);
+    background-color: var(--color-primary-light);
+    border: 1px solid var(--color-primary-border);
+    color: var(--color-primary);
+    font-size: 13px;
+    font-weight: 600;
+}
+
+.ld-link-btn {
+    margin-left: auto;
+    border: none;
+    background: none;
+    color: var(--color-primary);
+    font-size: 13px;
+    font-weight: 700;
+    text-decoration: underline;
+    cursor: pointer;
+}
+
+/* Steps */
+.ld-step {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding-bottom: 18px;
+    border-bottom: 1px solid var(--border-light);
+}
+
+.ld-step-title {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--color-slate-900);
+}
+
+.ld-step-num {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    border-radius: var(--radius-full);
+    background-color: var(--color-primary);
+    color: #ffffff;
+    font-size: 12px;
+    font-weight: 800;
+}
+
+/* Letter type tiles */
 .type-selector-grid {
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 10px;
 }
 
 .type-btn {
+    min-width: 0;
     display: flex;
     flex-direction: column;
     align-items: flex-start;
+    gap: 4px;
     padding: 12px 14px;
     border-radius: var(--radius-md);
     border: 1px solid var(--color-slate-200);
@@ -74,8 +227,9 @@
 }
 
 .type-btn:hover {
-    background-color: var(--color-slate-100);
+    background-color: var(--bg-surface);
     border-color: var(--color-slate-300);
+    box-shadow: var(--shadow-sm);
 }
 
 .type-btn.active {
@@ -85,47 +239,151 @@
 }
 
 .type-btn-title {
-    font-size: 13px;
-    font-weight: 700;
-    color: var(--color-slate-900);
     display: flex;
     align-items: center;
-    gap: 6px;
-    margin-bottom: 2px;
+    gap: 8px;
+    max-width: 100%;
+    font-size: 13.5px;
+    font-weight: 700;
+    color: var(--color-slate-900);
+}
+
+.type-btn-title svg {
+    flex-shrink: 0;
+}
+
+/* long German compounds (Behinderungsanzeige, Mehrkostenanmeldung) may break */
+.type-btn-title span {
+    min-width: 0;
+    hyphens: auto;
+    overflow-wrap: anywhere;
 }
 
 .type-btn-sub {
-    font-size: 11px;
+    padding-left: 25px;
+    font-size: 11.5px;
+    font-weight: 600;
     color: var(--color-slate-500);
 }
 
-/* Keyword Presets */
-.preset-chips {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 6px;
-    margin-top: 6px;
-}
-
-.preset-chip {
-    font-size: 11px;
-    padding: 4px 8px;
-    border-radius: var(--radius-full);
-    background-color: var(--color-slate-100);
-    color: var(--color-slate-700);
-    border: 1px solid var(--color-slate-200);
-    cursor: pointer;
-    transition: all var(--transition-fast);
-}
-
-.preset-chip:hover {
-    background-color: var(--color-primary-light);
+.type-btn.active .type-btn-sub {
     color: var(--color-primary);
-    border-color: var(--color-primary-border);
 }
 
-/* Letter Paper Preview */
+/* Fields */
+.ld-fields-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+}
+
+.ld-fields-grid:empty {
+    display: none;
+}
+
+.ld-field-hint {
+    font-size: 12px;
+    color: var(--text-muted);
+}
+
+.ld-center {
+    text-align: center;
+    margin-top: -8px;
+}
+
+/* Staffing: Soll vs. Ist */
+.ld-staffing {
+    display: flex;
+    align-items: flex-end;
+    flex-wrap: wrap;
+    gap: 12px;
+    padding: 12px 14px;
+    border-radius: var(--radius-md);
+    background-color: var(--color-slate-50);
+    border: 1px solid var(--color-slate-200);
+}
+
+.ld-staffing-item {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.ld-staffing-label {
+    font-size: 11.5px;
+    font-weight: 600;
+    color: var(--color-slate-500);
+}
+
+.ld-staffing-value {
+    font-size: 20px;
+    font-weight: 800;
+    line-height: 38px;
+    color: var(--color-slate-900);
+}
+
+.ld-staffing-input {
+    width: 110px;
+}
+
+.ld-call-btn {
+    margin-left: auto;
+    align-self: center;
+    padding: 7px 12px;
+    border-radius: var(--radius-full);
+    border: 1px solid var(--color-primary-border);
+    color: var(--color-primary);
+    font-size: 12.5px;
+    font-weight: 600;
+    text-decoration: none;
+    white-space: nowrap;
+}
+
+.ld-call-btn:hover {
+    background-color: var(--color-primary-light);
+}
+
+/* VOB reminder */
+.ld-vob-box {
+    display: flex;
+    gap: 10px;
+    padding: 12px 14px;
+    border-radius: var(--radius-md);
+    background-color: var(--color-info-light);
+    border: 1px solid #bae6fd;
+    color: #075985;
+    font-size: 13px;
+    line-height: 1.5;
+}
+
+.ld-vob-box.warn {
+    background-color: var(--color-warning-light);
+    border-color: #fde68a;
+    color: #92400e;
+}
+
+.ld-vob-icon {
+    flex-shrink: 0;
+    margin-top: 2px;
+}
+
+.ld-vob-box p {
+    margin-top: 2px;
+    white-space: pre-wrap;
+}
+
+.ld-generate-btn {
+    width: 100%;
+    padding: 13px;
+    font-size: 15px;
+}
+
+/* --------------------------------------------------------------------------
+   Letter paper
+   -------------------------------------------------------------------------- */
 .letter-paper-card {
+    position: sticky;
+    top: 16px;
     background-color: #ffffff;
     border-radius: var(--radius-lg);
     border: 1px solid var(--border-light);
@@ -136,58 +394,146 @@
 }
 
 .paper-toolbar {
-    padding: 14px 20px;
+    padding: 12px 18px;
     background-color: var(--color-slate-50);
     border-bottom: 1px solid var(--border-light);
     display: flex;
     justify-content: space-between;
     align-items: center;
-    flex-wrap: wrap;
     gap: 10px;
 }
 
+.ld-toolbar-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--color-slate-700);
+}
+
+.ld-status-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 5px 12px;
+    border-radius: var(--radius-full);
+    border: 1px solid var(--color-warning-border);
+    background-color: var(--color-warning-light);
+    color: var(--color-warning-dark);
+    font-size: 12.5px;
+    font-weight: 600;
+    cursor: pointer;
+    user-select: none;
+}
+
+.ld-status-toggle.checked {
+    border-color: var(--color-success-border);
+    background-color: var(--color-success-light);
+    color: var(--color-success-dark);
+}
+
+.ld-status-toggle input {
+    accent-color: var(--color-success);
+}
+
 .paper-content {
-    padding: 40px;
+    position: relative;
+    padding: 44px 48px 36px;
     font-family: 'Times New Roman', Times, serif;
     color: #111827;
     line-height: 1.6;
     font-size: 15px;
-    min-height: 520px;
     background-color: #ffffff;
 }
 
-.paper-header {
+.ld-draft-stamp {
+    position: absolute;
+    top: 18px;
+    right: 22px;
+    padding: 3px 10px;
+    border: 2px solid #f59e0b;
+    border-radius: 4px;
+    color: #d97706;
+    font-family: var(--font-family-base);
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 0.18em;
+    transform: rotate(4deg);
+}
+
+.ld-sender-line {
+    font-family: var(--font-family-base);
+    font-size: 10.5px;
+    color: var(--color-slate-500);
+    padding-bottom: 4px;
+    border-bottom: 1px solid #d1d5db;
+    margin-bottom: 14px;
+    max-width: 60%;
+}
+
+.ld-letter-head {
     display: flex;
     justify-content: space-between;
-    margin-bottom: 30px;
+    gap: 24px;
+    margin-bottom: 28px;
+}
+
+.ld-recipient-block {
+    min-height: 80px;
+    font-size: 15px;
+}
+
+.ld-meta-block {
+    text-align: right;
     font-family: var(--font-family-base);
     font-size: 12px;
     color: var(--color-slate-600);
-    border-bottom: 1px solid #e5e7eb;
-    padding-bottom: 14px;
+    line-height: 1.7;
+}
+
+.ld-pre {
+    white-space: pre-wrap;
 }
 
 .letter-subject {
+    width: 100%;
+    margin: 0 0 16px 0;
+    padding: 4px 6px;
+    border: 1px dashed transparent;
+    border-radius: 4px;
+    outline: none;
+    background-color: transparent;
     font-family: var(--font-family-base);
-    font-size: 16px;
+    font-size: 15.5px;
     font-weight: 800;
     color: #111827;
-    margin: 24px 0 18px 0;
+}
+
+.letter-subject:focus,
+.letter-subject:hover {
+    border-color: var(--color-slate-300);
 }
 
 .letter-body-editable {
     width: 100%;
-    min-height: 380px;
+    min-height: 460px;
+    padding: 6px;
     border: 1px dashed transparent;
-    padding: 8px;
+    border-radius: 4px;
+    outline: none;
+    resize: vertical;
+    background: transparent;
     font-family: inherit;
     font-size: 15px;
     line-height: 1.6;
-    outline: none;
-    resize: vertical;
     color: #111827;
-    background: transparent;
+    field-sizing: content;
     transition: border-color var(--transition-fast);
+}
+
+.letter-body-editable:hover {
+    border-color: var(--color-slate-200);
 }
 
 .letter-body-editable:focus {
@@ -195,8 +541,55 @@
     background-color: #fbfcfe;
 }
 
-.legal-notice-banner {
+.ld-print-body {
+    display: none;
+}
+
+/* Action bar under the letter */
+.ld-actions {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 10px;
     padding: 12px 18px;
+    border-top: 1px solid var(--border-light);
+    background-color: var(--color-slate-50);
+}
+
+.ld-actions-left {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.drafts-container .doc-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border-light);
+    background-color: var(--bg-surface);
+    color: var(--color-slate-700);
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all var(--transition-fast);
+}
+
+.drafts-container .doc-btn:hover {
+    border-color: var(--color-slate-300);
+    background-color: var(--color-slate-100);
+    color: var(--color-slate-900);
+}
+
+.ld-save-btn {
+    padding: 8px 16px;
+    font-size: 14px;
+}
+
+.legal-notice-banner {
+    padding: 11px 18px;
     background-color: #fffbeb;
     border-top: 1px solid #fef3c7;
     font-size: 12px;
@@ -207,28 +600,520 @@
     font-family: var(--font-family-base);
 }
 
-/* History List Card */
-.history-card {
+/* --------------------------------------------------------------------------
+   Saved letters (Meine Briefe)
+   -------------------------------------------------------------------------- */
+.ld-saved-card {
     background-color: var(--bg-surface);
     border-radius: var(--radius-lg);
     border: 1px solid var(--border-light);
-    padding: 24px;
     box-shadow: var(--shadow-sm);
+    overflow: hidden;
 }
 
-.history-item {
+.ld-filter-bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px;
+    padding: 16px 18px;
+    border-bottom: 1px solid var(--border-light);
+    background-color: var(--color-slate-50);
+}
+
+.ld-search {
+    position: relative;
+    flex: 1 1 240px;
+}
+
+.ld-search svg {
+    position: absolute;
+    left: 12px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--color-slate-400);
+    pointer-events: none;
+}
+
+.ld-search .form-input {
+    width: 100%;
+    padding-left: 36px;
+}
+
+.ld-filter-select {
+    width: auto;
+    min-width: 150px;
+}
+
+.ld-date-range {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--color-slate-500);
+}
+
+.ld-date-range .form-input {
+    width: 150px;
+}
+
+.ld-result-bar {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 14px;
-    border-radius: var(--radius-md);
-    border: 1px solid var(--border-light);
+    padding: 8px 18px;
+    border-bottom: 1px solid var(--border-light);
+    font-size: 12.5px;
+    color: var(--text-muted);
+}
+
+.ld-reset {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    margin-left: 0;
+    font-size: 12.5px;
+    text-decoration: none;
+}
+
+.ld-reset:hover {
+    text-decoration: underline;
+}
+
+/* Explorer-style sortable column headers */
+.ld-sort-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 0;
+    border: none;
+    background: none;
+    font: inherit;
+    letter-spacing: inherit;
+    text-transform: inherit;
+    color: inherit;
+    cursor: pointer;
+}
+
+.ld-sort-btn:hover {
+    color: var(--color-slate-900);
+}
+
+.ld-sort-btn.active {
+    color: var(--color-primary);
+}
+
+.ld-sort-idle {
+    opacity: 0;
+    transition: opacity var(--transition-fast);
+}
+
+.ld-sort-btn:hover .ld-sort-idle {
+    opacity: 0.6;
+}
+
+.ld-date-main {
+    display: block;
+    font-weight: 600;
+    color: var(--color-slate-800);
+}
+
+.ld-date-time {
+    display: block;
+    font-size: 12px;
+    color: var(--text-muted);
+}
+
+/* Fixed layout: the table always fits its card, long text gets "…" */
+.ld-table {
+    width: 100%;
+    table-layout: fixed;
+    border-collapse: collapse;
+    font-size: 13.5px;
+}
+
+.ld-col-type {
+    width: 22%;
+}
+
+.ld-col-to {
+    width: 18%;
+}
+
+.ld-col-date {
+    width: 96px;
+}
+
+.ld-col-status {
+    width: 104px;
+}
+
+.ld-col-actions {
+    width: 92px; /* 2 × 32px icons + gap + padding */
+}
+
+.ld-ellipsis {
+    display: block;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.ld-table th {
+    background-color: var(--bg-surface);
+    white-space: nowrap;
+    overflow: hidden;
+    padding: 10px 12px;
+    text-align: left;
+    font-size: 11.5px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--color-slate-500);
+    border-bottom: 1px solid var(--border-light);
+}
+
+.ld-table th:first-child,
+.ld-table td:first-child {
+    padding-left: 18px;
+}
+
+.ld-table td {
+    overflow: hidden;
+    padding: 12px;
+    border-bottom: 1px solid var(--color-slate-100);
+    color: var(--color-slate-700);
+    vertical-align: middle;
+}
+
+.ld-table tbody tr {
+    transition: background-color var(--transition-fast);
+}
+
+.ld-table tbody tr:hover {
     background-color: var(--color-slate-50);
-    margin-bottom: 10px;
+}
+
+.ld-table tbody tr.current {
+    background-color: var(--color-primary-light);
+}
+
+/* Whole row opens the letter */
+.ld-row {
+    cursor: pointer;
+}
+
+.ld-row:hover .ld-subject-text {
+    color: var(--color-primary);
+}
+
+.ld-row:focus-visible {
+    outline: 2px solid var(--color-primary);
+    outline-offset: -2px;
+}
+
+.ld-table td.ld-actions-cell {
+    padding-left: 4px;
+    padding-right: 14px;
+}
+
+.ld-type-cell {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+    font-weight: 600;
+    color: var(--color-slate-900);
+}
+
+.ld-type-cell svg {
+    flex-shrink: 0;
+}
+
+.ld-subject-text {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-weight: 600;
+    color: var(--color-slate-900);
+}
+
+.ld-subject-project {
+    display: block;
+    font-size: 12px;
+    color: var(--text-muted);
+}
+
+.ld-nowrap {
+    white-space: nowrap;
+}
+
+.ld-status-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 3px 10px;
+    border-radius: var(--radius-full);
+    background-color: var(--color-warning-light);
+    color: var(--color-warning-dark);
+    font-size: 12px;
+    font-weight: 700;
+    white-space: nowrap;
+}
+
+.ld-status-pill::before {
+    content: '';
+    width: 7px;
+    height: 7px;
+    border-radius: var(--radius-full);
+    background-color: currentColor;
+}
+
+.ld-status-pill.checked {
+    background-color: var(--color-success-light);
+    color: var(--color-success-dark);
+}
+
+.ld-row-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 6px;
+}
+
+.ld-icon-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border-light);
+    background-color: var(--bg-surface);
+    color: var(--color-slate-600);
+    cursor: pointer;
     transition: all var(--transition-fast);
 }
 
-.history-item:hover {
-    background-color: #ffffff;
+.ld-icon-btn:hover {
     border-color: var(--color-slate-300);
+    color: var(--color-slate-900);
+}
+
+.ld-icon-btn.danger:hover {
+    border-color: var(--color-danger-border);
+    background-color: var(--color-danger-light);
+    color: var(--color-danger-dark);
+}
+
+.ld-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+    padding: 48px 20px;
+    color: var(--text-muted);
+    font-size: 14px;
+}
+
+
+/* --------------------------------------------------------------------------
+   Backend integration: lock, messages, AI / approval buttons
+   -------------------------------------------------------------------------- */
+.ld-fieldset {
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+    min-width: 0;
+    margin: 0;
+    padding: 0;
+    border: none;
+}
+
+.ld-fieldset:disabled {
+    opacity: 0.65;
+}
+
+.ld-locked-banner {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 9px 12px;
+    border-radius: var(--radius-md);
+    background-color: var(--color-success-light);
+    border: 1px solid var(--color-success-border);
+    color: var(--color-success-dark);
+    font-size: 13px;
+    font-weight: 600;
+}
+
+.ld-generate-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
+    gap: 10px;
+}
+
+.ld-ai-btn {
+    padding: 13px 10px;
+    font-size: 14px;
+}
+
+.ld-toolbar-right,
+.ld-actions-right {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.ld-approve-btn {
+    padding: 8px 14px;
+    font-size: 14px;
+    color: var(--color-success-dark);
+    border-color: var(--color-success-border);
+}
+
+.ld-approve-btn:hover:not(:disabled) {
+    background-color: var(--color-success-light);
+}
+
+.drafts-container .doc-btn:disabled,
+.ld-icon-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.ld-offline {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    margin-left: 8px;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--color-warning-dark);
+}
+
+.ld-message {
+    position: relative;
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    margin: 12px 18px 0;
+    padding: 10px 36px 10px 12px;
+    border-radius: var(--radius-md);
+    font-size: 13px;
+    line-height: 1.5;
+}
+
+.ld-message svg {
+    flex-shrink: 0;
+    margin-top: 2px;
+}
+
+.ld-message.error {
+    background-color: var(--color-danger-light);
+    border: 1px solid var(--color-danger-border);
+    color: #991b1b;
+}
+
+.ld-message.review {
+    background-color: #eef2ff;
+    border: 1px solid #c7d2fe;
+    color: #3730a3;
+}
+
+.ld-message ul {
+    margin: 4px 0 0 16px;
+    padding: 0;
+}
+
+.ld-message-close {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    display: inline-flex;
+    padding: 2px;
+    border: none;
+    background: none;
+    color: inherit;
+    opacity: 0.6;
+    cursor: pointer;
+}
+
+.ld-message-close:hover {
+    opacity: 1;
+}
+
+/* Status pills: Entwurf (orange), Freigegeben (green), Exportiert (blue) */
+.ld-status-pill.approved {
+    background-color: var(--color-success-light);
+    color: var(--color-success-dark);
+}
+
+.ld-status-pill.exported {
+    background-color: var(--color-primary-light);
+    color: var(--color-primary);
+}
+
+.ld-result-count {
+    display: inline-flex;
+    align-items: center;
+}
+
+.ld-source-icon {
+    display: inline-block;
+    margin-right: 4px;
+    vertical-align: -1px;
+    color: var(--color-slate-400);
+}
+
+.ld-spin {
+    animation: ld-spin 1s linear infinite;
+}
+
+@keyframes ld-spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+/* --------------------------------------------------------------------------
+   Print: only the letter sheet.
+   Active while <body> carries "print-letter-only" (set by printLetter in LetterDrafts.tsx),
+   so printing other pages is unaffected. Hides everything that neither is, contains
+   nor sits inside the letter sheet – no blank extra pages.
+   -------------------------------------------------------------------------- */
+@media print {
+    body.print-letter-only *:not(:has(.letter-sheet)):not(.letter-sheet):not(.letter-sheet *) {
+        display: none !important;
+    }
+
+    body.print-letter-only *:has(.letter-sheet) {
+        overflow: visible !important;
+        height: auto !important;
+        max-height: none !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        border: none !important;
+        box-shadow: none !important;
+        background: #ffffff !important;
+        position: static !important;
+    }
+
+    body.print-letter-only .letter-sheet {
+        padding: 0;
+    }
+
+    body.print-letter-only .letter-body-editable {
+        display: none !important;
+    }
+
+    body.print-letter-only .ld-print-body {
+        display: block;
+    }
+
+    body.print-letter-only .letter-subject {
+        border: none;
+        padding: 0;
+    }
 }

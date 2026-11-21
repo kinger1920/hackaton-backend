@@ -357,3 +357,55 @@ export interface Contract {
 | `GET`    | `/contracts/{contract_id}/text` | Extrahierten PDF-Text + Metadaten abrufen (KI-Grundlage)                                                                                                                          | `200`, `404`        |
 | `PATCH`  | `/contracts/{contract_id}`      | Vertrags-Metadaten aktualisieren                                                                                                                                                  | `200`, `404`        |
 | `DELETE` | `/contracts/{contract_id}`      | Vertrag aus DB und PDF-Datei von Platte löschen                                                                                                                                   | `204`, `404`        |
+
+---
+
+## 8. `Company` (Firmen-Stammdaten)
+
+Quelle: `backend/src/models/company.py`
+
+| Feld | Typ (TS) | Pflicht bei Create | Default | Beschreibung / Werte |
+| --- | --- | --- | --- | --- |
+| `id` | `number` | *(nur Response)* | auto | Primärschlüssel |
+| `name` | `string` | **ja** | – | Firmenname (z. B. `"Müller Rohbau GmbH"`) |
+| `company_type` | `string` | nein | `"subcontractor"` | `"own"` (eigenes Unternehmen) \| `"client"` (Auftraggeber) \| `"subcontractor"` (Nachunternehmer) |
+| `trade` | `string \| null` | nein | `null` | Hauptgewerk (z. B. `"Rohbau"`, `"Maler"`, `"TGA"`) |
+| `address` | `string \| null` | nein | `null` | Firmenadresse (für Briefköpfe / Empfänger) |
+| `contact_person` | `string \| null` | nein | `null` | Ansprechpartner |
+| `phone` | `string \| null` | nein | `null` | Telefonnummer |
+| `email` | `string \| null` | nein | `null` | E-Mail-Adresse |
+| `vob_rules` | `string \| null` | nein | `null` | Firmenspezifische VOB-Regelungen / BVB |
+| `notes` | `string \| null` | nein | `null` | Sonstige Hinweise |
+| `created_at` | `string` | *(nur Response)* | UTC now | Erstellungszeitpunkt |
+| `updated_at` | `string` | *(nur Response)* | UTC now | Letzte Änderung |
+
+```ts
+export type CompanyType = 'own' | 'client' | 'subcontractor';
+
+export interface Company {
+  id: number;
+  name: string;
+  company_type: CompanyType;
+  trade?: string | null;
+  address?: string | null;
+  contact_person?: string | null;
+  phone?: string | null;
+  email?: string | null;
+  vob_rules?: string | null;
+  notes?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export type CompanyCreate = Omit<Company, 'id' | 'created_at' | 'updated_at'>;
+```
+
+### Bereits implementierte Endpunkte (`Company`)
+
+| Methode | Pfad | Beschreibung | Statuscodes |
+| --- | --- | --- | --- |
+| `GET` | `/companies` | Alle Firmen (optional: `?company_type=subcontractor&trade=Rohbau`) | `200` |
+| `GET` | `/companies/{company_id}` | Einzelne Firma abrufen | `200`, `404` |
+| `POST` | `/companies` | Neue Firma anlegen (Body: `CompanyCreate`) | `201` |
+| `PATCH` | `/companies/{company_id}` | Firmen-Stammdaten aktualisieren (Body: `CompanyUpdate`) | `200`, `404` |
+| `DELETE` | `/companies/{company_id}` | Firma löschen | `204`, `404` |

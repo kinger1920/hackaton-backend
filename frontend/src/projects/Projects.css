@@ -139,6 +139,11 @@
     border-top: 1px solid var(--border-light);
 }
 
+.project-card-actions {
+    display: flex;
+    gap: 6px;
+}
+
 .select-active-btn {
     font-size: 13px;
     font-weight: 600;
@@ -161,4 +166,272 @@
     border-color: var(--color-primary);
     color: var(--color-primary);
     cursor: default;
+}
+
+/* --------------------------------------------------------------------------
+   Create form: sections
+   -------------------------------------------------------------------------- */
+.create-project-card .form-grid-2 {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px 18px;
+}
+
+.create-project-card .form-span-2 {
+    grid-column: span 2;
+}
+
+.form-section {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    padding: 18px;
+    border: 1px solid var(--border-light);
+    border-radius: var(--radius-md, 10px);
+    background-color: var(--color-slate-50);
+}
+
+.form-section-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 16px;
+}
+
+.form-section-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--color-slate-700);
+}
+
+.form-section-title svg {
+    color: var(--color-primary);
+}
+
+.form-section-hint {
+    margin-top: 4px;
+    font-size: 12.5px;
+    color: var(--text-muted);
+}
+
+.form-group-center {
+    justify-content: flex-end;
+}
+
+.checkbox-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--color-slate-700);
+    background-color: var(--bg-surface);
+    border: 1px solid var(--border-light);
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+}
+
+.checkbox-row input {
+    width: 16px;
+    height: 16px;
+    accent-color: var(--color-primary);
+}
+
+.btn-sm {
+    padding: 6px 12px;
+    font-size: 13px;
+    white-space: nowrap;
+}
+
+.form-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 12px;
+    padding-top: 4px;
+}
+
+/* Contractor rows */
+.contractor-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.contractor-row {
+    display: grid;
+    grid-template-columns: 2fr 1.4fr 0.8fr 1.3fr 36px;
+    gap: 8px;
+    align-items: center;
+}
+
+.contractor-row-head {
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--color-slate-500);
+}
+
+.contractor-remove {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    border: 1px solid var(--border-light);
+    border-radius: var(--radius-sm);
+    background-color: var(--bg-surface);
+    color: var(--color-slate-500);
+    cursor: pointer;
+    transition: all var(--transition-fast);
+}
+
+.contractor-remove:hover {
+    color: var(--color-danger-dark);
+    border-color: var(--color-danger-border);
+    background-color: var(--color-danger-light);
+}
+
+.contractor-empty {
+    padding: 14px;
+    text-align: center;
+    font-size: 13px;
+    color: var(--text-muted);
+    border: 1px dashed var(--color-slate-300);
+    border-radius: var(--radius-sm);
+    background-color: var(--bg-surface);
+}
+
+/* --------------------------------------------------------------------------
+   Project card: figures & contractors
+   -------------------------------------------------------------------------- */
+.project-badges {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.project-badge-neutral {
+    background-color: var(--color-slate-100);
+    color: var(--color-slate-700);
+    border: 1px solid var(--color-slate-200);
+}
+
+.project-figures {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    margin-bottom: 16px;
+}
+
+.project-figure {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 8px 10px;
+    border-radius: var(--radius-sm);
+    background-color: var(--color-slate-50);
+    border: 1px solid var(--color-slate-200);
+}
+
+.project-figure-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--color-slate-500);
+}
+
+.project-figure-value {
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--color-slate-900);
+    font-variant-numeric: tabular-nums;
+}
+
+.project-contractors {
+    margin-bottom: 16px;
+    padding: 10px 12px;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--color-slate-200);
+}
+
+.project-contractors-head {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 8px;
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--color-slate-700);
+}
+
+.project-contractors-head span {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+}
+
+.project-contractors ul {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.project-contractors li {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 8px;
+    font-size: 12.5px;
+    color: var(--color-slate-700);
+}
+
+.project-contractor-name em {
+    font-style: normal;
+    color: var(--color-slate-500);
+}
+
+.project-contractor-meta {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--color-slate-500);
+    white-space: nowrap;
+}
+
+.project-contractor-meta a {
+    display: inline-flex;
+    color: var(--color-primary);
+}
+
+.project-contractor-more {
+    color: var(--color-slate-500);
+}
+
+@media (max-width: 760px) {
+    .create-project-card .form-grid-2 {
+        grid-template-columns: 1fr;
+    }
+
+    .create-project-card .form-span-2 {
+        grid-column: auto;
+    }
+
+    .contractor-row {
+        grid-template-columns: 1fr 1fr;
+    }
+
+    .contractor-row-head {
+        display: none;
+    }
 }

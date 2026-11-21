@@ -84,8 +84,17 @@ cd backend && uv sync
 cd backend && uv add <package-name>
 
 # Run the development server
-cd backend && uv run uvicorn src.main:app --reload
+cd backend && ./scripts/dev.sh   # or: uv run uvicorn src.main:app --reload (no Pango path, no .env vars)
 ```
+
+### Quickstart for Teammates (own API key, all features)
+
+1. `cp backend/.env.example backend/.env` and put **your own** Groq key into `GROQ_API_KEY` (free: https://console.groq.com/keys). Never commit `.env` or paste keys anywhere. Without a key everything still runs offline (`"mode": "offline"`).
+2. macOS, once: `brew install pango` (needed for PDF export).
+3. `cd backend && uv sync && ./scripts/dev.sh` – sets the Pango path on macOS and loads all values from `backend/.env` (incl. optional `DATABASE_URL`). Use this instead of plain `uvicorn`, also in PyCharm/VS Code terminals.
+4. Optional demo data in a copy (keeps the tracked DB clean): `cp data/site_assistant.db ~/bauassist-demo.db`, set `DATABASE_URL=sqlite:////Users/<you>/bauassist-demo.db` in `.env`, run `DATABASE_URL=sqlite:////Users/<you>/bauassist-demo.db uv run python scripts/seed_reports.py`, restart `./scripts/dev.sh`.
+5. Open http://localhost:8000/docs. `GET /health` must show `"pdf_export": true`; otherwise `/pdf` returns 503 with a hint (Word export always works).
+6. Frontend: `cd frontend && npm install && npm run dev`. Only if the backend is not on `localhost:8000`: `cp .env.example .env.local` and adjust `VITE_API_URL`.
 
 ### Environment & PDF Export
 
@@ -98,7 +107,11 @@ brew install pango
 export DYLD_FALLBACK_LIBRARY_PATH=/opt/homebrew/lib
 ```
 
-Without Pango the PDF endpoint returns `503` and the PDF test is skipped; Word export (`/docx`) works without system libraries. Linux/Docker: install `libpango-1.0-0 libpangoft2-1.0-0`.
+Daily reports export the same way: `GET /api/reports/{date}/pdf|docx` (404 if the day has no saved report; reports not `finalized` carry an "ENTWURF" watermark; contents incl. plan vs. actual table, rule-based day analysis and signature lines, no LLM call). Without Pango the PDF endpoints return `503` and the PDF test is skipped; Word export (`/docx`) works without system libraries. Linux/Docker: install `libpango-1.0-0 libpangoft2-1.0-0`.
+
+### Demo Data for Summaries & Analysis
+
+`POST /api/summarize` summarizes a week/month of daily reports, site notes and notices (or a free text such as an email). Daily reports: `GET/PUT /api/reports/{date}`, `POST /api/reports/{date}/fill` (dictation → report fields + progress per plan task, stored in `ReportProgress`). New nullable columns are added to existing SQLite DBs on startup (`add_missing_columns` in `database.py`), no reset needed. Plan vs. actual: `GET /api/analysis?period=week|all&ref_date=` (format of `frontend/src/analysis/Analysis.tsx`), `GET /api/reports/{date}/analysis` (what went well/badly that day), `GET /api/dashboard`. All numbers are computed in `services/analysis.py` (plan % linear over workdays, delay = (plan % − actual %) × duration); only the day analysis uses the LLM for free text. To get demo data (plan "Bauzeitenplan Rohbau" with 6 tasks, daily reports for workdays 02.11.–20.11.2026, progress per task) run `cd backend && DATABASE_URL=sqlite:///path/to/copy.db uv run python scripts/seed_reports.py`. Without `DATABASE_URL` it writes into the tracked `data/site_assistant.db` – do not commit that.
 
 ---
 

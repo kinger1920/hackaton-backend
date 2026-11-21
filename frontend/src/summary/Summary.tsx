@@ -30,6 +30,7 @@ import {
   DocumentSourceType
 } from '../context/ProjectDocuments';
 import { extractTextFromFile } from '../utils/fileExtractor';
+import { api, SummarizeRequest } from '../services/api';
 import '@frontend/src/index.css';
 import './Summary.css';
 
@@ -59,9 +60,13 @@ interface SummaryResult {
     title: string;
     description: string;
     recommendation: string;
-    linkType?: 'delay' | 'cost' | 'defect';
+    linkType?: 'delay' | 'cost' | 'defect' | null;
+    source?: string;
   }[];
   traceabilityNotes: string;
+  /** Nur bei Backend-Antworten: ai = KI, offline = Regel-Fallback */
+  mode?: 'ai' | 'offline';
+  sources?: string[];
 }
 
 export const Summary: React.FC = () => {
@@ -201,11 +206,41 @@ export const Summary: React.FC = () => {
     }
   };
 
-  const handleSynthesize = () => {
+  // Backend: POST /api/summarize (Text-Modus). Fällt das Backend aus, greift die lokale Synthese.
+  const handleSynthesize = async () => {
     if (!inputText.trim()) return;
 
     setIsSynthesizing(true);
+    const req: SummarizeRequest = {
+      text: inputText.trim(),
+      project_id: Number(activeProject.id),
+      source_type: activeSource === 'upload' || uploadedFile ? 'minutes' : activeSource
+    };
+    try {
+      const res = await api.summarize(req);
+      setSummaryData(res);
+      setIsSynthesizing(false);
+      return;
+    } catch (err) {
+      console.warn('Backend summarize Fallback (lokal):', err);
+    }
+    synthesizeLocally();
+  };
 
+  // Backend: POST /api/summarize (Zeitraum-Modus) – Tagesberichte, Notizen und Briefe des Projekts.
+  const handleSummarizePeriod = async (period: 'week' | 'month') => {
+    setIsSynthesizing(true);
+    try {
+      const res = await api.summarize({ project_id: Number(activeProject.id), period });
+      setSummaryData(res);
+    } catch (err: any) {
+      alert(`Zusammenfassung aus Projektdaten nicht möglich: ${err?.message || err}`);
+    } finally {
+      setIsSynthesizing(false);
+    }
+  };
+
+  const synthesizeLocally = () => {
     setTimeout(() => {
       if (uploadedFile) {
         setSummaryData({
@@ -629,8 +664,34 @@ ${summaryData.vobRisks.map((r) => `<p><strong>${r.title}</strong><br/>${r.descri
             onClick={handleSynthesize}
           >
             <Sparkles size={16} />
-            <span>{t('sum_btn_synthesize')}</span>
+            <span>{isSynthesizing ? 'KI fasst zusammen…' : t('sum_btn_synthesize')}</span>
           </button>
+
+          {/* Zusammenfassung direkt aus den Projektdaten im Backend */}
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              style={{ flex: 1 }}
+              disabled={isSynthesizing}
+              onClick={() => handleSummarizePeriod('week')}
+              title="Tagesberichte, Notizen und Briefe dieser Woche zusammenfassen"
+            >
+              <Calendar size={14} />
+              <span>Diese Woche (Projektdaten)</span>
+            </button>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              style={{ flex: 1 }}
+              disabled={isSynthesizing}
+              onClick={() => handleSummarizePeriod('month')}
+              title="Tagesberichte, Notizen und Briefe dieses Monats zusammenfassen"
+            >
+              <Layers size={14} />
+              <span>Dieser Monat (Projektdaten)</span>
+            </button>
+          </div>
         </div>
 
         {/* Right Column: Structured Synthesis Output */}
@@ -642,7 +703,14 @@ ${summaryData.vobRisks.map((r) => `<p><strong>${r.title}</strong><br/>${r.descri
                 {summaryData.title}
               </h2>
             </div>
-            <span className="badge badge-info">{activeProject.name}</span>
+            <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+              {summaryData.mode && (
+                <span className="badge badge-info" title={summaryData.mode === 'ai' ? 'Von der KI erstellt' : 'Regelbasiert (KI nicht verfügbar)'}>
+                  {summaryData.mode === 'ai' ? 'KI' : 'Offline'}
+                </span>
+              )}
+              <span className="badge badge-info">{activeProject.name}</span>
+            </div>
           </div>
 
           {/* Section 1: Executive Summary */}
@@ -732,12 +800,22 @@ ${summaryData.vobRisks.map((r) => `<p><strong>${r.title}</strong><br/>${r.descri
                   <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--color-slate-700)' }}>
                     Handlungsempfehlung: {risk.recommendation}
                   </div>
+                  {risk.source && (
+                    <div style={{ fontSize: '11px', color: 'var(--color-slate-500)' }}>🔍 Quelle: {risk.source}</div>
+                  )}
 
                   <button
                     className="risk-action-btn"
-                    onClick={() => navigate('/drafts')}
+                    onClick={() =>
+                      navigate('/drafts', {
+                        state: {
+                          type: risk.linkType ?? 'delay',
+                          keywords: `${risk.title}. ${risk.description}${risk.source ? ` (Quelle: ${risk.source})` : ''}`
+                        }
+                      })
+                    }
                   >
-                    → Jetzt direkt zu den Briefentwürfen wechseln & Behinderungsanzeige erstellen <ExternalLink size={12} style={{ display: 'inline', marginLeft: '3px' }} />
+                    → Jetzt direkt zu den Briefentwürfen wechseln & {risk.linkType === 'cost' ? 'Mehrkostenanmeldung' : risk.linkType === 'defect' ? 'Mängelrüge' : 'Behinderungsanzeige'} erstellen <ExternalLink size={12} style={{ display: 'inline', marginLeft: '3px' }} />
                   </button>
                 </div>
               ))}
@@ -757,8 +835,7 @@ ${summaryData.vobRisks.map((r) => `<p><strong>${r.title}</strong><br/>${r.descri
 
 // Situation-adaptive summary builder based on project situation
 function buildInitialSummaryForProject(projectId: string | number, projectName: string, projectNumber: string): SummaryResult {
-  const pid = String(projectId);
-  if (pid === 'proj-2' || pid === '2') {
+  if (String(projectId) === '2' || (projectId as any) === 'proj-2') {
     // Wohnquartier Spreebogen
     return {
       title: `Baustellen-Zusammenfassung • ${projectName}`,
@@ -811,7 +888,7 @@ function buildInitialSummaryForProject(projectId: string | number, projectName: 
       ],
       traceabilityNotes: `Extrahiert aus Bautagesbericht Nr. 67, Baubesprechung Nr. 8 & WSA-Bescheid für ${projectName} (${projectNumber}).`
     };
-  } else if (pid === 'proj-3' || pid === '3') {
+  } else if (String(projectId) === '3' || (projectId as any) === 'proj-3') {
     // Sanierung Bürokomplex Am Tiergarten
     return {
       title: `Sanierungs- & Schadstoff-Zusammenfassung • ${projectName}`,

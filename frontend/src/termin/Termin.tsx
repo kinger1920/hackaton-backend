@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { useProjects } from '../context/ProjectContext';
 import { useLanguage } from '../context/LanguageContext';
+import { api, ConstructionPlan } from '../services/api';
 import '@frontend/src/index.css';
 import './Termin.css';
 
@@ -247,6 +248,7 @@ export const Termin: React.FC = () => {
   const [newDesc, setNewDesc] = useState('');
   const [newVobRef, setNewVobRef] = useState('');
   const [newIsUrgent, setNewIsUrgent] = useState(false);
+  const [backendPlans, setBackendPlans] = useState<ConstructionPlan[]>([]);
 
   // Synchronize when project changes
   useEffect(() => {
@@ -260,6 +262,11 @@ export const Termin: React.FC = () => {
     } catch {
       setAppointments(getInitialForProject(activeProject.id));
     }
+
+    // Load backend construction plans
+    api.listPlans(Number(activeProject.id))
+      .then((plans) => setBackendPlans(plans))
+      .catch((err) => console.warn('Backend listPlans Fallback:', err));
   }, [activeProject.id]);
 
   const saveAppointments = (updated: SiteAppointment[]) => {
@@ -447,6 +454,11 @@ export const Termin: React.FC = () => {
             <h1 className="termin-title">{t('term_title')}</h1>
             <p className="termin-sub">
               {t('term_sub')} <strong>{activeProject.name}</strong> ({activeProject.number})
+              {backendPlans.length > 0 && (
+                <span style={{ marginLeft: '10px', fontSize: '11px', color: '#16a34a', fontWeight: 600 }}>
+                  ✓ {backendPlans.length} {backendPlans.length === 1 ? 'Bauplan' : 'Baupläne'} synchronisiert
+                </span>
+              )}
             </p>
           </div>
         </div>
@@ -699,7 +711,7 @@ export const Termin: React.FC = () => {
                       type="button"
                       className="btn btn-secondary"
                       style={{ marginTop: '6px', fontSize: '11px', padding: '4px 8px', color: '#b91c1c', borderColor: '#fca5a5' }}
-                      onClick={() => navigate('/drafts')}
+                      onClick={() => navigate('/drafts', { state: { type: 'delay', keywords: [ev.title, ev.description, `Frist: ${ev.date}`].filter(Boolean).join('. ') } })}
                     >
                       <Mail size={12} />
                       <span>{t('term_btn_to_draft')}</span>

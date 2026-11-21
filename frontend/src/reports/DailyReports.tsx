@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   FileText,
@@ -16,7 +16,12 @@ import {
   X,
   BookOpen,
   Mail,
-  ListTodo
+  ListTodo,
+  FileDown,
+  Trash2,
+  TrendingUp,
+  ThumbsUp,
+  ThumbsDown
 } from 'lucide-react';
 import { useProjects } from '../context/ProjectContext';
 import {
@@ -26,6 +31,7 @@ import {
   ProjectDocumentItem
 } from '../context/ProjectDocuments';
 import { useLanguage } from '../context/LanguageContext';
+import { api, DayAnalysis, saveBlob } from '../services/api';
 import '@frontend/src/index.css';
 import './DailyReports.css';
 
@@ -64,18 +70,101 @@ export const DailyReports: React.FC = () => {
     '2x Sattelzug Betonstahl B500B (24t) angeliefert und auf Baulos B zwischengelagert.'
   );
 
-  // Dictation simulation state
+  // Dictation state (echte Aufnahme → /api/transcribe → /api/reports/{date}/fill)
   const [isRecording, setIsRecording] = useState(false);
+  const [isProcessingDictation, setIsProcessingDictation] = useState(false);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
   const [savedSuccessMsg, setSavedSuccessMsg] = useState(false);
 
+  // Abschluss-Status (finalized = kein "ENTWURF"-Wasserzeichen im Export)
+  const [isFinalized, setIsFinalized] = useState(false);
+  const [exporting, setExporting] = useState<'pdf' | 'docx' | null>(null);
+
+  // Tagesanalyse (GET /api/reports/{date}/analysis)
+  const [dayAnalysis, setDayAnalysis] = useState<DayAnalysis | null>(null);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+
+  function toIsoDate(dateStr: string): string {
+    if (dateStr.includes('.')) {
+      const parts = dateStr.split('.');
+      if (parts.length === 3) {
+        const [d, m, y] = parts;
+        return `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
+      }
+    }
+    return dateStr;
+  }
+
+  // Load backend daily report for current date and project
+  useEffect(() => {
+    let cancelled = false;
+    const fetchBackendReport = async () => {
+      try {
+        const iso = toIsoDate(reportDate);
+        const report = await api.getReport(iso, Number(activeProject.id));
+        if (!cancelled && report) {
+          if (report.weather) setWeather(report.weather);
+          if (report.workforce_count !== null && report.workforce_count !== undefined && report.workforce_count > 0) {
+            setWorkforceCount(report.workforce_count);
+          }
+          if (report.trades && report.trades.length > 0) {
+            setTrades(report.trades);
+          }
+          if (report.work_completed) setProgressText(report.work_completed);
+          if (report.deviations_incidents) setHindranceText(report.deviations_incidents);
+          if (report.deliveries) setDeliveriesText(report.deliveries);
+          if (report.report_number) setReportNumber(String(report.report_number));
+          setIsFinalized(report.status === 'finalized');
+          setDayAnalysis(null);
+        }
+      } catch (err) {
+        console.warn('Backend getReport Fallback:', err);
+      }
+    };
+
+    fetchBackendReport();
+    return () => {
+      cancelled = true;
+    };
+  }, [reportDate, activeProject.id]);
+
   // Load project diary entries whenever project changes or custom event fires
-  const loadHistory = () => {
-    const entries = getDiaryEntriesForProject(activeProject.id);
-    setDiaryHistory(entries);
+  const loadHistory = async () => {
+    const localEntries = getDiaryEntriesForProject(activeProject.id);
+    let combined = [...localEntries];
+
+    try {
+      const backendNotes = await api.listSiteNotes(Number(activeProject.id));
+      if (backendNotes && backendNotes.length > 0) {
+        const mappedNotes: ProjectDocumentItem[] = backendNotes.map((bn) => ({
+          id: `backend-note-${bn.id}`,
+          projectId: bn.project_id,
+          type: 'diary',
+          title: `Tagebuchnotiz #${bn.id} (${bn.category || 'allgemein'})`,
+          date: new Date(bn.created_at).toLocaleDateString('de-DE'),
+          authorOrSender: bn.author || userName,
+          content: bn.content,
+          trades: ['Bautagebuch'],
+          hindrance: bn.category === 'delay' || bn.category === 'incident' ? bn.content : undefined
+        }));
+
+        const existingIds = new Set(combined.map((c) => c.id));
+        mappedNotes.forEach((mn) => {
+          if (!existingIds.has(mn.id)) {
+            combined.push(mn);
+          }
+        });
+      }
+    } catch (err) {
+      console.warn('Backend listSiteNotes Fallback:', err);
+    }
+
+    setDiaryHistory(combined);
 
     // Auto-calculate next report number based on history
-    if (entries.length > 0) {
-      const match = entries[0].title.match(/Nr\.\s*(\d+)/i);
+    if (combined.length > 0) {
+      const match = combined[0].title.match(/Nr\.\s*(\d+)/i);
       if (match && match[1]) {
         const nextNum = parseInt(match[1], 10) + 1;
         setReportNumber(String(nextNum));
@@ -86,7 +175,9 @@ export const DailyReports: React.FC = () => {
   useEffect(() => {
     loadHistory();
 
-    const handleUpdate = () => loadHistory();
+    const handleUpdate = () => {
+      loadHistory();
+    };
     window.addEventListener('project-documents-updated', handleUpdate);
     return () => window.removeEventListener('project-documents-updated', handleUpdate);
   }, [activeProject.id]);
@@ -132,25 +223,148 @@ export const DailyReports: React.FC = () => {
     setTrades(trades.filter((t) => t !== tradeToRemove));
   };
 
-  // Action: Audio dictation toggle
-  const handleToggleMic = () => {
-    if (!isRecording) {
-      setIsRecording(true);
-      setTimeout(() => {
-        setProgressText(
-          (prev) =>
-            prev +
-            ' [Diktat hinzugefügt 14:15 Uhr]: Betonageabschnitt 2 vorbereitet, Rüttler und Glätter einsatzbereit. Elektriker haben Leerohre im Deckenbereich termingerecht verlegt.'
-        );
-        setIsRecording(false);
-      }, 2000);
-    } else {
-      setIsRecording(false);
+  // Diktat-Text → /api/reports/{date}/fill (KI ordnet Felder + Fortschritt je Vorgang zu)
+  const applyDictation = async (dictatedText: string) => {
+    setIsProcessingDictation(true);
+    try {
+      const iso = toIsoDate(reportDate);
+      const res = await api.fillReport(iso, {
+        text: dictatedText,
+        project_id: Number(activeProject.id)
+      });
+      if (res) {
+        if (res.work_completed) setProgressText(res.work_completed);
+        if (res.deviations_incidents) setHindranceText(res.deviations_incidents);
+        if (res.deliveries) setDeliveriesText(res.deliveries);
+        if (res.trades && res.trades.length > 0) setTrades(res.trades);
+        if (res.weather) setWeather(res.weather);
+        if (res.workforce_count) setWorkforceCount(res.workforce_count);
+        setDayAnalysis(null);
+      }
+    } catch (err) {
+      console.warn('Backend fillReport Fallback:', err);
+      setProgressText((prev) => (prev ? `${prev}\n[Diktat]: ${dictatedText}` : dictatedText));
+    } finally {
+      setIsProcessingDictation(false);
     }
   };
 
-  // Action: Save new entry to project documents
-  const handleSaveReport = () => {
+  const askForTypedDictation = () => {
+    const typed = window.prompt('Diktat als Text eingeben (wird per KI in den Bericht übernommen):');
+    if (typed && typed.trim()) applyDictation(typed.trim());
+  };
+
+  // Action: Audio dictation toggle – Aufnahme → /api/transcribe → fill
+  const handleToggleMic = async () => {
+    if (isRecording) {
+      mediaRecorderRef.current?.stop();
+      setIsRecording(false);
+      return;
+    }
+
+    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
+      askForTypedDictation();
+      return;
+    }
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const recorder = new MediaRecorder(stream);
+      audioChunksRef.current = [];
+      recorder.ondataavailable = (e) => {
+        if (e.data.size > 0) audioChunksRef.current.push(e.data);
+      };
+      recorder.onstop = async () => {
+        stream.getTracks().forEach((track) => track.stop());
+        const blob = new Blob(audioChunksRef.current, { type: recorder.mimeType || 'audio/webm' });
+        setIsProcessingDictation(true);
+        let text = '';
+        try {
+          text = (await api.transcribeAudio(blob, 'de')).text.trim();
+        } catch (err) {
+          console.warn('Transkription fehlgeschlagen:', err);
+        }
+        setIsProcessingDictation(false);
+        if (text) applyDictation(text);
+        else askForTypedDictation();
+      };
+      mediaRecorderRef.current = recorder;
+      recorder.start();
+      setIsRecording(true);
+    } catch (err) {
+      console.warn('Mikrofon nicht verfügbar:', err);
+      askForTypedDictation();
+    }
+  };
+
+  // Export: GET /api/reports/{date}/pdf|docx (Bericht wird vorher gespeichert, sonst 404)
+  const handleExport = async (format: 'pdf' | 'docx') => {
+    setExporting(format);
+    try {
+      await saveReportToBackend();
+      const iso = toIsoDate(reportDate);
+      const blob = await api.downloadReportExport(iso, format, Number(activeProject.id));
+      saveBlob(blob, `Bautagesbericht_${reportNumber}_${iso}.${format}`);
+    } catch (err: any) {
+      const msg = err?.message || 'Unbekannter Fehler';
+      if (format === 'pdf' && window.confirm(`${msg}\n\nStattdessen über den Browser drucken?`)) {
+        window.print();
+      } else if (format !== 'pdf') {
+        alert(msg);
+      }
+    } finally {
+      setExporting(null);
+    }
+  };
+
+  // Tagesanalyse: was lief gut / schlecht, inkl. Abweichungen mit Quelle
+  const handleAnalyzeDay = async () => {
+    setIsAnalyzing(true);
+    try {
+      await saveReportToBackend();
+      const res = await api.getDayAnalysis(toIsoDate(reportDate), Number(activeProject.id));
+      setDayAnalysis(res);
+    } catch (err: any) {
+      alert(`Tagesanalyse nicht möglich: ${err?.message || err}`);
+    } finally {
+      setIsAnalyzing(false);
+    }
+  };
+
+  // Tagebucheintrag aus dem Backend löschen (DELETE /site-notes/{id})
+  const handleDeleteBackendNote = async (itemId: string) => {
+    const noteId = Number(itemId.replace('backend-note-', ''));
+    if (!noteId || !window.confirm('Diesen Tagebucheintrag wirklich löschen?')) return;
+    try {
+      await api.deleteSiteNote(noteId);
+      setDiaryHistory((prev) => prev.filter((d) => d.id !== itemId));
+    } catch (err: any) {
+      alert(err?.message || 'Löschen fehlgeschlagen');
+    }
+  };
+
+  // PUT /api/reports/{date} – gemeinsam genutzt von Speichern, Export und Analyse
+  const saveReportToBackend = async () => {
+    const iso = toIsoDate(reportDate);
+    await api.putReport(
+      iso,
+      {
+        report_number: parseInt(reportNumber, 10) || undefined,
+        weather,
+        workforce_count: workforceCount,
+        trades,
+        work_completed: progressText,
+        deviations_incidents: hindranceText,
+        deliveries: deliveriesText,
+        summary: `Bautagesbericht Nr. ${reportNumber} vom ${reportDate}`,
+        status: isFinalized ? 'finalized' : 'draft'
+      },
+      Number(activeProject.id)
+    );
+  };
+
+  // Action: Save new entry to project documents, backend /api/reports/{date} & site notes
+  const handleSaveReport = async () => {
     const title = `Bautagesbericht Nr. ${reportNumber} — ${progressText.slice(0, 35)}...`;
     const fullContent = `Bautagesbericht Nr. ${reportNumber} — Datum: ${reportDate}
 Projekt: ${activeProject.name} (${activeProject.number})
@@ -180,6 +394,26 @@ ${referencedDoc ? `[Bezug auf Vorbericht: ${referencedDoc.title} (${referencedDo
     };
 
     saveProjectDocument(newDoc);
+
+    // Save to backend /api/reports/{date}
+    try {
+      await saveReportToBackend();
+    } catch (err) {
+      console.warn('Backend putReport Fallback:', err);
+    }
+
+    // Also persist into backend SiteNote database
+    try {
+      await api.createSiteNote({
+        project_id: Number(activeProject.id),
+        content: fullContent,
+        category: hindranceText ? 'incident' : 'progress',
+        author: userName
+      });
+    } catch (err) {
+      console.warn('Backend createSiteNote Fallback:', err);
+    }
+
     loadHistory();
     setSavedSuccessMsg(true);
     setTimeout(() => setSavedSuccessMsg(false), 4000);
@@ -395,6 +629,18 @@ ${referencedDoc ? `[Bezug auf Vorbericht: ${referencedDoc.title} (${referencedDo
                           <span>{t('rep_btn_continue_hindrance')}</span>
                         </button>
                       )}
+
+                      {item.id.startsWith('backend-note-') && (
+                        <button
+                          type="button"
+                          className="history-btn-small"
+                          style={{ color: '#dc2626' }}
+                          onClick={() => handleDeleteBackendNote(item.id)}
+                          title="Eintrag löschen"
+                        >
+                          <Trash2 size={11} />
+                        </button>
+                      )}
                     </div>
                   </div>
                 );
@@ -421,9 +667,34 @@ ${referencedDoc ? `[Bezug auf Vorbericht: ${referencedDoc.title} (${referencedDo
                   borderColor: isRecording ? '#f87171' : 'var(--border-light)'
                 }}
                 onClick={handleToggleMic}
+                disabled={isProcessingDictation}
               >
                 <Mic size={13} />
-                <span>{isRecording ? t('dash_mic_running') : t('dash_mic_start')}</span>
+                <span>
+                  {isProcessingDictation ? 'KI übernimmt Diktat…' : isRecording ? t('dash_mic_running') : t('dash_mic_start')}
+                </span>
+              </button>
+
+              <button
+                type="button"
+                className="history-btn-small"
+                onClick={() => handleExport('docx')}
+                disabled={exporting !== null}
+                title="Als Word-Datei exportieren (speichert vorher)"
+              >
+                <FileDown size={13} />
+                <span>{exporting === 'docx' ? 'Export…' : 'Word'}</span>
+              </button>
+
+              <button
+                type="button"
+                className="history-btn-small"
+                onClick={() => handleExport('pdf')}
+                disabled={exporting !== null}
+                title="Als PDF exportieren (speichert vorher)"
+              >
+                <FileDown size={13} />
+                <span>{exporting === 'pdf' ? 'Export…' : 'PDF'}</span>
               </button>
 
               <button
@@ -579,7 +850,7 @@ ${referencedDoc ? `[Bezug auf Vorbericht: ${referencedDoc.title} (${referencedDo
                   type="button"
                   className="btn btn-primary"
                   style={{ fontSize: '12px', padding: '6px 12px', backgroundColor: '#b45309' }}
-                  onClick={() => navigate('/drafts')}
+                  onClick={() => navigate('/drafts', { state: { type: 'delay', keywords: hindranceText.trim() } })}
                 >
                   <Mail size={14} />
                   <span>{t('rep_btn_create_vob_from_hindrance')}</span>
@@ -615,7 +886,31 @@ ${referencedDoc ? `[Bezug auf Vorbericht: ${referencedDoc.title} (${referencedDo
               {t('btn_clear')}
             </button>
 
-            <div style={{ display: 'flex', gap: '10px' }}>
+            <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
+              <label
+                style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: 'var(--color-slate-700)', cursor: 'pointer' }}
+                title="Abgeschlossene Berichte werden ohne ENTWURF-Wasserzeichen exportiert"
+              >
+                <input
+                  type="checkbox"
+                  checked={isFinalized}
+                  onChange={(e) => setIsFinalized(e.target.checked)}
+                  style={{ accentColor: 'var(--color-primary)' }}
+                />
+                <span>Bericht abschließen</span>
+              </label>
+
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={handleAnalyzeDay}
+                disabled={isAnalyzing}
+                title="Was lief heute gut, was lief schlecht? (speichert vorher)"
+              >
+                <TrendingUp size={16} />
+                <span>{isAnalyzing ? 'Analysiere…' : 'Tag analysieren'}</span>
+              </button>
+
               <button
                 type="button"
                 className="btn btn-secondary"
@@ -635,6 +930,102 @@ ${referencedDoc ? `[Bezug auf Vorbericht: ${referencedDoc.title} (${referencedDo
               </button>
             </div>
           </div>
+
+          {/* Tagesanalyse (GET /api/reports/{date}/analysis) */}
+          {dayAnalysis && (
+            <div
+              style={{
+                marginTop: '12px',
+                border: '1px solid var(--border-light)',
+                borderRadius: 'var(--radius-md)',
+                padding: '14px',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '10px',
+                backgroundColor: 'var(--color-slate-50)'
+              }}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <strong style={{ fontSize: '14px' }}>{dayAnalysis.title}</strong>
+                <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                  <span className="badge badge-info">{dayAnalysis.mode === 'ai' ? 'KI' : 'Regeln'}</span>
+                  <button
+                    type="button"
+                    onClick={() => setDayAnalysis(null)}
+                    style={{ background: 'none', border: 'none', cursor: 'pointer' }}
+                    title="Schließen"
+                  >
+                    <X size={14} />
+                  </button>
+                </div>
+              </div>
+
+              <div style={{ fontSize: '12px', color: 'var(--color-slate-600)', display: 'flex', gap: '14px', flexWrap: 'wrap' }}>
+                {dayAnalysis.stats.workers != null && (
+                  <span>
+                    👷 {dayAnalysis.stats.workers} Personen
+                    {dayAnalysis.stats.plannedWorkers != null ? ` (Soll ${dayAnalysis.stats.plannedWorkers})` : ''}
+                  </span>
+                )}
+                {dayAnalysis.stats.hours != null && <span>⏱ {dayAnalysis.stats.hours} Std.</span>}
+                {dayAnalysis.stats.weather && <span>🌤 {dayAnalysis.stats.weather}</span>}
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '10px' }}>
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 700, fontSize: '13px', color: '#15803d' }}>
+                    <ThumbsUp size={14} /> Lief gut
+                  </div>
+                  <ul style={{ margin: '6px 0 0', paddingLeft: '18px', fontSize: '12px' }}>
+                    {dayAnalysis.wentWell.length === 0 && <li style={{ color: 'var(--color-slate-500)' }}>Keine Einträge</li>}
+                    {dayAnalysis.wentWell.map((item, idx) => (
+                      <li key={idx}>
+                        {item.text} <span style={{ color: 'var(--color-slate-400)' }}>({item.source})</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 700, fontSize: '13px', color: '#b91c1c' }}>
+                    <ThumbsDown size={14} /> Lief schlecht
+                  </div>
+                  <ul style={{ margin: '6px 0 0', paddingLeft: '18px', fontSize: '12px' }}>
+                    {dayAnalysis.wentBadly.length === 0 && <li style={{ color: 'var(--color-slate-500)' }}>Keine Einträge</li>}
+                    {dayAnalysis.wentBadly.map((item, idx) => (
+                      <li key={idx}>
+                        {item.text} <span style={{ color: 'var(--color-slate-400)' }}>({item.source})</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              </div>
+
+              {dayAnalysis.deviations.map((dev) => (
+                <div
+                  key={dev.id}
+                  style={{ fontSize: '12px', backgroundColor: '#fffbeb', border: '1px solid #fde68a', borderRadius: 'var(--radius-md)', padding: '8px 10px' }}
+                >
+                  <strong>{dev.title}</strong> — {dev.cause} <em>({dev.vobReference})</em>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '4px', gap: '8px' }}>
+                    <span style={{ color: '#92400e' }}>💡 {dev.suggestedAction}</span>
+                    <button
+                      type="button"
+                      className="btn btn-primary"
+                      style={{ fontSize: '11px', padding: '4px 10px', backgroundColor: '#b45309', whiteSpace: 'nowrap' }}
+                      onClick={() =>
+                        navigate('/drafts', {
+                          state: { type: dev.draftType, keywords: `${dev.title}. Ursache: ${dev.cause}. Auswirkung: ${dev.impact} (Quelle: ${dev.sourceReport})` }
+                        })
+                      }
+                    >
+                      <Mail size={12} />
+                      <span>{t('drafts_btn_generate')}</span>
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 
@@ -799,7 +1190,7 @@ ${referencedDoc ? `[Bezug auf Vorbericht: ${referencedDoc.title} (${referencedDo
                           type="button"
                           className="btn btn-primary"
                           style={{ fontSize: '11px', padding: '4px 10px', backgroundColor: '#b45309' }}
-                          onClick={() => navigate('/drafts')}
+                          onClick={() => navigate('/drafts', { state: { type: docSummary.vobRisks[0].linkType ?? 'delay', keywords: `${docSummary.vobRisks[0].title}. ${docSummary.vobRisks[0].description}` } })}
                         >
                           <Mail size={12} />
                           <span>{t('drafts_btn_generate')}</span>

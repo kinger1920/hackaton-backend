@@ -54,8 +54,7 @@ export const Analysis: React.FC = () => {
 
   // Data dynamically configured per active project
   const getProjectAnalysisData = () => {
-    const pid = String(activeProject.id);
-    if (pid === 'proj-2' || pid === '2') {
+    if (activeProject.id === 'proj-2') {
       // Wohnquartier Spreebogen
       const workPackages: WorkPackage[] = [
         {
@@ -145,7 +144,7 @@ export const Analysis: React.FC = () => {
         workPackages,
         deviations
       };
-    } else if (pid === 'proj-3' || pid === '3') {
+    } else if (activeProject.id === 'proj-3') {
       // Sanierung Tiergarten
       const workPackages: WorkPackage[] = [
         {

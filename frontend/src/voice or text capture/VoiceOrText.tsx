@@ -21,6 +21,7 @@ import {
 import { useProjects } from '../context/ProjectContext';
 import { saveProjectDocument } from '../context/ProjectDocuments';
 import { useLanguage } from '../context/LanguageContext';
+import { api, NoticeDraft } from '../services/api';
 import '@frontend/src/index.css';
 import './VoiceOrText.css';
 
@@ -74,6 +75,10 @@ export const VoiceOrText: React.FC = () => {
 
   const [aiClassifiedSuccess, setAiClassifiedSuccess] = useState(false);
   const [saveSuccessMsg, setSaveSuccessMsg] = useState(false);
+  const [isTranscribing, setIsTranscribing] = useState(false);
+  const [isCapturing, setIsCapturing] = useState(false);
+  const [lastDraft, setLastDraft] = useState<NoticeDraft | null>(null);
+  const [aiQuestions, setAiQuestions] = useState<string[]>([]);
 
   // Recording timer
   useEffect(() => {
@@ -115,28 +120,40 @@ export const VoiceOrText: React.FC = () => {
           }
         };
 
-        mediaRecorder.onstop = () => {
+        mediaRecorder.onstop = async () => {
           const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
           const url = URL.createObjectURL(audioBlob);
           setAudioUrl(url);
 
-          // Simulated high-accuracy construction speech-to-text transcription
-          const generatedTranscript =
-            'Sprachnotiz vom ' +
-            new Date().toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' }) +
-            ' Uhr: Bauabschnitt 2 im 1. OG geprüft. Betonage für Montag vorbereitet. TGA-Fachplaner bzgl. Schacht 3 erneut angerufen. 34 Mann auf der Baustelle anwesend.';
-          setAudioTranscript(generatedTranscript);
-          setGeneralNotes((prev) => (prev ? prev + '\n' + generatedTranscript : generatedTranscript));
+          // Call backend transcription (Whisper via Groq)
+          setIsTranscribing(true);
+          try {
+            const res = await api.transcribeAudio(audioBlob);
+            if (res && res.text) {
+              setAudioTranscript(res.text);
+              setGeneralNotes((prev) => (prev ? prev + '\n' + res.text : res.text));
+              // Trigger AI categorization with the transcribed text
+              handleAutoCategorize(res.text);
+            }
+          } catch (err) {
+            console.warn('Backend Audio-Transkription nicht erreichbar, nutze Fallback:', err);
+            const fallbackTranscript =
+              'Sprachnotiz vom ' +
+              new Date().toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' }) +
+              ' Uhr: Bauabschnitt 2 im 1. OG geprüft. Betonage für Montag vorbereitet. TGA-Fachplaner bzgl. Schacht 3 erneut angerufen. 34 Mann auf der Baustelle anwesend.';
+            setAudioTranscript(fallbackTranscript);
+            setGeneralNotes((prev) => (prev ? prev + '\n' + fallbackTranscript : fallbackTranscript));
+          } finally {
+            setIsTranscribing(false);
+          }
         };
 
         mediaRecorder.start();
         setIsRecording(true);
       } else {
-        // Fallback simulation
         startSimulatedRecording();
       }
     } catch {
-      // Permission denied or localhost fallback -> simulate realistic audio
       startSimulatedRecording();
     }
   };
@@ -153,7 +170,6 @@ export const VoiceOrText: React.FC = () => {
       mediaRecorderRef.current.stop();
       mediaRecorderRef.current.stream.getTracks().forEach((track) => track.stop());
     } else {
-      // Simulated audio completion
       const sampleText =
         'Sprachnotiz Baustelle: Kettenbagger 24t Tiefbau wieder einsatzbereit. Schacht 3 Durchbrüche weiterhin blockiert da TGA-Freigabe fehlt. Bewehrung Decke 1. OG fast fertig.';
       setAudioTranscript(sampleText);
@@ -209,47 +225,97 @@ export const VoiceOrText: React.FC = () => {
     handleAutoCategorize(presetText);
   };
 
-  // AI Categorization: Parse general notes into categories
-  const handleAutoCategorize = (textToParse = generalNotes) => {
+  // AI Categorization: Parse general notes into categories via backend API or fallback
+  const handleAutoCategorize = async (textToParse = generalNotes) => {
     if (!textToParse.trim()) return;
 
-    const lower = textToParse.toLowerCase();
-    const updated = { ...categories };
+    setIsCapturing(true);
+    setAiQuestions([]);
 
-    // Detection rules based on construction terms
-    if (lower.includes('bewehrt') || lower.includes('beton') || lower.includes('fertig') || lower.includes('rohbau')) {
-      if (!updated.progress.includes('Bewehrung & Rohbauarbeiten Decke 1. OG')) {
-        updated.progress = [...updated.progress, 'Bewehrung & Rohbauarbeiten Decke 1. OG'];
-      }
-    }
-    if (lower.includes('bagger') || lower.includes('defekt') || lower.includes('stillstand') || lower.includes('fehlt') || lower.includes('schacht')) {
-      if (!updated.hindrance.includes('Stillstand Bagger / Fehlende TGA-Freigabe Schacht 3')) {
-        updated.hindrance = [...updated.hindrance, 'Stillstand Bagger / Fehlende TGA-Freigabe Schacht 3'];
-      }
-    }
-    if (lower.includes('mehrkosten') || lower.includes('nachtrag') || lower.includes('altfundament') || lower.includes('meißel')) {
-      if (!updated.cost.includes('Mehraufwand & Gerätestillstand Baugrund')) {
-        updated.cost = [...updated.cost, 'Mehraufwand & Gerätestillstand Baugrund'];
-      }
-    }
-    if (lower.includes('feuchtigkeit') || lower.includes('mangel') || lower.includes('riss') || lower.includes('regen')) {
-      if (!updated.defect.includes('Feuchtigkeitskontrolle im Treppenhaus erforderlich')) {
-        updated.defect = [...updated.defect, 'Feuchtigkeitskontrolle im Treppenhaus erforderlich'];
-      }
-    }
-    if (lower.includes('angeliefert') || lower.includes('sattelzug') || lower.includes('stahl') || lower.includes('lieferschein')) {
-      if (!updated.delivery.includes('Lieferung 2x Sattelzug Bewehrungsstahl B500B erfasst')) {
-        updated.delivery = [...updated.delivery, 'Lieferung 2x Sattelzug Bewehrungsstahl B500B erfasst'];
-      }
-    }
+    try {
+      const draft = await api.captureText({
+        text: textToParse,
+        project_id: Number(activeProject.id)
+      });
+      setLastDraft(draft);
 
-    setCategories(updated);
-    setAiClassifiedSuccess(true);
-    setTimeout(() => setAiClassifiedSuccess(false), 3000);
+      if (draft.questions && draft.questions.length > 0) {
+        setAiQuestions(draft.questions);
+      }
+
+      // Map fields from backend into UI categories
+      const updated = { ...categories };
+      const fields = draft.fields || {};
+      const cause = fields.cause?.value || fields.reason?.value || '';
+      const impact = fields.impact?.value || '';
+      const summaryPoint = cause || textToParse.slice(0, 60);
+
+      if (draft.type === 'delay') {
+        if (!updated.hindrance.includes(summaryPoint)) {
+          updated.hindrance = [summaryPoint, ...updated.hindrance];
+        }
+        if (impact && !updated.hindrance.includes(impact)) {
+          updated.hindrance.push(impact);
+        }
+      } else if (draft.type === 'cost') {
+        if (!updated.cost.includes(summaryPoint)) {
+          updated.cost = [summaryPoint, ...updated.cost];
+        }
+      } else if (draft.type === 'defect') {
+        if (!updated.defect.includes(summaryPoint)) {
+          updated.defect = [summaryPoint, ...updated.defect];
+        }
+      } else {
+        if (!updated.progress.includes(summaryPoint)) {
+          updated.progress = [summaryPoint, ...updated.progress];
+        }
+      }
+
+      setCategories(updated);
+      setAiClassifiedSuccess(true);
+      setTimeout(() => setAiClassifiedSuccess(false), 5000);
+    } catch (err) {
+      console.warn('Backend KI-Erfassung Fallback:', err);
+      // Fallback detection rules based on construction terms
+      const lower = textToParse.toLowerCase();
+      const updated = { ...categories };
+
+      if (lower.includes('bewehrt') || lower.includes('beton') || lower.includes('fertig') || lower.includes('rohbau')) {
+        if (!updated.progress.includes('Bewehrung & Rohbauarbeiten Decke 1. OG')) {
+          updated.progress = [...updated.progress, 'Bewehrung & Rohbauarbeiten Decke 1. OG'];
+        }
+      }
+      if (lower.includes('bagger') || lower.includes('defekt') || lower.includes('stillstand') || lower.includes('fehlt') || lower.includes('schacht')) {
+        if (!updated.hindrance.includes('Stillstand Bagger / Fehlende TGA-Freigabe Schacht 3')) {
+          updated.hindrance = [...updated.hindrance, 'Stillstand Bagger / Fehlende TGA-Freigabe Schacht 3'];
+        }
+      }
+      if (lower.includes('mehrkosten') || lower.includes('nachtrag') || lower.includes('altfundament') || lower.includes('meißel')) {
+        if (!updated.cost.includes('Mehraufwand & Gerätestillstand Baugrund')) {
+          updated.cost = [...updated.cost, 'Mehraufwand & Gerätestillstand Baugrund'];
+        }
+      }
+      if (lower.includes('feuchtigkeit') || lower.includes('mangel') || lower.includes('riss') || lower.includes('regen')) {
+        if (!updated.defect.includes('Feuchtigkeitskontrolle im Treppenhaus erforderlich')) {
+          updated.defect = [...updated.defect, 'Feuchtigkeitskontrolle im Treppenhaus erforderlich'];
+        }
+      }
+      if (lower.includes('angeliefert') || lower.includes('sattelzug') || lower.includes('stahl') || lower.includes('lieferschein')) {
+        if (!updated.delivery.includes('Lieferung 2x Sattelzug Bewehrungsstahl B500B erfasst')) {
+          updated.delivery = [...updated.delivery, 'Lieferung 2x Sattelzug Bewehrungsstahl B500B erfasst'];
+        }
+      }
+
+      setCategories(updated);
+      setAiClassifiedSuccess(true);
+      setTimeout(() => setAiClassifiedSuccess(false), 3000);
+    } finally {
+      setIsCapturing(false);
+    }
   };
 
-  // Save current capture to Project Diary
-  const handleSaveToDiary = () => {
+  // Save current capture to Project Diary & Backend DB
+  const handleSaveToDiary = async () => {
     const today = new Date().toLocaleDateString('de-DE');
     const content = `Schnellerfassung & Sprachnotiz — ${today}
 Bauprojekt: ${activeProject.name} (${activeProject.number})
@@ -276,6 +342,18 @@ Kategorisierte Stichpunkte:
       trades: categories.progress.slice(0, 3),
       hindrance: categories.hindrance.join(', ')
     });
+
+    // Also persist into backend SiteNote database
+    try {
+      await api.createSiteNote({
+        project_id: Number(activeProject.id),
+        content,
+        category: categories.hindrance.length > 0 ? 'incident' : 'progress',
+        author: userName
+      });
+    } catch (err) {
+      console.warn('Backend createSiteNote Fallback:', err);
+    }
 
     setSaveSuccessMsg(true);
     setTimeout(() => setSaveSuccessMsg(false), 4000);
@@ -529,10 +607,11 @@ Kategorisierte Stichpunkte:
                 className="btn btn-secondary"
                 style={{ fontSize: '11px', padding: '4px 8px', color: 'var(--color-primary)' }}
                 onClick={() => handleAutoCategorize()}
+                disabled={isCapturing}
                 title={t('cap_btn_auto_categorize')}
               >
                 <Sparkles size={12} />
-                <span>{t('cap_btn_auto_categorize')}</span>
+                <span>{isCapturing ? 'KI analysiert...' : t('cap_btn_auto_categorize')}</span>
               </button>
             </div>
 
@@ -548,9 +627,67 @@ Kategorisierte Stichpunkte:
               onChange={(e) => setGeneralNotes(e.target.value)}
             />
 
+            {isTranscribing && (
+              <div style={{ fontSize: '12px', color: 'var(--color-primary)', fontWeight: 600 }}>
+                ⏳ Audio wird über Whisper transkribiert...
+              </div>
+            )}
+
             {aiClassifiedSuccess && (
               <div style={{ fontSize: '12px', color: '#16a34a', fontWeight: 600 }}>
-                ✓ {t('cap_btn_auto_categorize')}!
+                ✓ Sachverhalt erfolgreich per KI erfasst!
+              </div>
+            )}
+
+            {lastDraft?.notice_id && (
+              <div
+                style={{
+                  marginTop: '10px',
+                  padding: '10px 12px',
+                  backgroundColor: '#f0fdf4',
+                  border: '1px solid #bbf7d0',
+                  borderRadius: 'var(--radius-md)',
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  fontSize: '12px',
+                  color: '#166534'
+                }}
+              >
+                <span>
+                  ✓ <strong>VOB-Brief #{lastDraft.notice_id}</strong> ({lastDraft.type}) automatisch im Backend angelegt.
+                </span>
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  style={{ fontSize: '11px', padding: '4px 8px' }}
+                  onClick={() => navigate('/drafts', { state: { noticeId: lastDraft.notice_id } })}
+                >
+                  Zum Entwurf →
+                </button>
+              </div>
+            )}
+
+            {aiQuestions.length > 0 && (
+              <div
+                style={{
+                  marginTop: '10px',
+                  padding: '10px 12px',
+                  backgroundColor: '#fffbeb',
+                  border: '1px solid #fde68a',
+                  borderRadius: 'var(--radius-md)',
+                  fontSize: '12px',
+                  color: '#92400e'
+                }}
+              >
+                <strong>ℹ️ Offene Rückfragen der KI für den VOB-Brief:</strong>
+                <ul style={{ margin: '6px 0 0 16px', padding: 0 }}>
+                  {aiQuestions.map((q, idx) => (
+                    <li key={idx} style={{ marginBottom: '2px' }}>
+                      {q}
+                    </li>
+                  ))}
+                </ul>
               </div>
             )}
           </div>
@@ -632,7 +769,7 @@ Kategorisierte Stichpunkte:
                 <button
                   type="button"
                   style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '11px', color: '#b91c1c', fontWeight: 600 }}
-                  onClick={() => navigate('/drafts')}
+                  onClick={() => navigate('/drafts', { state: { type: 'delay', keywords: categories.hindrance.join('. ') } })}
                 >
                   → {t('btn_generate')}
                 </button>
@@ -826,7 +963,13 @@ Kategorisierte Stichpunkte:
             type="button"
             className="btn btn-secondary"
             style={{ color: '#b45309' }}
-            onClick={() => navigate('/drafts')}
+            onClick={() =>
+              navigate('/drafts', {
+                state: lastDraft?.notice_id
+                  ? { noticeId: lastDraft.notice_id }
+                  : { type: 'delay', keywords: categories.hindrance.join('. ') }
+              })
+            }
             title={t('cap_btn_gen_vob')}
           >
             <Mail size={16} />
