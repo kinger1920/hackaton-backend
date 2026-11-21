@@ -19,7 +19,7 @@ def test_reset_wipes_everything_and_loads_demo(client, engine):
     client.post("/projects", json={"name": "Testmüll"})
     data = _reset(client, "2026-11-22")  # Demo-Sonntag
     assert data["ok"] and data["project_id"] == 1  # Frontend-Default-Projekt
-    assert (data["reports"], data["contracts"], data["tasks"], data["notes"]) == (15, 2, 6, 2)
+    assert (data["reports"], data["contracts"], data["tasks"], data["notes"]) == (15, 2, 23, 2)  # 6 Seed + 17 Folgevorgänge
     assert data["last_report_date"] == "2026-11-20" and data["shifted_workdays"] == 0
     with Session(engine) as s:
         assert [p.name for p in s.exec(select(Project)).all()] == ["Neubau Schulzentrum Nord (Haus B & C)"]

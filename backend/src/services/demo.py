@@ -49,14 +49,38 @@ DEMO_NOTES = [
     ("2026-11-18", "07:45", "delay", "Dzisiaj z firmy Krause tylko jedna osoba, koparka dalej stoi – brak planów."),
 ]
 
+# Ort je Vorgang im Format "Haus · Ebene (Achse)" – Basis der 2,5D-Gebäudeansicht (Baufortschritt).
+# Haus B liegt an Achse A, Haus C an Achse B.
 TASK_LOCATIONS = {
-    "A-100": "Baustelleneinrichtung Nord",
-    "A-110": "Achse A (Haus B)",
-    "A-120": "Achse A (Haus B)",
-    "A-130": "Achse A (Haus B)",
-    "B-200": "Achse B (Haus C)",
-    "B-210": "Achse B (Haus C)",
+    "A-100": "Baufeld · Baustelleneinrichtung Nord",
+    "A-110": "Haus B · Gründung (Achse A)",
+    "A-120": "Haus B · Gründung (Achse A)",
+    "A-130": "Haus B · UG (Achse A)",
+    "B-200": "Haus C · Gründung (Achse B)",
+    "B-210": "Haus C · Gründung (Achse B)",
 }
+
+# Folgevorgänge des Rohbaus (alle NACH dem letzten Seed-Berichtstag 20.11. → ändern die Soll/Ist-Story
+# bis dahin nicht). (Code, Titel, Gewerk, Soll-Start, Soll-Ende, Ort) – Daten sind Werktage.
+EXTRA_TASKS = [
+    ("A-140", "Decke über UG Haus B", "Rohbau", "2026-12-01", "2026-12-08", "Haus B · UG (Achse A)"),
+    ("A-150", "Wände EG Haus B", "Rohbau", "2026-12-09", "2026-12-16", "Haus B · EG (Achse A)"),
+    ("A-160", "Decke über EG Haus B", "Rohbau", "2026-12-17", "2026-12-23", "Haus B · EG (Achse A)"),
+    ("A-170", "Wände 1.OG Haus B", "Rohbau", "2027-01-11", "2027-01-18", "Haus B · 1.OG (Achse A)"),
+    ("A-180", "Decke über 1.OG Haus B", "Rohbau", "2027-01-19", "2027-01-26", "Haus B · 1.OG (Achse A)"),
+    ("A-190", "Wände 2.OG Haus B", "Rohbau", "2027-01-27", "2027-02-03", "Haus B · 2.OG (Achse A)"),
+    ("A-195", "Dachdecke Haus B", "Rohbau", "2027-02-04", "2027-02-11", "Haus B · Dach (Achse A)"),
+    ("A-199", "Dachabdichtung Haus B", "Dach", "2027-02-15", "2027-02-24", "Haus B · Dach (Achse A)"),
+    ("B-220", "Wände UG Haus C", "Rohbau", "2026-11-30", "2026-12-07", "Haus C · UG (Achse B)"),
+    ("B-230", "Decke über UG Haus C", "Rohbau", "2026-12-08", "2026-12-15", "Haus C · UG (Achse B)"),
+    ("B-240", "Wände EG Haus C", "Rohbau", "2026-12-16", "2026-12-23", "Haus C · EG (Achse B)"),
+    ("B-250", "Decke über EG Haus C", "Rohbau", "2027-01-11", "2027-01-18", "Haus C · EG (Achse B)"),
+    ("B-260", "Wände 1.OG Haus C", "Rohbau", "2027-01-19", "2027-01-26", "Haus C · 1.OG (Achse B)"),
+    ("B-270", "Decke über 1.OG Haus C", "Rohbau", "2027-01-27", "2027-02-03", "Haus C · 1.OG (Achse B)"),
+    ("B-280", "Wände 2.OG Haus C", "Rohbau", "2027-02-04", "2027-02-11", "Haus C · 2.OG (Achse B)"),
+    ("B-290", "Dachdecke Haus C", "Rohbau", "2027-02-12", "2027-02-19", "Haus C · Dach (Achse B)"),
+    ("B-299", "Dachabdichtung Haus C", "Dach", "2027-02-25", "2027-03-05", "Haus C · Dach (Achse B)"),
+]
 
 DEMO_APPOINTMENTS = [
     dict(
@@ -282,6 +306,13 @@ def reset(session: Session, ref: dt.date) -> dict:
         if code in TASK_LOCATIONS:
             task.location = TASK_LOCATIONS[code]
             session.add(task)
+    # Folgevorgänge (Decken, Wände, Dach je Haus) im selben Bauzeitenplan
+    plan_id = next(iter(tasks.values())).plan_id
+    for code, title, trade, start, end, location in EXTRA_TASKS:
+        session.add(PlanTask(plan_id=plan_id, task_code=code, title=title, trade=trade, location=location,
+                             planned_start=shift(dt.date.fromisoformat(start)),
+                             planned_end=shift(dt.date.fromisoformat(end)), status="pending"))
+    session.flush()
 
     # Diktate / Notizen
     for day, time, category, text in DEMO_NOTES:

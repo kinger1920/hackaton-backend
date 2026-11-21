@@ -363,6 +363,53 @@ export interface AssistantAnswer {
   session_id?: number | null;
 }
 
+/** GET /api/progress/building – Gebäudeansicht Baufortschritt (Zustand je Stichtag rechnet das Frontend) */
+export interface BuildingTask {
+  id: number;
+  planId: number;
+  code: string | null;
+  title: string;
+  trade: string;
+  company: string;
+  location: string | null;
+  house: string | null;
+  level: string | null;
+  plannedStart: string | null;
+  plannedEnd: string | null;
+  durationDays: number;
+  history: { date: string; percent: number }[];
+  actualEnd: string | null;
+}
+
+export type BuildingEventKind = 'defect' | 'hindrance' | 'incident' | 'photo';
+
+export interface BuildingEvent {
+  id: string;
+  kind: BuildingEventKind;
+  date: string;
+  title: string;
+  detail: string;
+  house: string | null;
+  level: string | null;
+  taskIds: number[];
+  source: string;
+  noticeId?: number | null;
+  reportDate?: string | null;
+  photoId?: number | null;
+  status?: string | null;
+}
+
+export interface BuildingProgress {
+  projectId: number;
+  houses: string[];
+  levels: string[];
+  rangeFrom: string | null;
+  rangeTo: string | null;
+  lastReportDate: string | null;
+  tasks: BuildingTask[];
+  events: BuildingEvent[];
+}
+
 /** Eintrag aus GET /api/assistant/history */
 export interface AssistantHistoryMessage {
   id: number;
@@ -1375,6 +1422,12 @@ export const api = {
       body: JSON.stringify({ question, project_id: projectId }),
     });
     return handleResponse<AssistantAnswer>(res, 'Assistent nicht erreichbar');
+  },
+
+  /** GET /api/progress/building?project_id= – Plan, Ist-Verlauf und Ereignisse je Haus/Ebene */
+  async getBuildingProgress(projectId: number): Promise<BuildingProgress> {
+    const res = await fetch(`${API_BASE_URL}/api/progress/building?project_id=${projectId}`);
+    return handleResponse<BuildingProgress>(res, 'Baufortschritt konnte nicht geladen werden');
   },
 
   /** GET /api/assistant/history?project_id= – gespeicherter Chat-Verlauf (älteste zuerst) */
