@@ -19,10 +19,15 @@ from src.services.extraction import QUESTIONS, REQUIRED_FIELDS
 
 STATUS_DRAFT = "Entwurf"
 STATUS_APPROVED = "Freigegeben"
+STATUS_EXPORTED = "Exportiert"
 
 
 class NoticeLocked(Exception):
     """Entwurf ist nicht mehr im Status "Entwurf" (bereits freigegeben/exportiert)."""
+
+
+class NotApproved(Exception):
+    """Export verlangt einen freigegebenen Brief."""
 
 
 class MissingFields(Exception):
@@ -187,6 +192,22 @@ def approve(session: Session, notice: FormalNotice, data: NoticeDraftData) -> No
     session.commit()
     session.refresh(notice)
     session.refresh(data)
+
+
+def mark_exported(session: Session, notice: FormalNotice) -> None:
+    """Prüft vor dem Export die Freigabe und setzt den Status auf "Exportiert".
+
+    Fehler: NotApproved, wenn der Brief noch ein Entwurf ist ("nichts ohne Freigabe").
+    Ein schon exportierter Brief darf erneut heruntergeladen werden.
+    """
+    if notice.status not in (STATUS_APPROVED, STATUS_EXPORTED):
+        raise NotApproved()
+    if notice.status != STATUS_EXPORTED:
+        notice.status = STATUS_EXPORTED
+        notice.updated_at = _now()
+        session.add(notice)
+        session.commit()
+        session.refresh(notice)
 
 
 def list_notices(session: Session, project_id: int | None) -> list[tuple[FormalNotice, NoticeDraftData]]:

@@ -1,0 +1,46 @@
+<!doctype html>
+<!-- Briefvorlage für den PDF-Export (WeasyPrint). Gefüllt von services/documents.py.
+     Inhalt (Betreff, Brieftext) kommt fertig aus dem freigegebenen FormalNotice – hier nur Layout. -->
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<title>{{ subject }}</title>
+<style>
+  @page {
+    size: A4;
+    margin: 18mm 20mm 22mm 25mm;
+    @bottom-left {
+      content: "{{ footer }}";
+      font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+      font-size: 7.5pt;
+      color: #666;
+    }
+    @bottom-right {
+      content: "Seite " counter(page) " von " counter(pages);
+      font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+      font-size: 7.5pt;
+      color: #666;
+    }
+  }
+  body { font-family: "Helvetica Neue", Helvetica, Arial, sans-serif; font-size: 10pt; line-height: 1.38; color: #111; }
+  .sender { font-size: 8pt; color: #555; border-bottom: 0.5pt solid #999; padding-bottom: 1mm; margin-bottom: 4mm; }
+  .recipient { min-height: 18mm; white-space: pre-line; }
+  .meta { text-align: right; margin: 3mm 0 6mm; }
+  .meta div { margin: 0.5mm 0; }
+  .subject { font-weight: bold; font-size: 10.5pt; margin-bottom: 5mm; }
+  .body { white-space: pre-wrap; }
+  .disclaimer { margin-top: 6mm; font-size: 8pt; color: #555; border-top: 0.5pt solid #ccc; padding-top: 2mm; }
+</style>
+</head>
+<body>
+  <div class="sender">{{ company }} · {{ user_name }}</div>
+  <div class="recipient">{{ recipient }}</div>
+  <div class="meta">
+    <div>Datum: {{ date }}</div>
+    <div>Bauvorhaben: {{ project_name }}{% if project_number %} ({{ project_number }}){% endif %}</div>
+  </div>
+  <div class="subject">{{ subject }}</div>
+  <div class="body">{{ body }}</div>
+  <div class="disclaimer">{{ disclaimer }}</div>
+</body>
+</html>
