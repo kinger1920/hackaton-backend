@@ -4,37 +4,9 @@ Laufen offline: eigene In-Memory-Datenbank statt `site_assistant.db`, kein KI-Au
 (der Groq-Client wird abgeschaltet → Offline-Regeln).
 """
 
-import pytest
-from fastapi.testclient import TestClient
-from sqlalchemy.pool import StaticPool
-from sqlmodel import Session, SQLModel, create_engine
+from sqlmodel import Session
 
-import src.models  # noqa: F401  – registriert alle Tabellen
-from src.database import get_session
-from src.main import app
 from src.models import Project, SiteNote
-from src.services import llm
-
-
-@pytest.fixture
-def engine(monkeypatch):
-    # StaticPool: alle Verbindungen teilen dieselbe In-Memory-DB.
-    eng = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
-    SQLModel.metadata.create_all(eng)
-    monkeypatch.setattr(llm, "get_client", lambda: None)  # kein Netz, kein Tokenverbrauch
-    return eng
-
-
-@pytest.fixture
-def client(engine):
-    def _session():
-        with Session(engine) as s:
-            yield s
-
-    app.dependency_overrides[get_session] = _session
-    # Ohne `with`: Der Startup-Hook (init_db auf der echten DB) läuft so nicht.
-    yield TestClient(app)
-    app.dependency_overrides.clear()
 
 
 def _add_projects(engine, *names: str) -> list[int]:

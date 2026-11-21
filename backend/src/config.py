@@ -31,6 +31,11 @@ class Settings(BaseSettings):
     # Offline-Fallback greift (Contract: "LLM-Fehler oder Timeout (8 s) → Fallback").
     llm_timeout_seconds: float = 8.0
 
+    # Fester Demo-Nutzer, solange es kein Login gibt: steht in der Briefsignatur
+    # und im Freigabe-Audit ("wer hat freigegeben").
+    demo_user_name: str = "Bauleiter"
+    demo_company: str = "Baupartner AG & Co. KG"
+
 
 settings = Settings()
 
