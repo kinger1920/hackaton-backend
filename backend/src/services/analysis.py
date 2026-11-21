@@ -21,6 +21,7 @@ from src.schemas.analysis import (
     DraftType, ManpowerAvg, PlanAnalysis, WorkPackage,
 )
 from src.services import llm
+from src.services.workforce import workforce_check
 from src.services.reports import find_report, project_tasks, weather_text
 from src.services.summary import RECOMMENDATIONS, _detect_link, report_label, resolve_period
 
@@ -304,12 +305,17 @@ async def analyze_day(session: Session, project: Project, date: dt.date, use_llm
             well.append(DayItem(text=f"{t.title}: +{gained} % auf {s.actual} % (Soll {s.plan} %).", source=label))
 
     workers, hours = _workers(report), _hours(report)
+    gaps = workforce_check(session, project, date)
+    for g in gaps:  # Sollstärke je Firma (Vertrag) – genauer als der Projekt-Durchschnitt unten
+        streak = f", {g.consecutiveDays}. Tag in Folge" if g.consecutiveDays > 1 else ""
+        bad.append(DayItem(text=f"{g.company or g.trade}: {g.actual} statt {g.planned} Arbeitskräfte "
+                                f"laut Vertrag (−{g.shortfallPercent} %{streak}).", source=g.source))
     plan_workers = _planned_workforce(session, project.id)
     if plan_workers is None:
         others = [_workers(r) for r in _reports(session, project.id, None, date)
                   if not (r.deviations_incidents or "").strip() and _workers(r)]
         plan_workers = round(sum(others) / len(others), 1) if others else None
-    if workers is not None and plan_workers and workers < 0.8 * plan_workers:
+    if not gaps and workers is not None and plan_workers and workers < 0.8 * plan_workers:
         bad.append(DayItem(text=f"Personal unter Soll: {workers} statt ca. {plan_workers:g} Personen.", source=label))
 
     weather = _json(report.weather)
@@ -342,7 +348,7 @@ async def analyze_day(session: Session, project: Project, date: dt.date, use_llm
 
     return DayAnalysis(date=date, title=title, wentWell=well, wentBadly=bad, deviations=deviations, mode=mode,
                        stats=DayStats(workers=workers, plannedWorkers=plan_workers, hours=hours,
-                                      weather=weather_text(report.weather)))
+                                      weather=weather_text(report.weather)), workforce=gaps)
 
 
 # ---------------------------------------------------------------- Dashboard
@@ -353,8 +359,16 @@ def dashboard(session: Session, project: Project, ref: dt.date) -> Dashboard:
     drafts = session.exec(select(FormalNotice).where(FormalNotice.project_id == project.id,
                                                      FormalNotice.status == "Entwurf")).all()
     today = find_report(session, project.id, ref)
-    alerts = [DashboardAlert(severity=d.severity, title=d.title, description=d.impact, draftType=d.draftType,
-                             source=d.sourceReport) for d in a.deviations[:5]]
+    # Proaktiv: Briefvorschläge aus dem Sollstärke-Check zuerst, dann Abweichungen aus dem Plan.
+    alerts = [DashboardAlert(
+        severity="critical" if g.suggestion else "warning",
+        title=g.suggestion.title if g.suggestion else f"{g.company or g.trade}: {g.actual} statt {g.planned} Arbeitskräfte",
+        description=(f"Sollstärke laut {g.contractSource}: {g.planned}, Ist {g.actual} (−{g.shortfallPercent} %), "
+                     f"{g.consecutiveDays} Tag(e) in Folge."),
+        draftType="delay", source=g.source, prefillText=g.suggestion.prefillText if g.suggestion else None,
+    ) for g in workforce_check(session, project, ref)]
+    alerts += [DashboardAlert(severity=d.severity, title=d.title, description=d.impact, draftType=d.draftType,
+                              source=d.sourceReport) for d in a.deviations[:5]]
     return Dashboard(
         kpis=DashboardKpis(delayDays=-a.overallDelta, spi=a.spi, criticalAlerts=a.criticalAlertsCount,
                            openDrafts=len(drafts), workersToday=_workers(today) if today else None),
