@@ -29,9 +29,40 @@
 }
 
 .lang-flag {
-  font-size: 16px;
-  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 0;
+  flex-shrink: 0;
 }
+
+.lang-flag-svg {
+  width: 18px;
+  height: 12px;
+  border-radius: 2px;
+  overflow: hidden;
+  display: block;
+  box-shadow: 0 0 0 1px rgba(15, 23, 42, 0.18);
+}
+
+[data-theme="dark"] .lang-flag-svg {
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.28);
+}
+
+.flag-white-fill { fill: #ffffff; }
+.flag-white-stroke { stroke: #ffffff; }
+.flag-de-black { fill: #000000; }
+.flag-de-red { fill: #dd0000; }
+.flag-de-gold { fill: #ffce00; }
+.flag-uk-blue { fill: #012169; }
+.flag-uk-red-stroke { stroke: #c8102e; }
+.flag-pl-red { fill: #dc143c; }
+.flag-tr-red { fill: #e30a17; }
+.flag-ro-blue { fill: #002b7f; }
+.flag-ro-yellow { fill: #fcd116; }
+.flag-ro-red { fill: #ce1126; }
+.flag-ua-blue { fill: #005bbb; }
+.flag-ua-yellow { fill: #ffd500; }
 
 .lang-code {
   text-transform: uppercase;
