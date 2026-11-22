@@ -20,6 +20,15 @@ from src.main import app  # noqa: E402
 from src.services import llm  # noqa: E402
 
 
+@pytest.fixture(autouse=True)
+def _fresh_weather_cache():
+    # Der Wetter-Cache lebt im Modul; ohne Leeren sähe ein Test die Antwort des vorigen.
+    from src.services import weather
+
+    weather.clear_caches()
+    yield
+
+
 @pytest.fixture
 def engine(monkeypatch):
     # StaticPool: alle Verbindungen teilen dieselbe In-Memory-DB.

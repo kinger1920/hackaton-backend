@@ -63,6 +63,22 @@ class Settings(BaseSettings):
 
 settings = Settings()
 
+
+def setup_logging() -> None:
+    """Meldungen unserer Module (`src.*`, ab INFO) auf stderr ausgeben – auch im Render-Log.
+
+    Warum: uvicorn richtet nur seine eigenen Logger ein. Ohne eigenen Handler gingen Warnungen
+    wie „Wetterdienst nicht erreichbar: HTTP 429“ auf dem Server verloren. Idempotent: mehrfacher
+    Aufruf (z. B. bei --reload) hängt keinen zweiten Handler an.
+    """
+    app_logger = logging.getLogger("src")
+    if not any(getattr(h, "_bauassist", False) for h in app_logger.handlers):
+        handler = logging.StreamHandler()
+        handler.setFormatter(logging.Formatter("%(levelname)s:     %(name)s – %(message)s"))
+        handler._bauassist = True  # type: ignore[attr-defined]  – Markierung gegen doppelte Handler
+        app_logger.addHandler(handler)
+    app_logger.setLevel(logging.INFO)
+
 if not settings.groq_api_key:
     # Nur melden, DASS der Key fehlt – niemals einen Wert loggen.
     logger.warning("GROQ_API_KEY fehlt – KI-Endpunkte laufen im Offline-Modus.")

@@ -1,14 +1,17 @@
 """Wetter für Baustelle + Datum (Kern von GET /api/weather).
 
-Quelle: Open-Meteo (kostenlos, kein API-Key). Ablauf:
-1. Standort des Projekts (`Project.location`, z. B. "Berliner Str. 42, 10115 Berlin") → Koordinaten
-   über die Open-Meteo-Geocoding-API (sucht nach Ortsnamen, deshalb werden Straße/PLZ abgeschnitten).
-2. Tageswerte (Wettercode, Temperatur min/max, Niederschlag, Wind) für das Datum:
-   bis ~3 Monate zurück und 16 Tage voraus über die Forecast-API, ältere Tage über die Archiv-API.
-Fällt das Netz aus, nutzt der Router das im Tagesbericht gespeicherte Wetter (Offline-Fallback).
+Quellen (beide kostenlos, ohne API-Key), in dieser Reihenfolge:
+1. Open-Meteo: Standort (`Project.location`, z. B. "Berliner Str. 42, 10115 Berlin") → Koordinaten
+   über die Geocoding-API (sucht Ortsnamen, deshalb werden Straße/PLZ abgeschnitten). Fällt die
+   aus, helfen fest hinterlegte Koordinaten großer deutscher Städte. Dann Tageswerte: bis ~3 Monate
+   zurück und 15 Tage voraus über die Forecast-API, ältere Tage über die Archiv-API.
+2. Bright Sky (DWD-Daten, api.brightsky.dev), wenn Open-Meteo scheitert – z. B. wenn ein Server
+   mit geteilter IP (Render) dort gesperrt ist (HTTP 429).
+Scheitern beide, nutzt der Router das im Tagesbericht gespeicherte Wetter (Offline-Fallback).
 
 Bewusst nur Standardbibliothek (urllib) – keine neue Abhängigkeit. Ergebnisse werden im Speicher
-gecacht, damit wiederholtes Klicken auf „Automatisch“ keine weiteren Anfragen auslöst.
+gecacht (heute 30 Min, Fehler 2 Min) und gleichzeitige Anfragen gebündelt: Das Frontend ruft
+/api/weather oft mehrfach parallel auf, rausgehen soll trotzdem nur EINE Anfrage.
 """
 
 import asyncio
@@ -16,18 +19,33 @@ import datetime as dt
 import json
 import logging
 import re
+import socket
+import ssl
+import threading
+import time
+import urllib.error
 import urllib.parse
 import urllib.request
+from collections import Counter
 
 logger = logging.getLogger(__name__)
 
 GEOCODING_URL = "https://geocoding-api.open-meteo.com/v1/search"
 FORECAST_URL = "https://api.open-meteo.com/v1/forecast"
 ARCHIVE_URL = "https://archive-api.open-meteo.com/v1/archive"
+BRIGHTSKY_URL = "https://api.brightsky.dev/weather"
+BRIGHTSKY_CURRENT_URL = "https://api.brightsky.dev/current_weather"
 TIMEOUT_SECONDS = 6.0
 # Forecast-API liefert past_days bis 92 Tage zurück; davor nur das Archiv.
 FORECAST_PAST_LIMIT_DAYS = 90
 FORECAST_FUTURE_LIMIT_DAYS = 15
+
+# Cache-Dauer: heute/Zukunft ändert sich (Vorhersage, aktuelle Messung) → 30 Min;
+# vergangene Tage sind fest → 6 h; Fehler nur kurz merken, damit ein gesperrter Dienst
+# nicht bei jedem Klick erneut 2× angefragt wird, er aber bald wieder probiert wird.
+CACHE_TTL_TODAY_S = 30 * 60
+CACHE_TTL_PAST_S = 6 * 60 * 60
+CACHE_TTL_ERROR_S = 2 * 60
 
 # Baustellen-Schwellen (fester Code, keine KI – testbar):
 # Turmdrehkrane werden üblicherweise ab Böen um 45 km/h (≈ 12,5 m/s) außer Betrieb genommen.
@@ -49,12 +67,60 @@ WMO_DE: dict[int, str] = {
     95: "Gewitter", 96: "Gewitter mit Hagel", 99: "Schweres Gewitter mit Hagel",
 }
 
+# Bright Sky: Niederschlagsart ("condition") hat Vorrang vor dem Bewölkungs-Icon.
+BRIGHTSKY_CONDITION_DE = [  # Reihenfolge = Wichtigkeit für die Tagesbeschreibung
+    ("thunderstorm", "Gewitter"), ("hail", "Hagel"), ("snow", "Schneefall"),
+    ("sleet", "Schneeregen"), ("rain", "Regen"), ("fog", "Nebel"),
+]
+BRIGHTSKY_ICON_DE = {
+    "clear-day": "Sonnig", "clear-night": "Klar", "partly-cloudy-day": "Teilweise bewölkt",
+    "partly-cloudy-night": "Teilweise bewölkt", "cloudy": "Bewölkt", "fog": "Nebel", "wind": "Windig",
+    "rain": "Regen", "sleet": "Schneeregen", "snow": "Schneefall", "hail": "Hagel", "thunderstorm": "Gewitter",
+}
+
+# Ersatz-Koordinaten, falls die Geocoding-API nicht erreichbar ist (Demo-Projekt: Berlin).
+CITY_COORDS: dict[str, tuple[float, float]] = {
+    "berlin": (52.52, 13.41), "hamburg": (53.55, 9.99), "münchen": (48.14, 11.58),
+    "köln": (50.94, 6.96), "frankfurt am main": (50.11, 8.68), "frankfurt": (50.11, 8.68),
+    "stuttgart": (48.78, 9.18), "düsseldorf": (51.23, 6.78), "leipzig": (51.34, 12.37),
+    "dortmund": (51.51, 7.47), "essen": (51.46, 7.01), "bremen": (53.08, 8.80),
+    "dresden": (51.05, 13.74), "hannover": (52.37, 9.73), "nürnberg": (49.45, 11.08),
+    "potsdam": (52.40, 13.07),
+}
+
 _geo_cache: dict[str, tuple[float, float, str] | None] = {}
-_weather_cache: dict[tuple[float, float, dt.date], dict] = {}
+# (Standort, Tag) → (gültig bis [time.monotonic], Ergebnis-Dict ODER WeatherUnavailable)
+_weather_cache: dict[tuple[str, dt.date], tuple[float, object]] = {}
+_key_locks: dict[tuple[str, dt.date], threading.Lock] = {}
+_key_locks_guard = threading.Lock()
 
 
 class WeatherUnavailable(Exception):
     """Wetterdienst nicht erreichbar oder keine Daten für Ort/Datum."""
+
+
+def clear_caches() -> None:
+    """Alle Wetter-Caches leeren (für Tests und nach Standortänderungen)."""
+    _geo_cache.clear()
+    _weather_cache.clear()
+
+
+def error_kind(exc: BaseException) -> str:
+    """Kurzer, geheimnisfreier Fehlertyp für Log und 503-Meldung, z. B. "HTTP 429", "SSL", "Timeout"."""
+    if isinstance(exc, urllib.error.HTTPError):  # vor URLError prüfen (ist eine Unterklasse)
+        return f"HTTP {exc.code}"
+    reason = exc.reason if isinstance(exc, urllib.error.URLError) else exc
+    if isinstance(reason, ssl.SSLError):
+        return "SSL"
+    if isinstance(reason, TimeoutError):
+        return "Timeout"
+    if isinstance(reason, socket.gaierror):
+        return "DNS"
+    if isinstance(reason, (ValueError, KeyError, TypeError)):  # inkl. kaputtes JSON
+        return "ungültige Antwort"
+    if isinstance(reason, OSError):
+        return "Netzwerk"
+    return type(exc).__name__
 
 
 def _get_json(url: str, params: dict) -> dict:
@@ -83,33 +149,48 @@ def location_candidates(location: str) -> list[str]:
     return [c for c in candidates if c and not (c.lower() in seen or seen.add(c.lower()))]
 
 
+def _known_city(location: str) -> tuple[float, float, str] | None:
+    """Fest hinterlegte Koordinaten für den Ort, falls er eine bekannte Großstadt ist."""
+    for name in location_candidates(location):
+        coords = CITY_COORDS.get(name.lower())
+        if coords:
+            return coords[0], coords[1], name
+    return None
+
+
 def _geocode_sync(location: str) -> tuple[float, float, str] | None:
+    """Standort → (lat, lon, Ortsname); None = Ort unbekannt.
+
+    Ist die Geocoding-API nicht erreichbar, helfen die hinterlegten Großstädte; sonst wird der
+    Netzwerkfehler weitergereicht (→ Fehlertyp in der 503-Meldung).
+    """
     key = location.strip().lower()
     if key in _geo_cache:
         return _geo_cache[key]
     result = None
-    for name in location_candidates(location):
-        data = _get_json(GEOCODING_URL, {"name": name, "count": 1, "language": "de", "format": "json"})
-        hits = data.get("results") or []
-        if hits:
-            hit = hits[0]
-            result = (float(hit["latitude"]), float(hit["longitude"]), str(hit.get("name") or name))
-            break
+    try:
+        for name in location_candidates(location):
+            data = _get_json(GEOCODING_URL, {"name": name, "count": 1, "language": "de", "format": "json"})
+            hits = data.get("results") or []
+            if hits:
+                hit = hits[0]
+                result = (float(hit["latitude"]), float(hit["longitude"]), str(hit.get("name") or name))
+                break
+    except Exception as exc:
+        known = _known_city(location)
+        if known is None:
+            raise
+        logger.warning("Geocoding nicht erreichbar (%s) – nutze hinterlegte Koordinaten für %s",
+                       error_kind(exc), known[2])
+        return known  # nicht cachen: beim nächsten Mal die genauere API erneut probieren
     _geo_cache[key] = result
     return result
 
 
 def _daily_sync(lat: float, lon: float, day: dt.date) -> dict:
-    cache_key = (round(lat, 3), round(lon, 3), day)
-    if cache_key in _weather_cache:
-        return _weather_cache[cache_key]
+    """Tageswerte von Open-Meteo (Forecast- bzw. Archiv-API)."""
     today = dt.date.today()
-    if day < today - dt.timedelta(days=FORECAST_PAST_LIMIT_DAYS):
-        url = ARCHIVE_URL
-    elif day > today + dt.timedelta(days=FORECAST_FUTURE_LIMIT_DAYS):
-        raise WeatherUnavailable("Für Tage mehr als 15 Tage in der Zukunft gibt es noch keine Vorhersage.")
-    else:
-        url = FORECAST_URL
+    url = ARCHIVE_URL if day < today - dt.timedelta(days=FORECAST_PAST_LIMIT_DAYS) else FORECAST_URL
     data = _get_json(url, {
         "latitude": lat, "longitude": lon,
         "daily": "weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum,wind_speed_10m_max,"
@@ -129,7 +210,7 @@ def _daily_sync(lat: float, lon: float, day: dt.date) -> dict:
     t_max, t_min = first("temperature_2m_max"), first("temperature_2m_min")
     if t_max is None and t_min is None:
         raise WeatherUnavailable("Wetterdienst liefert für dieses Datum keine Werte.")
-    result = {
+    return {
         "code": first("weather_code"),
         "t_max": t_max,
         "t_min": t_min,
@@ -141,10 +222,67 @@ def _daily_sync(lat: float, lon: float, day: dt.date) -> dict:
         "current_code": current.get("weather_code"),
         "url": url,
     }
-    # Vergangene Tage ändern sich nicht mehr → cachen; heutige/künftige nicht (Vorhersage wird genauer).
-    if day < today:
-        _weather_cache[cache_key] = result
+
+
+def _brightsky_text(records: list[dict]) -> str:
+    """Tagesbeschreibung aus Bright-Sky-Stundenwerten: Niederschlagsart vor Bewölkung."""
+    conditions = {r.get("condition") for r in records}
+    for key, text in BRIGHTSKY_CONDITION_DE:
+        if key in conditions:
+            if key == "rain" and sum(r.get("precipitation") or 0 for r in records) < 1:
+                return "Leichter Regen"
+            return text
+    # Trocken: häufigstes Icon tagsüber (8–17 Uhr), sonst über den ganzen Tag.
+    daytime = [r for r in records if 8 <= int(str(r.get("timestamp", "T00"))[11:13] or 0) <= 17] or records
+    icons = Counter(r.get("icon") for r in daytime if r.get("icon"))
+    return BRIGHTSKY_ICON_DE.get(icons.most_common(1)[0][0],
+                                 "Wetterlage unbekannt") if icons else "Wetterlage unbekannt"
+
+
+def _brightsky_daily(lat: float, lon: float, day: dt.date) -> dict:
+    """Tageswerte von Bright Sky (DWD) im gleichen Format wie `_daily_sync`."""
+    data = _get_json(BRIGHTSKY_URL, {
+        "lat": lat, "lon": lon, "date": day.isoformat(),
+        "last_date": (day + dt.timedelta(days=1)).isoformat(), "tz": "Europe/Berlin",
+    })
+    # Antwort enthält auch 00:00 des Folgetags → nur Stunden des gewünschten Tages.
+    records = [r for r in data.get("weather") or [] if str(r.get("timestamp", "")).startswith(day.isoformat())]
+    temps = [r["temperature"] for r in records if r.get("temperature") is not None]
+    if not temps:
+        raise WeatherUnavailable("Bright Sky liefert für dieses Datum keine Werte.")
+
+    def maximum(name: str):
+        values = [r[name] for r in records if r.get(name) is not None]
+        return max(values) if values else None
+
+    rain = [r["precipitation"] for r in records if r.get("precipitation") is not None]
+    result = {
+        "condition_text": _brightsky_text(records),
+        "t_max": max(temps),
+        "t_min": min(temps),
+        "precipitation_mm": sum(rain) if rain else None,
+        "wind_kmh": maximum("wind_speed"),
+        "gusts_kmh": maximum("wind_gust_speed"),
+        "precip_probability": maximum("precipitation_probability"),
+        "current_temp": None,
+        "current_text": None,
+        "provider": "Bright Sky (DWD)",
+    }
+    if day == dt.date.today():
+        # Aktuelle Messung für die Kachel; scheitert sie, bleibt das Tagesmittel.
+        try:
+            now = (_get_json(BRIGHTSKY_CURRENT_URL, {"lat": lat, "lon": lon, "tz": "Europe/Berlin"})
+                   .get("weather") or {})
+            result["current_temp"] = now.get("temperature")
+            if now:
+                result["current_text"] = _brightsky_text([now])
+        except Exception as exc:
+            logger.warning("Bright Sky current_weather nicht erreichbar: %s", error_kind(exc))
     return result
+
+
+# Reihenfolge der Wetterdienste: erster Erfolg gewinnt.
+PROVIDERS = (("Open-Meteo", "_daily_sync"), ("Bright Sky", "_brightsky_daily"))
 
 
 def describe(code) -> str:
@@ -171,41 +309,32 @@ def site_hints(t_min: float | None, gusts_kmh: float | None) -> dict:
     return hints
 
 
-async def fetch_weather(location: str, day: dt.date) -> dict:
-    """Wetter am Standort für einen Tag im Format von `WeatherResponse`.
-
-    Raises WeatherUnavailable, wenn Ort nicht gefunden oder Dienst nicht erreichbar.
-    """
-    try:
-        geo = await asyncio.to_thread(_geocode_sync, location)
-        if geo is None:
-            raise WeatherUnavailable(f"Standort „{location}“ wurde nicht gefunden.")
-        lat, lon, place = geo
-        daily = await asyncio.to_thread(_daily_sync, lat, lon, day)
-    except WeatherUnavailable:
-        raise
-    except Exception as exc:  # Netzwerk, Timeout, kaputtes JSON – Demo darf nie abstürzen
-        logger.warning("Wetterdienst nicht erreichbar: %s", exc)
-        raise WeatherUnavailable("Wetterdienst nicht erreichbar.") from exc
-
+def _format(daily: dict, day: dt.date, place: str) -> dict:
+    """Rohwerte eines Wetterdienstes → Format von `WeatherResponse`."""
     t_max, t_min = daily["t_max"], daily["t_min"]
     temps = [t for t in (t_max, t_min) if t is not None]
     temperature = round(sum(temps) / len(temps)) if temps else None
-    code = daily["code"]
+    condition = daily.get("condition_text") or describe(daily.get("code"))
     if daily.get("current_temp") is not None:  # heute: aktuelle Messung statt Tagesmittel
         temperature = round(daily["current_temp"])
-        code = daily.get("current_code", code)
-    condition = describe(code)
+        if daily.get("current_text"):
+            condition = daily["current_text"]
+        elif daily.get("current_code") is not None:
+            condition = describe(daily["current_code"])
     if t_min is not None and t_max is not None:
         condition += f" ({round(t_min)} bis {round(t_max)} °C)"
-    kind = "Archiv" if daily["url"] == ARCHIVE_URL else ("Vorhersage" if day > dt.date.today() else "Messung/Modell")
+    if daily.get("url") == ARCHIVE_URL:
+        kind = "Archiv"
+    else:
+        kind = "Vorhersage" if day > dt.date.today() else "Messung/Modell"
+    provider = daily.get("provider") or "Open-Meteo"
     return {
         "date": day.isoformat(),
         "temperature_c": temperature,
         "condition": condition,
-        "wind_kmh": round(daily["wind_kmh"]) if daily["wind_kmh"] is not None else None,
-        "precipitation_mm": round(daily["precipitation_mm"], 1) if daily["precipitation_mm"] is not None else None,
-        "source": f"Open-Meteo ({kind}), {place}",
+        "wind_kmh": round(daily["wind_kmh"]) if daily.get("wind_kmh") is not None else None,
+        "precipitation_mm": round(daily["precipitation_mm"], 1) if daily.get("precipitation_mm") is not None else None,
+        "source": f"{provider} ({kind}), {place}",
         "wind_gusts_kmh": round(daily["gusts_kmh"]) if daily.get("gusts_kmh") is not None else None,
         "precipitation_probability": daily.get("precip_probability"),
         "t_min": round(t_min, 1) if t_min is not None else None,
@@ -213,3 +342,74 @@ async def fetch_weather(location: str, day: dt.date) -> dict:
         "place": place,
         **site_hints(t_min, daily.get("gusts_kmh")),
     }
+
+
+def _fetch_uncached(location: str, day: dt.date) -> dict:
+    """Ein Abruf ohne Cache: Geocoding, dann Open-Meteo, bei Fehler Bright Sky.
+
+    Raises WeatherUnavailable mit Fehlertyp je Dienst, z. B.
+    "Wetterdienst nicht erreichbar (Open-Meteo: HTTP 429; Bright Sky: Timeout)."
+    """
+    if day > dt.date.today() + dt.timedelta(days=FORECAST_FUTURE_LIMIT_DAYS):
+        raise WeatherUnavailable("Für Tage mehr als 15 Tage in der Zukunft gibt es noch keine Vorhersage.")
+    try:
+        geo = _geocode_sync(location)
+    except Exception as exc:  # Netzwerk, Timeout, kaputtes JSON – Demo darf nie abstürzen
+        kind = error_kind(exc)
+        logger.warning("Geocoding nicht erreichbar: %s (%s)", kind, exc)
+        raise WeatherUnavailable(f"Wetterdienst nicht erreichbar (Geocoding: {kind}).") from exc
+    if geo is None:
+        raise WeatherUnavailable(f"Standort „{location}“ wurde nicht gefunden.")
+    lat, lon, place = geo
+
+    errors: list[str] = []
+    for name, func_name in PROVIDERS:
+        try:
+            # Über globals() nachschlagen, damit Tests einzelne Dienste per monkeypatch ersetzen können.
+            return _format(globals()[func_name](lat, lon, day), day, place)
+        except WeatherUnavailable as exc:
+            errors.append(f"{name}: keine Daten")
+            logger.warning("%s: %s", name, exc)
+        except Exception as exc:
+            kind = error_kind(exc)
+            errors.append(f"{name}: {kind}")
+            logger.warning("%s nicht erreichbar: %s (%s)", name, kind, exc)
+    raise WeatherUnavailable(f"Wetterdienst nicht erreichbar ({'; '.join(errors)}).")
+
+
+def _lock_for(key: tuple[str, dt.date]) -> threading.Lock:
+    with _key_locks_guard:
+        return _key_locks.setdefault(key, threading.Lock())
+
+
+def _fetch_cached(location: str, day: dt.date) -> dict:
+    """Wie `_fetch_uncached`, aber mit Cache und gebündelten parallelen Aufrufen.
+
+    Warum Lock je (Ort, Tag): Kommen 3 Anfragen gleichzeitig, wartet die 2. und 3. auf die
+    erste und nimmt dann deren Ergebnis aus dem Cache – statt 3× extern anzufragen.
+    """
+    key = (location.strip().lower(), day)
+    with _lock_for(key):
+        hit = _weather_cache.get(key)
+        if hit and hit[0] > time.monotonic():
+            value = hit[1]
+            if isinstance(value, WeatherUnavailable):
+                raise value
+            return dict(value)
+        try:
+            result = _fetch_uncached(location, day)
+        except WeatherUnavailable as exc:
+            _weather_cache[key] = (time.monotonic() + CACHE_TTL_ERROR_S, exc)
+            raise
+        ttl = CACHE_TTL_PAST_S if day < dt.date.today() else CACHE_TTL_TODAY_S
+        _weather_cache[key] = (time.monotonic() + ttl, result)
+        return dict(result)
+
+
+async def fetch_weather(location: str, day: dt.date) -> dict:
+    """Wetter am Standort für einen Tag im Format von `WeatherResponse`.
+
+    Läuft im Thread (urllib blockiert). Raises WeatherUnavailable, wenn der Ort nicht gefunden
+    wird oder kein Wetterdienst erreichbar ist (Meldung enthält den Fehlertyp je Dienst).
+    """
+    return await asyncio.to_thread(_fetch_cached, location, day)

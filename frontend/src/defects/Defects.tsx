@@ -18,6 +18,7 @@ import {
 import {useProjects} from '../context/ProjectContext';
 import {api, Company, Defect, DefectPriority, DefectStatus, DefectSummary, saveBlob} from '../services/api';
 import {addDays, startOfToday, toIsoDate} from '../utils/dates';
+import {useLanguage} from '../context/LanguageContext';
 import '../ideas/Ideas.css';
 import './Defects.css';
 
@@ -30,28 +31,19 @@ import './Defects.css';
 
 type Tab = 'open' | 'overdue' | 'behoben' | 'abgenommen' | 'all';
 
-const TABS: { key: Tab; label: string }[] = [
-    {key: 'open', label: 'Offen'},
-    {key: 'overdue', label: 'Überfällig'},
-    {key: 'behoben', label: 'Wartet auf Abnahme'},
-    {key: 'abgenommen', label: 'Abgenommen'},
-    {key: 'all', label: 'Alle'}
-];
+// Anzeigetexte für Tabs, Status, nächsten Schritt und Priorität kommen aus den Übersetzungen
+// (def_tab_<key>, def_status_<status>, def_next_<status>, def_prio_<prio>).
+const TABS: Tab[] = ['open', 'overdue', 'behoben', 'abgenommen', 'all'];
 
-const STATUS_LABELS: Record<DefectStatus, string> = {
-    offen: 'offen',
-    in_bearbeitung: 'in Bearbeitung',
-    behoben: 'behoben',
-    abgenommen: 'abgenommen'
+const STATUSES: DefectStatus[] = ['offen', 'in_bearbeitung', 'behoben', 'abgenommen'];
+
+const NEXT_STEP: Partial<Record<DefectStatus, DefectStatus>> = {
+    offen: 'in_bearbeitung',
+    in_bearbeitung: 'behoben',
+    behoben: 'abgenommen'
 };
 
-const NEXT_STEP: Partial<Record<DefectStatus, { to: DefectStatus; label: string }>> = {
-    offen: {to: 'in_bearbeitung', label: 'In Bearbeitung'},
-    in_bearbeitung: {to: 'behoben', label: 'Als behoben melden'},
-    behoben: {to: 'abgenommen', label: 'Abnehmen'}
-};
-
-const PRIORITY_LABELS: Record<DefectPriority, string> = {hoch: 'hoch', mittel: 'mittel', niedrig: 'niedrig'};
+const PRIORITIES: DefectPriority[] = ['hoch', 'mittel', 'niedrig'];
 
 interface FormState {
     id: number | null;
@@ -68,8 +60,13 @@ interface FormState {
     photoFile: File | null;
 }
 
-const fmt = (iso: string | null | undefined) =>
-    iso ? new Date(`${iso}T00:00:00`).toLocaleDateString('de-DE', {day: '2-digit', month: '2-digit', year: 'numeric'}) : '–';
+// Standard 'de-DE': Texte für den (deutschen) Briefentwurf; in der Oberfläche wird die Locale der Sprache übergeben.
+const fmt = (iso: string | null | undefined, locale = 'de-DE') =>
+    iso ? new Date(`${iso}T00:00:00`).toLocaleDateString(locale, {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric'
+    }) : '–';
 
 const placeOf = (d: Defect) => [d.house, d.level].filter(Boolean).join(' · ');
 
@@ -85,6 +82,9 @@ export const Defects: React.FC = () => {
     const navigate = useNavigate();
     const location = useLocation();
     const {activeProject} = useProjects();
+    // tx statt t, weil `t` hier schon als Variablenname (Tabs, Timeout) benutzt wird.
+    const {t: tx, tf, locale} = useLanguage();
+    const fmtUi = (iso: string | null | undefined) => fmt(iso, locale);
     const projectId = Number(activeProject.id);
     const navState = (location.state as { newDefect?: { house?: string | null; level?: string | null }; focusId?: number } | null) ?? null;
 
@@ -118,7 +118,7 @@ export const Defects: React.FC = () => {
             setSummary(sum);
             setError(null);
         } catch (err: any) {
-            setError(err?.message || 'Mängel konnten nicht geladen werden');
+            setError(err?.message || tx('def_load_failed'));
         }
     }, [projectId]);
 
@@ -193,19 +193,19 @@ export const Defects: React.FC = () => {
             await api.updateDefect(d.id, {status});
             await load();
         } catch (err: any) {
-            setError(err?.message || 'Status konnte nicht geändert werden');
+            setError(err?.message || tx('def_status_failed'));
         } finally {
             setBusyId(null);
         }
     };
 
     const remove = async (d: Defect) => {
-        if (!window.confirm(`Mangel „${d.title}“ löschen? Das lässt sich nicht rückgängig machen.`)) return;
+        if (!window.confirm(tf('def_confirm_delete', {title: d.title}))) return;
         try {
             await api.deleteDefect(d.id);
             await load();
         } catch (err: any) {
-            setError(err?.message || 'Mangel konnte nicht gelöscht werden');
+            setError(err?.message || tx('def_delete_failed'));
         }
     };
 
@@ -248,7 +248,7 @@ export const Defects: React.FC = () => {
             if (tab !== 'all' && !(tab === 'open' && (saved.status === 'offen' || saved.status === 'in_bearbeitung'))) setTab('all');
             await load();
         } catch (err: any) {
-            setError(err?.message || 'Mangel konnte nicht gespeichert werden');
+            setError(err?.message || tx('def_save_failed'));
         } finally {
             setSaving(false);
         }
@@ -259,6 +259,7 @@ export const Defects: React.FC = () => {
             navigate('/drafts', {state: {noticeId: d.notice_id}});
             return;
         }
+        // Bewusst Deutsch: Diese Stichworte gehen in den deutschen VOB/B-Briefentwurf.
         const parts = [
             `Mangel: ${d.title}`,
             d.description,
@@ -277,7 +278,7 @@ export const Defects: React.FC = () => {
             const blob = await api.downloadDefectList(projectId, format, status === 'all' ? '' : status, company || undefined);
             saveBlob(blob, `Maengelliste_${toIsoDate(today)}.${format}`);
         } catch (err: any) {
-            setError(err?.message || 'Export fehlgeschlagen');
+            setError(err?.message || tx('def_export_failed'));
         } finally {
             setExporting(null);
         }
@@ -291,20 +292,20 @@ export const Defects: React.FC = () => {
                 <div className="idea-title-group">
                     <div className="idea-icon"><ClipboardList size={22}/></div>
                     <div>
-                        <h1>Mängel</h1>
+                        <h1>{tx('def_title')}</h1>
                     </div>
                 </div>
                 <div className="defects-header-actions">
                     <button className="btn btn-secondary" onClick={() => exportList('docx')} disabled={exporting !== null}
-                            title="Mängelliste der aktuellen Auswahl als Word">
+                            title={tx('def_export_word_title')}>
                         <Download size={14}/> <span>{exporting === 'docx' ? '…' : 'Word'}</span>
                     </button>
                     <button className="btn btn-secondary" onClick={() => exportList('pdf')} disabled={exporting !== null}
-                            title="Mängelliste der aktuellen Auswahl als PDF">
+                            title={tx('def_export_pdf_title')}>
                         <FileText size={14}/> <span>{exporting === 'pdf' ? '…' : 'PDF'}</span>
                     </button>
                     <button className="btn btn-primary" onClick={() => setForm(emptyForm())}>
-                        <Plus size={14}/> <span>Mangel erfassen</span>
+                        <Plus size={14}/> <span>{tx('def_add')}</span>
                     </button>
                 </div>
             </div>
@@ -312,19 +313,23 @@ export const Defects: React.FC = () => {
             {error && (
                 <div className="defects-error" role="alert">
                     <span>{error}</span>
-                    <button type="button" onClick={() => setError(null)} aria-label="Hinweis schließen"><X size={14}/></button>
+                    <button type="button" onClick={() => setError(null)} aria-label={tx('def_close_hint')}><X
+                        size={14}/></button>
                 </div>
             )}
 
             {summary && (
                 <div className="defects-kpis">
-                    <div className="defects-kpi"><span>Offen</span><strong>{summary.open}</strong></div>
-                    <div className={`defects-kpi${summary.overdue ? ' is-danger' : ''}`}><span>Überfällig</span><strong>{summary.overdue}</strong></div>
-                    <div className="defects-kpi"><span>Wartet auf Abnahme</span><strong>{summary.by_status.behoben}</strong></div>
-                    <div className="defects-kpi is-success"><span>Abgenommen</span><strong>{summary.by_status.abgenommen}</strong></div>
+                    <div className="defects-kpi"><span>{tx('def_tab_open')}</span><strong>{summary.open}</strong></div>
+                    <div className={`defects-kpi${summary.overdue ? ' is-danger' : ''}`}>
+                        <span>{tx('def_tab_overdue')}</span><strong>{summary.overdue}</strong></div>
+                    <div className="defects-kpi">
+                        <span>{tx('def_tab_behoben')}</span><strong>{summary.by_status.behoben}</strong></div>
+                    <div className="defects-kpi is-success">
+                        <span>{tx('def_tab_abgenommen')}</span><strong>{summary.by_status.abgenommen}</strong></div>
                     {latePerCompany.length > 0 && (
                         <div className="defects-kpi defects-kpi-wide">
-                            <span>Überfällig nach Firma</span>
+                            <span>{tx('def_overdue_by_company')}</span>
                             <div className="defects-company-chips">
                                 {latePerCompany.map((c) => (
                                     <button key={c.company} type="button" className="defects-chip" onClick={() => {
@@ -341,27 +346,29 @@ export const Defects: React.FC = () => {
             )}
 
             <div className="card defects-filters">
-                <div className="masterdata-filter-pills defects-tabs" role="tablist" aria-label="Mängel filtern">
-                    {TABS.map((t) => (
-                        <button key={t.key} type="button" role="tab" aria-selected={tab === t.key}
-                                className={`idea-tab${tab === t.key ? ' active' : ''}`} onClick={() => setTab(t.key)}>
-                            {t.label}{tabCount(t.key) !== null ? ` (${tabCount(t.key)})` : ''}
+                <div className="masterdata-filter-pills defects-tabs" role="tablist" aria-label={tx('def_filter_aria')}>
+                    {TABS.map((k) => (
+                        <button key={k} type="button" role="tab" aria-selected={tab === k}
+                                className={`idea-tab${tab === k ? ' active' : ''}`} onClick={() => setTab(k)}>
+                            {tx(`def_tab_${k}`)}{tabCount(k) !== null ? ` (${tabCount(k)})` : ''}
                         </button>
                     ))}
                 </div>
                 <div className="defects-filter-row">
                     <label className="defects-search">
                         <Search size={14}/>
-                        <input className="form-input" placeholder="Suchen (Titel, Ort, Firma)…" value={search}
-                               onChange={(e) => setSearch(e.target.value)} aria-label="Mängel durchsuchen"/>
+                        <input className="form-input" placeholder={tx('def_search_ph')} value={search}
+                               onChange={(e) => setSearch(e.target.value)} aria-label={tx('def_search_aria')}/>
                     </label>
-                    <select className="form-input" value={company} onChange={(e) => setCompany(e.target.value)} aria-label="Firma">
-                        <option value="">Alle Firmen</option>
+                    <select className="form-input" value={company} onChange={(e) => setCompany(e.target.value)}
+                            aria-label={tx('def_company')}>
+                        <option value="">{tx('def_all_companies')}</option>
                         {companyOptions.map((c) => <option key={c} value={c}>{c}</option>)}
                     </select>
                     {houseOptions.length > 0 && (
-                        <select className="form-input" value={house} onChange={(e) => setHouse(e.target.value)} aria-label="Haus">
-                            <option value="">Alle Häuser</option>
+                        <select className="form-input" value={house} onChange={(e) => setHouse(e.target.value)}
+                                aria-label={tx('def_house')}>
+                            <option value="">{tx('def_all_houses')}</option>
                             {houseOptions.map((h) => <option key={h} value={h}>{h}</option>)}
                         </select>
                     )}
@@ -371,30 +378,31 @@ export const Defects: React.FC = () => {
             {form && (
                 <form className="card defects-form" onSubmit={save}>
                     <div className="defects-form-head">
-                        <strong>{form.id === null ? 'Neuer Mangel' : `Mangel #${form.id} bearbeiten`}</strong>
-                        <button type="button" className="btn btn-secondary" onClick={() => setForm(null)} aria-label="Formular schließen"><X size={14}/></button>
+                        <strong>{form.id === null ? tx('def_new') : tf('def_edit_n', {id: form.id})}</strong>
+                        <button type="button" className="btn btn-secondary" onClick={() => setForm(null)}
+                                aria-label={tx('def_close_form')}><X size={14}/></button>
                     </div>
                     <div className="defects-form-grid">
                         <label className="defects-field defects-field-wide">
-                            <span>Mangel *</span>
+                            <span>{tx('def_f_title')}</span>
                             <input ref={firstField} className="form-input" required maxLength={200} value={form.title}
-                                   placeholder="z. B. Kiesnest am Sockel, Riss in Wand"
+                                   placeholder={tx('def_f_title_ph')}
                                    onChange={(e) => setForm({...form, title: e.target.value})}/>
                         </label>
                         <label className="defects-field defects-field-wide">
-                            <span>Beschreibung</span>
+                            <span>{tx('def_f_desc')}</span>
                             <textarea className="form-input" rows={2} value={form.description}
                                       onChange={(e) => setForm({...form, description: e.target.value})}/>
                         </label>
                         <label className="defects-field">
-                            <span>Ort</span>
+                            <span>{tx('def_f_location')}</span>
                             <input className="form-input" list="defect-places" value={form.location}
-                                   placeholder="Haus B · EG, Raum 0.12"
+                                   placeholder={tx('def_f_location_ph')}
                                    onChange={(e) => setForm({...form, location: e.target.value})}/>
                             <datalist id="defect-places">{places.map((p) => <option key={p} value={p}/>)}</datalist>
                         </label>
                         <label className="defects-field">
-                            <span>Verantwortliche Firma</span>
+                            <span>{tx('def_f_company')}</span>
                             <input className="form-input" list="defect-companies" value={form.company}
                                    onChange={(e) => {
                                        const name = e.target.value;
@@ -404,49 +412,51 @@ export const Defects: React.FC = () => {
                             <datalist id="defect-companies">{companyOptions.map((c) => <option key={c} value={c}/>)}</datalist>
                         </label>
                         <label className="defects-field">
-                            <span>Gewerk</span>
+                            <span>{tx('def_f_trade')}</span>
                             <input className="form-input" value={form.trade} onChange={(e) => setForm({...form, trade: e.target.value})}/>
                         </label>
                         <label className="defects-field">
-                            <span>Priorität</span>
+                            <span>{tx('def_f_priority')}</span>
                             <select className="form-input" value={form.priority}
                                     onChange={(e) => setForm({...form, priority: e.target.value as DefectPriority})}>
-                                {(Object.keys(PRIORITY_LABELS) as DefectPriority[]).map((p) => <option key={p} value={p}>{PRIORITY_LABELS[p]}</option>)}
+                                {PRIORITIES.map((p) => <option key={p} value={p}>{tx(`def_prio_${p}`)}</option>)}
                             </select>
                         </label>
                         <label className="defects-field">
-                            <span>Festgestellt am</span>
+                            <span>{tx('def_f_found')}</span>
                             <input type="date" className="form-input" value={form.found_date}
                                    onChange={(e) => setForm({...form, found_date: e.target.value})}/>
                         </label>
                         <label className="defects-field">
-                            <span>Frist zur Beseitigung</span>
+                            <span>{tx('def_f_deadline')}</span>
                             <input type="date" className="form-input" value={form.deadline}
                                    onChange={(e) => setForm({...form, deadline: e.target.value})}/>
                         </label>
                         {form.id !== null && (
                             <label className="defects-field">
-                                <span>Status</span>
+                                <span>{tx('def_f_status')}</span>
                                 <select className="form-input" value={form.status}
                                         onChange={(e) => setForm({...form, status: e.target.value as DefectStatus})}>
-                                    {(Object.keys(STATUS_LABELS) as DefectStatus[]).map((s) => <option key={s} value={s}>{STATUS_LABELS[s]}</option>)}
+                                    {STATUSES.map((s) => <option key={s} value={s}>{tx(`def_status_${s}`)}</option>)}
                                 </select>
                             </label>
                         )}
                         <label className="defects-field">
-                            <span>Foto</span>
+                            <span>{tx('def_f_photo')}</span>
                             <span className="defects-photo-input">
                                 <Camera size={14}/>
                                 <input type="file" accept="image/*" capture="environment"
                                        onChange={(e) => setForm({...form, photoFile: e.target.files?.[0] ?? null})}/>
                             </span>
-                            {form.photo_id && !form.photoFile && <small className="bp-muted">Foto vorhanden – neues ersetzt es</small>}
+                            {form.photo_id && !form.photoFile &&
+                                <small className="bp-muted">{tx('def_f_photo_exists')}</small>}
                         </label>
                     </div>
                     <div className="defects-form-actions">
-                        <button type="button" className="btn btn-secondary" onClick={() => setForm(null)}>Abbrechen</button>
+                        <button type="button" className="btn btn-secondary"
+                                onClick={() => setForm(null)}>{tx('btn_cancel')}</button>
                         <button type="submit" className="btn btn-primary" disabled={saving || !form.title.trim()}>
-                            {saving ? 'Speichert…' : 'Speichern'}
+                            {saving ? tx('def_saving') : tx('btn_save')}
                         </button>
                     </div>
                 </form>
@@ -455,8 +465,8 @@ export const Defects: React.FC = () => {
             {visible.length === 0 ? (
                 <div className="idea-empty">
                     {defects.length === 0
-                        ? 'Noch keine Mängel erfasst. Mit „Mangel erfassen“ anlegen – oder im Baufortschritt eine Ebene wählen.'
-                        : 'Keine Mängel für diese Auswahl.'}
+                        ? tx('def_empty_none')
+                        : tx('def_empty_filter')}
                 </div>
             ) : (
                 <div className="defects-list">
@@ -467,59 +477,69 @@ export const Defects: React.FC = () => {
                                      className={`card defect-card status-${d.status}${d.is_overdue ? ' is-overdue' : ''}${focusId === d.id ? ' is-focus' : ''}`}>
                                 {d.photo_id && (
                                     <a className="defect-photo" href={api.getPhotoFileUrl(d.photo_id)} target="_blank" rel="noreferrer"
-                                       title="Foto in neuem Tab öffnen">
-                                        <img src={api.getPhotoFileUrl(d.photo_id)} alt={`Foto zu ${d.title}`} loading="lazy"/>
+                                       title={tx('def_photo_open')}>
+                                        <img src={api.getPhotoFileUrl(d.photo_id)}
+                                             alt={tf('def_photo_alt', {title: d.title})} loading="lazy"/>
                                     </a>
                                 )}
                                 <div className="defect-main">
                                     <div className="defect-title-row">
                                         <strong className="defect-title">#{d.id} {d.title}</strong>
-                                        <span className={`defect-status status-${d.status}`}>{STATUS_LABELS[d.status]}</span>
-                                        {d.priority === 'hoch' && <span className="defect-prio">Priorität hoch</span>}
+                                        <span
+                                            className={`defect-status status-${d.status}`}>{tx(`def_status_${d.status}`)}</span>
+                                        {d.priority === 'hoch' &&
+                                            <span className="defect-prio">{tx('def_prio_high_badge')}</span>}
                                     </div>
                                     <div className="defect-meta">
                                         {placeOf(d) && <span><Building2 size={12}/> {placeOf(d)}</span>}
                                         {locationDetail(d) && <span>{locationDetail(d)}</span>}
-                                        <span>{d.company || 'Firma offen'}{d.trade ? ` (${d.trade})` : ''}</span>
+                                        <span>{d.company || tx('def_company_open')}{d.trade ? ` (${d.trade})` : ''}</span>
                                     </div>
                                     {d.description && <div className="defect-desc">{d.description}</div>}
                                     <div className="defect-dates">
-                                        <span>festgestellt {fmt(d.found_date)}</span>
+                                        <span>{tf('def_found_on', {date: fmtUi(d.found_date)})}</span>
                                         {d.deadline && (
                                             <span className={d.is_overdue ? 'defect-late' : undefined}>
-                                                {d.is_overdue && <AlertTriangle size={12}/>} Frist {fmt(d.deadline)}
-                                                {d.is_overdue ? ` – ${d.days_overdue} Tag${d.days_overdue === 1 ? '' : 'e'} überfällig` : ''}
+                                                {d.is_overdue && <AlertTriangle
+                                                    size={12}/>} {tf('def_deadline_on', {date: fmtUi(d.deadline)})}
+                                                {d.is_overdue ? (d.days_overdue === 1 ? tx('def_days_overdue_1') : tf('def_days_overdue_n', {n: d.days_overdue})) : ''}
                                             </span>
                                         )}
-                                        {d.resolved_date && <span>behoben {fmt(d.resolved_date)}</span>}
-                                        {d.accepted_date && <span><CheckCircle2 size={12}/> abgenommen {fmt(d.accepted_date)}</span>}
+                                        {d.resolved_date &&
+                                            <span>{tf('def_fixed_on', {date: fmtUi(d.resolved_date)})}</span>}
+                                        {d.accepted_date && <span><CheckCircle2
+                                            size={12}/> {tf('def_accepted_on', {date: fmtUi(d.accepted_date)})}</span>}
                                     </div>
                                     <div className="defect-actions">
                                         {next && (
-                                            <button className="btn btn-primary" disabled={busyId === d.id} onClick={() => setStatus(d, next.to)}>
-                                                {next.label}
+                                            <button className="btn btn-primary" disabled={busyId === d.id}
+                                                    onClick={() => setStatus(d, next)}>
+                                                {tx(`def_next_${d.status}`)}
                                             </button>
                                         )}
                                         {d.status !== 'offen' && (
                                             <button className="btn btn-secondary" disabled={busyId === d.id} onClick={() => setStatus(d, 'offen')}
-                                                    title="Zurück auf offen (z. B. Abnahme verweigert)">
-                                                Wieder offen
+                                                    title={tx('def_reopen_title')}>
+                                                {tx('def_reopen')}
                                             </button>
                                         )}
                                         <button className="btn btn-secondary" onClick={() => writeNotice(d)}
-                                                title={d.notice_id ? 'Verknüpfte Mängelrüge öffnen' : 'Mängelrüge / Nachfrist als Briefentwurf'}>
-                                            <Mail size={13}/> <span>{d.notice_id ? 'Mängelrüge öffnen' : 'Mängelrüge schreiben'}</span>
+                                                title={d.notice_id ? tx('def_notice_open_title') : tx('def_notice_write_title')}>
+                                            <Mail size={13}/>
+                                            <span>{d.notice_id ? tx('def_notice_open') : tx('def_notice_write')}</span>
                                         </button>
                                         {d.house && (
                                             <button className="btn btn-secondary" onClick={() => navigate('/fortschritt', {state: {house: d.house, level: d.level}})}
-                                                    title="Im Baufortschritt zeigen">
+                                                    title={tx('def_show_progress')}>
                                                 <Building2 size={13}/>
                                             </button>
                                         )}
-                                        <button className="btn btn-secondary" onClick={() => edit(d)} title="Bearbeiten" aria-label={`Mangel ${d.id} bearbeiten`}>
+                                        <button className="btn btn-secondary" onClick={() => edit(d)}
+                                                title={tx('btn_edit')} aria-label={tf('def_edit_aria', {id: d.id})}>
                                             <Pencil size={13}/>
                                         </button>
-                                        <button className="btn btn-danger" onClick={() => remove(d)} title="Löschen" aria-label={`Mangel ${d.id} löschen`}>
+                                        <button className="btn btn-danger" onClick={() => remove(d)}
+                                                title={tx('btn_delete')} aria-label={tf('def_delete_aria', {id: d.id})}>
                                             <Trash2 size={13}/>
                                         </button>
                                     </div>

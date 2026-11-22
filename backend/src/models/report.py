@@ -21,6 +21,7 @@ class DailyReportBase(SQLModel):
     trades: Optional[str] = None  # JSON-Liste: ["Rohbau (Fa. BetonTech)", "Tiefbau"]
     deliveries: Optional[str] = None  # Lieferungen, Abnahmen & Prüfungen
     site_manager: Optional[str] = None  # verantwortliche Bauleitung des Tages (Name)
+    bullets_json: Optional[str] = None  # JSON-Objekt der übernommenen kategorisierten Stichpunkte
 
 
 class DailyReport(DailyReportBase, table=True):

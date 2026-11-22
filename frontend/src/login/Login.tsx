@@ -1,8 +1,8 @@
 import React, {useEffect, useState} from 'react';
 import {isMobileView} from '../utils/useIsMobile';
 import {useNavigate} from 'react-router-dom';
-import {HardHat, ArrowRight} from 'lucide-react';
-import { useLanguage } from '../context/LanguageContext';
+import {ArrowRight, HardHat} from 'lucide-react';
+import {useLanguage} from '../context/LanguageContext';
 import LanguageSwitcher from '../components/LanguageSwitcher';
 import {api} from '../services/api';
 import {loadProfile, normalizeStartTab, START_TAB_OPTIONS} from '../profile/profileStore';
@@ -105,7 +105,7 @@ export const Login: React.FC = () => {
                         textAlign: 'center'
                     }}
                 >
-                    Bauleiter-Portal
+                    {t('login_portal')}
                 </h1>
 
                 <div className="form-group" style={{marginBottom: '20px'}}>
@@ -116,7 +116,7 @@ export const Login: React.FC = () => {
                         id="nameInput"
                         className="form-input"
                         type="text"
-                        placeholder="z. B. Max Mustermann"
+                        placeholder={t('login_name_ph')}
                         value={name}
                         onChange={(e) => setName(e.target.value)}
                         required

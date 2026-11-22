@@ -5,13 +5,12 @@
 """
 
 import datetime as dt
-
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import Response
 from sqlmodel import Session
 
 from src.database import get_session
-from src.schemas.reports import FillRequest, FillResponse, ReportIn, ReportOut
+from src.schemas.reports import BulletRemoveRequest, FillRequest, FillResponse, ReportIn, ReportOut
 from src.services import report_documents, reports
 from src.services.documents import PdfUnavailable
 
@@ -53,6 +52,14 @@ async def fill_report(report_date: dt.date, req: FillRequest,
     """
     project = reports.resolve_project(session, req.project_id)
     return await reports.fill(session, project, report_date, req)
+
+
+@router.post("/{report_date}/bullets/remove", response_model=ReportOut)
+def remove_report_bullet(report_date: dt.date, req: BulletRemoveRequest,
+                         session: Session = Depends(get_session)) -> ReportOut:
+    """Entfernt einen kategorisierten Stichpunkt aus der Erfassung und dem Tagesbericht."""
+    project = reports.resolve_project(session, req.project_id)
+    return reports.remove_bullet(session, project, report_date, req)
 
 
 async def _export(report_date: dt.date, project_id: int | None, ext: str, session: Session) -> Response:

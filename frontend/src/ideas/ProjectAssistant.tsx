@@ -4,6 +4,7 @@ import {useProjects} from '../context/ProjectContext';
 import {api} from '../services/api';
 import {useAudioRecorder} from '../utils/useAudioRecorder';
 import {isNotImplemented} from '../components/ComingSoon';
+import {useLanguage} from '../context/LanguageContext';
 import './Ideas.css';
 
 /**
@@ -17,43 +18,41 @@ interface Message {
     sources?: string[];
     pending?: boolean;
     offline?: boolean;
+    /** Begrüßung: Text wird beim Rendern in der aktuellen Sprache erzeugt. */
+    greeting?: boolean;
 }
 
-const SUGGESTIONS = [
-    'Warum sind wir bei Aushub Achse B im Verzug?',
-    'Welche Behinderungen gab es letzte Woche?',
-    'Wie viele Leute hatte Erdbau Krause laut Vertrag zu stellen?',
-    'Welche Briefe sind noch nicht freigegeben?'
-];
+// Feste Beispielfragen (Übersetzungs-Keys) als Rückfall, falls das Backend keine Vorschläge liefert.
+const SUGGESTION_KEYS = ['pa_sugg_1', 'pa_sugg_2', 'pa_sugg_3', 'pa_sugg_4'];
 
 export const ProjectAssistant: React.FC = () => {
     const {activeProject} = useProjects();
-    const greeting = (): Message => ({
-        role: 'assistant',
-        text: `Fragen zu „${activeProject.name}“ – auf Basis von Tagesberichten, Notizen, Briefen und Verträgen.`
-    });
+    const {t, tf, language} = useLanguage();
+    const greeting = (): Message => ({role: 'assistant', text: '', greeting: true});
+    const fallbackSuggestions = () => SUGGESTION_KEYS.map((k) => t(k));
     const [messages, setMessages] = useState<Message[]>(() => [greeting()]);
     const [input, setInput] = useState('');
     const [busy, setBusy] = useState(false);
     const [transcribing, setTranscribing] = useState(false);
     const [audioHint, setAudioHint] = useState<string | null>(null);
     const [historyError, setHistoryError] = useState<string | null>(null);
-    const [suggestions, setSuggestions] = useState<string[]>(SUGGESTIONS);
+    // null = noch keine Vorschläge vom Backend → übersetzte Beispielfragen anzeigen
+    const [suggestions, setSuggestions] = useState<string[] | null>(null);
     const endRef = useRef<HTMLDivElement>(null);
 
     const recorder = useAudioRecorder(async (blob) => {
         setTranscribing(true);
         setAudioHint(null);
         try {
-            const res = await api.transcribeAudio(blob, 'de');
+            const res = await api.transcribeAudio(blob, language);
             const text = res?.text?.trim();
             if (text) {
                 setInput((prev) => (prev.trim() ? `${prev.trim()} ${text}` : text));
             } else {
-                setAudioHint('Spracherkennung aktuell nicht verfügbar – bitte Frage eintippen.');
+                setAudioHint(t('pa_stt_unavailable'));
             }
         } catch (err) {
-            setAudioHint(`Audio-Transkription fehlgeschlagen: ${(err as Error)?.message ?? err}`);
+            setAudioHint(`${t('pa_stt_failed')} ${(err as Error)?.message ?? err}`);
         } finally {
             setTranscribing(false);
         }
@@ -66,7 +65,7 @@ export const ProjectAssistant: React.FC = () => {
             return;
         }
         if (!(await recorder.start())) {
-            setAudioHint('Mikrofon nicht verfügbar (Berechtigung fehlt oder kein HTTPS). Bitte Frage eintippen.');
+            setAudioHint(t('pa_mic_unavailable'));
         }
     };
 
@@ -78,7 +77,7 @@ export const ProjectAssistant: React.FC = () => {
                 if (!cancelled && qs.length > 0) setSuggestions(qs);
             })
             .catch(() => {
-                if (!cancelled) setSuggestions(SUGGESTIONS);
+                if (!cancelled) setSuggestions(null);
             });
         return () => {
             cancelled = true;
@@ -101,7 +100,7 @@ export const ProjectAssistant: React.FC = () => {
                 }))]);
             })
             .catch((err) => {
-                if (!cancelled) setHistoryError(`Verlauf nicht geladen: ${(err as Error)?.message ?? err}`);
+                if (!cancelled) setHistoryError(`${t('pa_history_failed')} ${(err as Error)?.message ?? err}`);
             });
         return () => {
             cancelled = true;
@@ -115,7 +114,7 @@ export const ProjectAssistant: React.FC = () => {
             await api.clearAssistantHistory(Number(activeProject.id));
             setHistoryError(null);
         } catch (err) {
-            setHistoryError(`Verlauf konnte nicht gelöscht werden: ${(err as Error)?.message ?? err}`);
+            setHistoryError(`${t('pa_clear_failed')} ${(err as Error)?.message ?? err}`);
             return;
         }
         setMessages([greeting()]);
@@ -140,10 +139,10 @@ export const ProjectAssistant: React.FC = () => {
             if (isNotImplemented(err)) {
                 reply = {
                     role: 'assistant',
-                    text: 'Die Projektabfrage steht auf diesem Server aktuell nicht zur Verfügung. Nutzen Sie bis dahin die Zusammenfassungen (Woche/Monat) oder die Auswertung im Dashboard.'
+                    text: t('pa_not_available')
                 };
             } else {
-                reply = {role: 'assistant', text: `Fehler: ${(err as Error)?.message ?? err}`};
+                reply = {role: 'assistant', text: `${t('pa_error')} ${(err as Error)?.message ?? err}`};
             }
         }
         setMessages((m) => [...m.filter((x) => !x.pending), reply]);
@@ -156,7 +155,7 @@ export const ProjectAssistant: React.FC = () => {
                 <div className="idea-title-group">
                     <div className="idea-icon"><MessageSquare size={22}/></div>
                     <div>
-                        <h1>Projekt-Assistent</h1>
+                        <h1>{t('pa_title')}</h1>
                     </div>
                 </div>
                 <button
@@ -164,9 +163,9 @@ export const ProjectAssistant: React.FC = () => {
                     className="btn btn-secondary"
                     onClick={handleNewChat}
                     disabled={busy || messages.length <= 1}
-                    title="Verlauf löschen und neuen Chat beginnen"
+                    title={t('pa_new_chat_title')}
                 >
-                    <RotateCcw size={14}/> <span>Neuer Chat</span>
+                    <RotateCcw size={14}/> <span>{t('pa_new_chat')}</span>
                 </button>
             </div>
 
@@ -176,12 +175,12 @@ export const ProjectAssistant: React.FC = () => {
                 <div className="chat-messages">
                     {messages.map((m, idx) => (
                         <div key={idx} className={`chat-bubble ${m.role}`}>
-                            {m.text}
+                            {m.greeting ? tf('pa_greeting', {name: activeProject.name}) : m.text}
                             {m.sources && m.sources.length > 0 && (
-                                <div className="chat-sources">Quellen: {m.sources.join(' • ')}</div>
+                                <div className="chat-sources">{t('pa_sources')} {m.sources.join(' • ')}</div>
                             )}
                             {m.offline && (
-                                <div className="chat-sources">Antwort regelbasiert direkt aus den Projektdaten</div>
+                                <div className="chat-sources">{t('pa_offline_answer')}</div>
                             )}
                         </div>
                     ))}
@@ -190,7 +189,7 @@ export const ProjectAssistant: React.FC = () => {
 
                 <div className="chat-composer">
                     <div className="chat-suggestions">
-                        {suggestions.map((s) => (
+                        {(suggestions ?? fallbackSuggestions()).map((s) => (
                             <button key={s} className="idea-tab" onClick={() => ask(s)} disabled={busy}>
                                 {s}
                             </button>
@@ -200,7 +199,8 @@ export const ProjectAssistant: React.FC = () => {
                     {audioHint && (
                         <div className="chat-audio-hint">
                             <span>{audioHint}</span>
-                            <button type="button" onClick={() => setAudioHint(null)} aria-label="Hinweis schließen">×</button>
+                            <button type="button" onClick={() => setAudioHint(null)} aria-label={t('pa_close_hint')}>×
+                            </button>
                         </div>
                     )}
 
@@ -214,7 +214,7 @@ export const ProjectAssistant: React.FC = () => {
                         <input
                             className="form-input"
                             style={{flex: 1}}
-                            placeholder={recorder.isRecording ? 'Aufnahme läuft – bitte sprechen…' : 'Frage zum Projekt stellen…'}
+                            placeholder={recorder.isRecording ? t('pa_recording_ph') : t('pa_input_ph')}
                             value={input}
                             onChange={(e) => setInput(e.target.value)}
                         />
@@ -223,16 +223,16 @@ export const ProjectAssistant: React.FC = () => {
                             className={`btn ${recorder.isRecording ? 'chat-mic-recording' : 'btn-secondary'}`}
                             onClick={handleToggleAudio}
                             disabled={busy || transcribing}
-                            title={recorder.isRecording ? 'Aufnahme stoppen' : 'Frage per Audio aufnehmen'}
-                            aria-label={recorder.isRecording ? 'Aufnahme stoppen' : 'Frage per Audio aufnehmen'}
+                            title={recorder.isRecording ? t('pa_stop_rec') : t('pa_record')}
+                            aria-label={recorder.isRecording ? t('pa_stop_rec') : t('pa_record')}
                         >
                             {recorder.isRecording ? <Square size={14}/> : <Mic size={14}/>}
                             <span>
-                                {transcribing ? 'Transkribiere…' : recorder.isRecording ? 'Stopp' : 'Audio'}
+                                {transcribing ? t('pa_transcribing') : recorder.isRecording ? t('pa_stop') : t('pa_audio')}
                             </span>
                         </button>
                         <button type="submit" className="btn btn-primary" disabled={busy || transcribing || !input.trim()}>
-                            <Send size={14}/> <span>Fragen</span>
+                            <Send size={14}/> <span>{t('pa_ask')}</span>
                         </button>
                     </form>
                 </div>

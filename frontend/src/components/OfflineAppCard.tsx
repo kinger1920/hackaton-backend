@@ -1,7 +1,8 @@
 import React, {useEffect, useState} from 'react';
-import {Smartphone, Wifi, WifiOff, Download} from 'lucide-react';
+import {Download, Smartphone, Wifi, WifiOff} from 'lucide-react';
 import {useOnlineStatus} from './useOnlineStatus';
 import {ComingSoonBadge, ComingSoonNote} from './ComingSoon';
+import {useLanguage} from '../context/LanguageContext';
 
 /**
  * Idee #6: Offline-Modus & App-Installation (PWA).
@@ -10,6 +11,7 @@ import {ComingSoonBadge, ComingSoonNote} from './ComingSoon';
  */
 export const OfflineAppCard: React.FC = () => {
     const online = useOnlineStatus();
+    const {t} = useLanguage();
     const [installEvent, setInstallEvent] = useState<any>(null);
     const [installed, setInstalled] = useState(
         typeof window !== 'undefined' && window.matchMedia?.('(display-mode: standalone)').matches
@@ -32,15 +34,15 @@ export const OfflineAppCard: React.FC = () => {
     return (
         <div className="profile-section-card" style={{marginTop: '16px'}}>
             <h2 style={{fontSize: '16px', fontWeight: 700, margin: '0 0 12px', display: 'flex', alignItems: 'center', gap: '8px'}}>
-                <Smartphone size={18}/> Offline & App <ComingSoonBadge label="in Arbeit"/>
+                <Smartphone size={18}/> {t('oac_title')} <ComingSoonBadge label={t('oac_in_progress')}/>
             </h2>
 
             <div style={{display: 'flex', flexDirection: 'column', gap: '10px', fontSize: '13px'}}>
                 <div style={{display: 'flex', alignItems: 'center', gap: '8px'}}>
                     {online ? <Wifi size={16} color="#16a34a"/> : <WifiOff size={16} color="#dc2626"/>}
                     <span>
-                        Gerät ist <strong>{online ? 'online' : 'offline'}</strong>
-                        {!online && ' – Eingaben gehen aktuell verloren, bis der Offline-Modus fertig ist.'}
+                        {t('oac_device_is')} <strong>{online ? t('oac_online') : t('oac_offline')}</strong>
+                        {!online && t('oac_offline_loss')}
                     </span>
                 </div>
 
@@ -54,20 +56,18 @@ export const OfflineAppCard: React.FC = () => {
                             await installEvent?.userChoice;
                             setInstallEvent(null);
                         }}
-                        title={installEvent ? 'App auf dem Gerät installieren' : 'Installation noch nicht verfügbar (Manifest/Service Worker folgen)'}
+                        title={installEvent ? t('oac_install_title') : t('oac_install_unavailable')}
                     >
                         <Download size={14}/>
-                        <span>{installed ? 'Als App installiert' : 'Als App installieren'}</span>
+                        <span>{installed ? t('oac_installed') : t('oac_install')}</span>
                     </button>
                     <span style={{color: 'var(--text-muted)', fontSize: '12px'}}>
-                        Offline-Warteschlange: 0 Einträge
+                        {t('oac_queue')}
                     </span>
                 </div>
 
                 <ComingSoonNote>
-                    Geplant: Die Web-App wird auf dem Handy installierbar (Startbildschirm, Vollbild). Diktate, Fotos und
-                    Tagesberichte werden ohne Netz lokal gespeichert und automatisch gesendet, sobald wieder Empfang da ist.
-                    HTTPS-Deployment ist nötig, damit Mikrofon und Installation auf dem Handy funktionieren.
+                    {t('oac_planned')}
                 </ComingSoonNote>
             </div>
         </div>

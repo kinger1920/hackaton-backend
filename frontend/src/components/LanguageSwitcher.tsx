@@ -1,6 +1,6 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { Globe, ChevronDown, Check } from 'lucide-react';
-import { useLanguage, SUPPORTED_LANGUAGES, LanguageCode } from '../context/LanguageContext';
+import React, {useEffect, useRef, useState} from 'react';
+import {Check, ChevronDown, Globe} from 'lucide-react';
+import {LanguageCode, SUPPORTED_LANGUAGES, useLanguage} from '../context/LanguageContext';
 import './LanguageSwitcher.css';
 
 const FlagIcon: React.FC<{ code: LanguageCode }> = ({ code }) => {
@@ -28,33 +28,6 @@ const FlagIcon: React.FC<{ code: LanguageCode }> = ({ code }) => {
         <svg className="lang-flag-svg" viewBox="0 0 24 16" aria-hidden="true">
           <rect className="flag-white-fill" width="24" height="8" y="0" />
           <rect className="flag-pl-red" width="24" height="8" y="8" />
-        </svg>
-      );
-    case 'tr':
-      return (
-        <svg className="lang-flag-svg" viewBox="0 0 24 16" aria-hidden="true">
-          <rect className="flag-tr-red" width="24" height="16" />
-          <circle className="flag-white-fill" cx="9.2" cy="8" r="4.2" />
-          <circle className="flag-tr-red" cx="10.3" cy="8" r="3.4" />
-          <polygon
-            className="flag-white-fill"
-            points="15.2,6.2 15.8,7.8 17.5,7.8 16.1,8.8 16.6,10.4 15.2,9.4 13.8,10.4 14.3,8.8 12.9,7.8 14.6,7.8"
-          />
-        </svg>
-      );
-    case 'ro':
-      return (
-        <svg className="lang-flag-svg" viewBox="0 0 24 16" aria-hidden="true">
-          <rect className="flag-ro-blue" width="8" height="16" x="0" />
-          <rect className="flag-ro-yellow" width="8" height="16" x="8" />
-          <rect className="flag-ro-red" width="8" height="16" x="16" />
-        </svg>
-      );
-    case 'ua':
-      return (
-        <svg className="lang-flag-svg" viewBox="0 0 24 16" aria-hidden="true">
-          <rect className="flag-ua-blue" width="24" height="8" y="0" />
-          <rect className="flag-ua-yellow" width="24" height="8" y="8" />
         </svg>
       );
   }

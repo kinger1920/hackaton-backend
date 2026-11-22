@@ -271,6 +271,11 @@
   background-color: #f8faff;
 }
 
+.category-card.accent-trades {
+    border-left: 4px solid #0d9488;
+    background-color: #f0fdfa;
+}
+
 .category-card.accent-defect {
   border-left: 4px solid #8b5cf6;
   background-color: #faf8ff;
@@ -317,6 +322,12 @@
 .bullet-chip-remove {
   cursor: pointer;
   color: var(--text-muted);
+    background: none;
+    border: none;
+    padding: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
 }
 .bullet-chip-remove:hover {
   color: var(--color-danger);

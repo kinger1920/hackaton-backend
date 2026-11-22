@@ -1,10 +1,22 @@
 import React, {useCallback, useEffect, useMemo, useState} from 'react';
 import {useLocation, useNavigate} from 'react-router-dom';
-import {AlertTriangle, Building2, CalendarClock, ClipboardList, FileText, Mail, MapPin, Pause, Play, TrendingUp} from 'lucide-react';
+import {
+    AlertTriangle,
+    Building2,
+    CalendarClock,
+    ClipboardList,
+    FileText,
+    Mail,
+    MapPin,
+    Pause,
+    Play,
+    TrendingUp
+} from 'lucide-react';
 import {useProjects} from '../context/ProjectContext';
 import {api, BuildingEvent, BuildingProgress, BuildingTask} from '../services/api';
 import {ComingSoonNote} from '../components/ComingSoon';
 import {addDays, daysBetween, parseIsoDate, startOfToday} from '../utils/dates';
+import {useLanguage} from '../context/LanguageContext';
 import './Ideas.css';
 
 /**
@@ -26,28 +38,16 @@ const STATE_COLORS: Record<TaskState, string> = {
     done: '#16a34a'
 };
 
-const STATE_LABELS: Record<TaskState, string> = {
-    planned: 'noch nicht dran',
-    forecast: 'laut Plan dran (Prognose)',
-    ontrack: 'planmäßig in Arbeit',
-    warning: 'leichter Verzug',
-    delayed: 'Verzug ≥ 1 AT',
-    done: 'fertig'
-};
+// Anzeigetexte: pm_state_<state>, pm_event_<kind>, def_status_<status> in den Übersetzungen.
 
 const SEVERITY: TaskState[] = ['planned', 'done', 'forecast', 'ontrack', 'warning', 'delayed'];
 const DEFECT_COLOR = '#dc2626';
 const NOTICE_COLOR = '#f59e0b';
 const RECENT_DAYS = 10; // Vorkommnisse/Behinderungen so lange am Bauteil markieren
-const DEFECT_STATUS: Record<string, string> = {offen: 'offen', in_bearbeitung: 'in Bearbeitung', behoben: 'behoben', abgenommen: 'abgenommen'};
+const DEFECT_STATUSES = ['offen', 'in_bearbeitung', 'behoben', 'abgenommen'];
+// Interner Schlüssel für Vorgänge ohne Haus (auch Teil gespeicherter Orte); angezeigt wird pm_site.
 const SITE = 'Baufeld';
 
-const EVENT_LABELS: Record<BuildingEvent['kind'], string> = {
-    defect: 'Mangel',
-    hindrance: 'Behinderung',
-    incident: 'Vorkommnis',
-    photo: 'Foto-Befund'
-};
 
 // ---------------------------------------------------------------- Soll/Ist (wie services/analysis.py)
 
@@ -140,7 +140,11 @@ function aggregate(house: string, level: string, tasks: TaskView[], defects: Bui
     return {key: cellKey(house, level), house, level, tasks, state, actual, plan, started, defects, recent};
 }
 
-const fmt = (iso: string | null | undefined) => (iso ? d(iso).toLocaleDateString('de-DE', {day: '2-digit', month: '2-digit', year: '2-digit'}) : '–');
+const fmt = (iso: string | null | undefined, locale = 'de-DE') => (iso ? d(iso).toLocaleDateString(locale, {
+    day: '2-digit',
+    month: '2-digit',
+    year: '2-digit'
+}) : '–');
 
 // ---------------------------------------------------------------- 2,5D-Geometrie
 
@@ -153,6 +157,12 @@ const LEVEL_H = (level: string) => (level === 'Gründung' ? 22 : level === 'Dach
 export const ProgressMap: React.FC = () => {
     const navigate = useNavigate();
     const {activeProject} = useProjects();
+    // tx statt t, weil `t` hier schon für Vorgänge (BuildingTask) benutzt wird.
+    const {t: tx, tf, locale} = useLanguage();
+    const fmtUi = (iso: string | null | undefined) => fmt(iso, locale);
+    const stateLabel = (s: TaskState) => tx(`pm_state_${s}`);
+    const eventLabel = (k: BuildingEvent['kind']) => tx(`pm_event_${k}`);
+    const houseName = (h: string) => (h === SITE ? tx('pm_site') : h);
     const projectId = Number(activeProject.id);
     const legacyStorageKey = `progressZones_${projectId}`;
 
@@ -195,7 +205,7 @@ export const ProgressMap: React.FC = () => {
                 setDayIndex(Math.min(Math.max(daysBetween(from, target), 0), max));
             }
         } catch (err: any) {
-            setError(err?.message || 'Baufortschritt nicht verfügbar');
+            setError(err?.message || tx('pm_unavailable'));
         } finally {
             setLoading(false);
         }
@@ -276,9 +286,9 @@ export const ProgressMap: React.FC = () => {
     const nextUp = views
         .filter((v) => v.state !== 'done')
         .flatMap((v) => {
-            const items: { v: TaskView; date: Date; what: 'Start' | 'Ende' }[] = [];
-            if (v.task.plannedStart) items.push({v, date: d(v.task.plannedStart), what: 'Start'});
-            if (v.task.plannedEnd) items.push({v, date: d(v.task.plannedEnd), what: 'Ende'});
+            const items: { v: TaskView; date: Date; what: 'start' | 'end' }[] = [];
+            if (v.task.plannedStart) items.push({v, date: d(v.task.plannedStart), what: 'start'});
+            if (v.task.plannedEnd) items.push({v, date: d(v.task.plannedEnd), what: 'end'});
             return items;
         })
         .filter((x) => x.date > refDate && x.date <= addDays(refDate, 14))
@@ -293,14 +303,14 @@ export const ProgressMap: React.FC = () => {
     const assignPlace = async (t: BuildingTask, value: string) => {
         let place = value;
         if (value === '__new') {
-            place = window.prompt('Ort des Vorgangs (z. B. "Haus D · 1.OG (Achse 3)"):', t.location ?? '')?.trim() ?? '';
+            place = window.prompt(tx('pm_place_prompt'), t.location ?? '')?.trim() ?? '';
             if (!place) return;
         }
         try {
             await api.updatePlanTask(t.planId, t.id, {location: place});
             await load(true);
         } catch (err: any) {
-            setError(err?.message || 'Ort konnte nicht gespeichert werden');
+            setError(err?.message || tx('pm_place_failed'));
         }
     };
 
@@ -333,7 +343,11 @@ export const ProgressMap: React.FC = () => {
         const strokeW = isSel ? 3 : hasDefect ? 2.5 : 1.2;
         const dash = ghost && !hasDefect ? '5 4' : undefined;
         const fillW = Math.round((FACE_W * cell.actual) / 100);
-        const label = `${cell.house} · ${cell.level}: ${cell.tasks.length ? `Ist ${cell.actual} %, Soll ${cell.plan} %, ${STATE_LABELS[cell.state]}` : 'keine Vorgänge'}${hasDefect ? `, ${cell.defects.length} Mangel` : ''}`;
+        const label = `${houseName(cell.house)} · ${cell.level}: ${cell.tasks.length ? tf('pm_cell_label', {
+            actual: cell.actual,
+            plan: cell.plan,
+            state: stateLabel(cell.state)
+        }) : tx('pm_no_tasks')}${hasDefect ? `, ${tf('pm_n_defects', {n: cell.defects.length})}` : ''}`;
         return (
             <g
                 key={cell.key}
@@ -381,7 +395,7 @@ export const ProgressMap: React.FC = () => {
                     <>
                         <text x={x + 8} y={y + 16} className="bp-text-strong">{cell.level}</text>
                         <text x={x + 8} y={y + 31} className="bp-text">
-                            {cell.tasks.length ? `${cell.actual} %${cell.started ? '' : ' · geplant'}` : '–'}
+                            {cell.tasks.length ? `${cell.actual} %${cell.started ? '' : tx('pm_planned_suffix')}` : '–'}
                         </text>
                     </>
                 ) : (
@@ -410,7 +424,7 @@ export const ProgressMap: React.FC = () => {
     };
 
     const renderBuilding = () => (
-        <svg viewBox={`0 0 ${svgW} ${svgH}`} className="bp-svg" role="group" aria-label="Gebäude nach Haus und Ebene">
+        <svg viewBox={`0 0 ${svgW} ${svgH}`} className="bp-svg" role="group" aria-label={tx('pm_building_aria')}>
             <defs>
                 <pattern id="bp-defect-hatch" width="8" height="8" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
                     <line x1="0" y1="0" x2="0" y2="8" stroke={DEFECT_COLOR} strokeWidth="3" strokeOpacity="0.45"/>
@@ -422,7 +436,7 @@ export const ProgressMap: React.FC = () => {
                     className="bp-cell"
                     role="button"
                     tabIndex={0}
-                    aria-label={`Baufeld: ${site.tasks.length} Vorgänge ohne Hauszuordnung`}
+                    aria-label={tf('pm_site_aria', {n: site.tasks.length})}
                     onClick={() => setSelected(site.key)}
                     onKeyDown={(e) => {
                         if (e.key === 'Enter' || e.key === ' ') {
@@ -438,8 +452,8 @@ export const ProgressMap: React.FC = () => {
                         strokeWidth={selected === site.key ? 2.5 : 1} strokeDasharray="6 4"
                     />
                     <text x={padX} y={groundY + 32} className="bp-text">
-                        {SITE}{site.tasks.length ? ` · ${site.tasks.length} Vorgang${site.tasks.length === 1 ? '' : 'e'} ohne Haus` : ''}
-                        {site.defects.length ? ` · ${site.defects.length} Mangel` : ''}
+                        {tx('pm_site')}{site.tasks.length ? (site.tasks.length === 1 ? tx('pm_site_tasks_1') : tf('pm_site_tasks_n', {n: site.tasks.length})) : ''}
+                        {site.defects.length ? ` · ${tf('pm_n_defects', {n: site.defects.length})}` : ''}
                     </text>
                 </g>
             )}
@@ -476,7 +490,10 @@ export const ProgressMap: React.FC = () => {
     const refPos = `${(Math.min(dayIndex, maxIndex) / spanDays) * 100}%`;
     const months: { label: string; left: string }[] = [];
     for (let m = new Date(rangeFrom.getFullYear(), rangeFrom.getMonth() + 1, 1); m <= rangeTo; m = new Date(m.getFullYear(), m.getMonth() + 1, 1)) {
-        months.push({label: m.toLocaleDateString('de-DE', {month: 'short', year: '2-digit'}), left: `${(daysBetween(rangeFrom, m) / spanDays) * 100}%`});
+        months.push({
+            label: m.toLocaleDateString(locale, {month: 'short', year: '2-digit'}),
+            left: `${(daysBetween(rangeFrom, m) / spanDays) * 100}%`
+        });
     }
     const ganttGroups = [...houses, SITE].map((house) => ({
         house,
@@ -496,19 +513,19 @@ export const ProgressMap: React.FC = () => {
                 <div className="idea-title-group">
                     <div className="idea-icon"><TrendingUp size={22}/></div>
                     <div>
-                        <h1>Baufortschritt</h1>
+                        <h1>{tx('pm_title')}</h1>
                     </div>
                 </div>
             </div>
 
-            {error && <ComingSoonNote>{`Baufortschritt nicht verfügbar: ${error}`}</ComingSoonNote>}
+            {error && <ComingSoonNote>{`${tx('pm_unavailable')}: ${error}`}</ComingSoonNote>}
 
             {!loading && data && !hasTasks && (
                 <div className="idea-empty">
-                    Noch kein Bauzeitenplan für dieses Projekt. Vorgänge mit Ort (z. B. „Haus B · EG“) unter Stammdaten → Bauzeitenpläne
-                    anlegen oder importieren – oder unter Profil den Demo-Stand laden.
+                    {tx('pm_empty')}
                     <div style={{marginTop: '10px'}}>
-                        <button className="btn btn-primary" onClick={() => navigate('/stammdaten')}>Zu den Stammdaten</button>
+                        <button className="btn btn-primary"
+                                onClick={() => navigate('/stammdaten')}>{tx('pm_to_masterdata')}</button>
                     </div>
                 </div>
             )}
@@ -520,7 +537,8 @@ export const ProgressMap: React.FC = () => {
                             <button className="btn btn-secondary" onClick={() => {
                                 if (!playing && dayIndex >= maxIndex) setDayIndex(0);
                                 setPlaying((p) => !p);
-                            }} title={playing ? 'Anhalten' : 'Bauablauf abspielen'} aria-label={playing ? 'Anhalten' : 'Bauablauf abspielen'}>
+                            }} title={playing ? tx('pm_pause') : tx('pm_play')}
+                                    aria-label={playing ? tx('pm_pause') : tx('pm_play')}>
                                 {playing ? <Pause size={14}/> : <Play size={14}/>}
                             </button>
                             <input
@@ -528,31 +546,39 @@ export const ProgressMap: React.FC = () => {
                                 min={0}
                                 max={maxIndex}
                                 value={Math.min(dayIndex, maxIndex)}
-                                aria-label="Stichtag"
+                                aria-label={tx('pm_ref_date')}
                                 onChange={(e) => {
                                     setPlaying(false);
                                     setDayIndex(Number(e.target.value));
                                 }}
                             />
                             <strong style={{whiteSpace: 'nowrap'}}>
-                                {refDate.toLocaleDateString('de-DE', {weekday: 'short', day: '2-digit', month: '2-digit', year: 'numeric'})}
+                                {refDate.toLocaleDateString(locale, {
+                                    weekday: 'short',
+                                    day: '2-digit',
+                                    month: '2-digit',
+                                    year: 'numeric'
+                                })}
                             </strong>
                             {data?.lastReportDate && (
                                 <button className="idea-tab" onClick={() => {
                                     setPlaying(false);
                                     setDayIndex(daysBetween(rangeFrom, lastReport));
-                                }} title="Zum letzten Tagesbericht springen">Letzter Bericht</button>
+                                }} title={tx('pm_jump_last_title')}>{tx('pm_last_report')}</button>
                             )}
                         </div>
                         <div className="bp-kpis">
-                            <span>Ist <strong>{overall.actual} %</strong> · Soll <strong>{overall.plan} %</strong></span>
-                            <span>Größter Verzug <strong>{overall.maxDelay.toLocaleString('de-DE')} AT</strong></span>
+                            <span>{tx('pm_actual')} <strong>{overall.actual} %</strong> · {tx('pm_plan')}
+                                <strong>{overall.plan} %</strong></span>
+                            <span>{tx('pm_max_delay')}
+                                <strong>{overall.maxDelay.toLocaleString(locale)} {tx('pm_wd')}</strong></span>
                             <span style={{color: openDefects.length ? DEFECT_COLOR : undefined}}>
-                                Mängel bis Stichtag <strong>{openDefects.length}</strong>
+                                {tx('pm_defects_until')} <strong>{openDefects.length}</strong>
                             </span>
                             {isForecast && (
                                 <span className="bp-forecast-hint">
-                                    <CalendarClock size={12}/> Prognose – Ist-Stand vom {lastReport.toLocaleDateString('de-DE')} (letzter Tagesbericht)
+                                    <CalendarClock
+                                        size={12}/> {tf('pm_forecast', {date: lastReport.toLocaleDateString(locale)})}
                                 </span>
                             )}
                         </div>
@@ -563,14 +589,13 @@ export const ProgressMap: React.FC = () => {
                             <div className="bp-building">{renderBuilding()}</div>
                             <div className="progress-legend">
                                 {(Object.keys(STATE_COLORS) as TaskState[]).map((s) => (
-                                    <span key={s}><i style={{background: STATE_COLORS[s]}}/> {STATE_LABELS[s]}</span>
+                                    <span key={s}><i style={{background: STATE_COLORS[s]}}/> {stateLabel(s)}</span>
                                 ))}
-                                <span><i style={{background: DEFECT_COLOR}}/> Mangel (rot schraffiert)</span>
-                                <span><i style={{background: NOTICE_COLOR}}/> Vorkommnis/Behinderung (letzte {RECENT_DAYS} Tage)</span>
+                                <span><i style={{background: DEFECT_COLOR}}/> {tx('pm_legend_defect')}</span>
+                                <span><i style={{background: NOTICE_COLOR}}/> {tf('pm_legend_event', {n: RECENT_DAYS})}</span>
                             </div>
                             <div style={{fontSize: '11px', color: 'var(--text-muted)'}}>
-                                Füllung = Ist-Fortschritt der Ebene, gestrichelte Linie = Soll am Stichtag, gestrichelte Umrisse = noch nicht begonnen.
-                                Quelle: Bauzeitenplan, Tagesberichte, Briefe und Fotos.
+                                {tx('pm_legend_hint')}
                             </div>
                         </div>
 
@@ -580,16 +605,20 @@ export const ProgressMap: React.FC = () => {
                                     <>
                                         <strong style={{fontSize: '15px', display: 'flex', alignItems: 'center', gap: '6px'}}>
                                             {selectedCell.house === SITE ? <MapPin size={15}/> : <Building2 size={15}/>}
-                                            {selectedCell.house}{selectedCell.level ? ` · ${selectedCell.level}` : ''}
+                                            {houseName(selectedCell.house)}{selectedCell.level ? ` · ${selectedCell.level}` : ''}
                                         </strong>
                                         {selectedCell.tasks.length === 0 && (
-                                            <span style={{color: 'var(--text-muted)', fontSize: '12px'}}>Keine Vorgänge auf dieser Ebene.</span>
+                                            <span style={{
+                                                color: 'var(--text-muted)',
+                                                fontSize: '12px'
+                                            }}>{tx('pm_no_tasks_level')}</span>
                                         )}
                                         {selectedCell.tasks.map((v) => (
                                             <div key={v.task.id} className="bp-task">
                                                 <div style={{display: 'flex', justifyContent: 'space-between', gap: '8px'}}>
                                                     <span style={{fontWeight: 700}}>{v.task.title}</span>
-                                                    <span className="bp-pill" style={{background: STATE_COLORS[v.state]}}>{STATE_LABELS[v.state]}</span>
+                                                    <span className="bp-pill"
+                                                          style={{background: STATE_COLORS[v.state]}}>{stateLabel(v.state)}</span>
                                                 </div>
                                                 <div className="bp-muted">
                                                     {[v.task.code, v.task.trade, v.task.company].filter(Boolean).join(' · ')}
@@ -599,21 +628,27 @@ export const ProgressMap: React.FC = () => {
                                                     {v.plan > 0 && <div className="bp-bar-plan" style={{left: `${v.plan}%`}}/>}
                                                 </div>
                                                 <div style={{fontSize: '12px'}}>
-                                                    Soll {v.plan} % · Ist {v.actual} %{v.delay > 0 ? ` · ${v.delay.toLocaleString('de-DE')} AT Verzug` : ''}
+                                                    {tf('pm_task_line', {
+                                                        plan: v.plan,
+                                                        actual: v.actual
+                                                    })}{v.delay > 0 ? tf('pm_delay_suffix', {n: v.delay.toLocaleString(locale)}) : ''}
                                                 </div>
-                                                <div className="bp-muted">Plan {fmt(v.task.plannedStart)} – {fmt(v.task.plannedEnd)}</div>
+                                                <div className="bp-muted">{tf('pm_plan_range', {
+                                                    from: fmtUi(v.task.plannedStart),
+                                                    to: fmtUi(v.task.plannedEnd)
+                                                })}</div>
                                                 <div style={{display: 'flex', gap: '6px', marginTop: '6px', flexWrap: 'wrap', alignItems: 'center'}}>
                                                     <select
                                                         className="form-input"
                                                         style={{width: 'auto', fontSize: '11px', padding: '3px 6px'}}
                                                         value=""
                                                         onChange={(e) => e.target.value && assignPlace(v.task, e.target.value)}
-                                                        title={`Ort: ${v.task.location || 'nicht gesetzt'} – wird am Vorgang gespeichert`}
-                                                        aria-label={`Ort für ${v.task.title} ändern`}
+                                                        title={tf('pm_place_title', {place: v.task.location || tx('pm_not_set')})}
+                                                        aria-label={tf('pm_place_aria', {title: v.task.title})}
                                                     >
-                                                        <option value="">Ort ändern…</option>
+                                                        <option value="">{tx('pm_change_place')}</option>
                                                         {placeOptions.map((p) => <option key={p} value={p}>{p}</option>)}
-                                                        <option value="__new">+ eigener Ort…</option>
+                                                        <option value="__new">{tx('pm_own_place')}</option>
                                                     </select>
                                                     {(v.state === 'delayed' || v.state === 'warning') && (
                                                         <button
@@ -622,11 +657,12 @@ export const ProgressMap: React.FC = () => {
                                                             onClick={() => navigate('/drafts', {
                                                                 state: {
                                                                     type: 'delay',
+                                                                    // Bewusst Deutsch: Stichworte für den deutschen VOB/B-Briefentwurf
                                                                     keywords: `${v.task.title} (${selectedCell.house} · ${selectedCell.level}): Soll ${v.plan} %, Ist ${v.actual} % am ${refDate.toLocaleDateString('de-DE')} (${v.delay} AT Verzug).`
                                                                 }
                                                             })}
                                                         >
-                                                            <Mail size={11}/> Behinderungsanzeige
+                                                            <Mail size={11}/> {tx('pm_delay_notice')}
                                                         </button>
                                                     )}
                                                 </div>
@@ -638,16 +674,16 @@ export const ProgressMap: React.FC = () => {
                                                 || (selectedCell.house === SITE && !e.house));
                                             return evs.length > 0 && (
                                                 <div style={{borderTop: '1px solid var(--border-light)', paddingTop: '8px'}}>
-                                                    <strong style={{fontSize: '13px'}}>Ereignisse bis Stichtag</strong>
+                                                    <strong style={{fontSize: '13px'}}>{tx('pm_events_until')}</strong>
                                                     {evs.slice().reverse().map((e) => (
                                                         <button key={e.id} type="button" className="bp-event" onClick={() => openEvent(e)}
                                                                 disabled={!e.defectId && !e.noticeId && !e.reportDate}
-                                                                title={e.defectId ? 'In der Mängelliste öffnen' : e.noticeId ? 'Brief öffnen' : e.reportDate ? 'Tagesbericht öffnen' : undefined}>
+                                                                title={e.defectId ? tx('pm_open_defect_list') : e.noticeId ? tx('pm_open_letter') : e.reportDate ? tx('pm_open_report') : undefined}>
                                                             <span className="bp-pill" style={{background: e.kind !== 'defect' ? NOTICE_COLOR : isOpenDefect(e) ? DEFECT_COLOR : STATE_COLORS.done}}>
-                                                                {EVENT_LABELS[e.kind]}{e.kind === 'defect' && e.status ? ` · ${DEFECT_STATUS[e.status] ?? e.status}` : ''}
+                                                                {eventLabel(e.kind)}{e.kind === 'defect' && e.status ? ` · ${DEFECT_STATUSES.includes(e.status) ? tx(`def_status_${e.status}`) : e.status}` : ''}
                                                             </span>
                                                             <span className="bp-event-text">
-                                                                <strong>{fmt(e.date)}</strong> {e.title}
+                                                                <strong>{fmtUi(e.date)}</strong> {e.title}
                                                                 <span className="bp-muted"> · {e.source}{e.status ? ` (${e.status})` : ''}</span>
                                                             </span>
                                                             {e.defectId ? <ClipboardList size={12}/> : e.noticeId ? <Mail size={12}/> : e.reportDate ? <FileText size={12}/> : null}
@@ -665,26 +701,29 @@ export const ProgressMap: React.FC = () => {
                                                     state: {newDefect: {house: selectedCell.house, level: selectedCell.level}}
                                                 })}
                                             >
-                                                <AlertTriangle size={12}/> Mangel erfassen
+                                                <AlertTriangle size={12}/> {tx('pm_add_defect')}
                                             </button>
                                         )}
                                     </>
                                 ) : (
-                                    <span style={{color: 'var(--text-muted)'}}>Ebene im Gebäude anklicken für Vorgänge, Soll/Ist und Mängel.</span>
+                                    <span style={{color: 'var(--text-muted)'}}>{tx('pm_select_hint')}</span>
                                 )}
                             </div>
 
                             <div className="progress-detail">
-                                <strong>Als Nächstes (14 Tage)</strong>
-                                {nextUp.length === 0 && <span style={{color: 'var(--text-muted)'}}>Nichts geplant.</span>}
+                                <strong>{tx('pm_next_14')}</strong>
+                                {nextUp.length === 0 &&
+                                    <span style={{color: 'var(--text-muted)'}}>{tx('pm_nothing_planned')}</span>}
                                 {nextUp.map(({v, date, what}) => (
                                     <button key={`${v.task.id}-${what}`} type="button" className="bp-next"
                                             onClick={() => setSelected(cellKey(v.task.house, v.task.house ? v.task.level : null))}>
                                         <span>
-                                            <strong>{what}</strong> {v.task.title}
-                                            <span className="bp-muted"> ({v.task.house ? `${v.task.house} · ${v.task.level}` : SITE})</span>
+                                            <strong>{tx(`pm_what_${what}`)}</strong> {v.task.title}
+                                            <span
+                                                className="bp-muted"> ({v.task.house ? `${v.task.house} · ${v.task.level}` : tx('pm_site')})</span>
                                         </span>
-                                        <strong style={{whiteSpace: 'nowrap'}}>{date.toLocaleDateString('de-DE')}</strong>
+                                        <strong
+                                            style={{whiteSpace: 'nowrap'}}>{date.toLocaleDateString(locale)}</strong>
                                     </button>
                                 ))}
                             </div>
@@ -693,7 +732,7 @@ export const ProgressMap: React.FC = () => {
 
                     <div className="progress-plan-card">
                         <strong style={{display: 'flex', alignItems: 'center', gap: '6px'}}>
-                            <CalendarClock size={15}/> Was ist wann dran?
+                            <CalendarClock size={15}/> {tx('pm_gantt_title')}
                         </strong>
                         <div className="bp-gantt">
                             <div className="bp-gantt-row bp-gantt-head">
@@ -705,7 +744,7 @@ export const ProgressMap: React.FC = () => {
                             </div>
                             {ganttGroups.map((g) => (
                                 <React.Fragment key={g.house}>
-                                    <div className="bp-gantt-group">{g.house}</div>
+                                    <div className="bp-gantt-group">{houseName(g.house)}</div>
                                     {g.rows.map((v) => {
                                         const t = v.task;
                                         const key = cellKey(t.house, t.house ? t.level : null);
@@ -716,7 +755,12 @@ export const ProgressMap: React.FC = () => {
                                             <button key={t.id} type="button"
                                                     className={`bp-gantt-row${selected === key ? ' is-selected' : ''}`}
                                                     onClick={() => setSelected(key)}
-                                                    title={`${t.title}: ${fmt(t.plannedStart)} – ${fmt(t.plannedEnd)}, Ist ${v.actual} %`}>
+                                                    title={tf('pm_gantt_row_title', {
+                                                        title: t.title,
+                                                        from: fmtUi(t.plannedStart),
+                                                        to: fmtUi(t.plannedEnd),
+                                                        actual: v.actual
+                                                    })}>
                                                 <span className="bp-gantt-label">
                                                     <span className="bp-gantt-level">{t.level ?? ''}</span> {t.title}
                                                 </span>
@@ -734,7 +778,8 @@ export const ProgressMap: React.FC = () => {
                                                         <span key={e.id} className="bp-gantt-dot" style={{
                                                             left: pos(e.date),
                                                             background: e.kind === 'defect' ? DEFECT_COLOR : NOTICE_COLOR
-                                                        }} title={`${EVENT_LABELS[e.kind]} ${fmt(e.date)}: ${e.title}`}/>
+                                                        }}
+                                                              title={`${eventLabel(e.kind)} ${fmtUi(e.date)}: ${e.title}`}/>
                                                     ))}
                                                     <span className="bp-gantt-ref" style={{left: refPos}}/>
                                                 </span>

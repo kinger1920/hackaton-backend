@@ -1,37 +1,54 @@
 import React, {useEffect, useMemo, useRef, useState} from 'react';
 import {useLocation, useNavigate} from 'react-router-dom';
 import {
+    AlertTriangle,
     Calendar as CalendarIcon,
+    Camera,
+    CheckCircle2,
     ChevronLeft,
     ChevronRight,
+    ClipboardList,
+    Download,
+    FileText,
+    Flag,
+    Link2,
+    Lock,
+    Mail,
+    Pencil,
+    PlayCircle,
     Plus,
     Printer,
-    Download,
-    X,
-    Mail,
-    FileText,
-    Camera,
-    AlertTriangle,
-    Wrench,
-    StickyNote,
-    TrendingUp,
-    ClipboardList,
-    Users,
-    Search,
     RefreshCw,
-    Link2,
+    Search,
+    StickyNote,
     Trash2,
-    Pencil,
-    Lock,
-    Flag,
-    PlayCircle,
-    CheckCircle2
+    TrendingUp,
+    Users,
+    Wrench,
+    X
 } from 'lucide-react';
 import {useProjects} from '../context/ProjectContext';
 import {useLanguage} from '../context/LanguageContext';
-import {api, AppointmentCategory, DayTask, saveBlob, ScheduleAppointment, SitePhotoOut, TimelineItem} from '../services/api';
+import {
+    api,
+    AppointmentCategory,
+    DayTask,
+    saveBlob,
+    ScheduleAppointment,
+    SitePhotoOut,
+    TimelineItem
+} from '../services/api';
 import DeadlineRadar from '../ideas/DeadlineRadar';
-import {addDays, daysBetween, formatDe, isoWeek, parseIsoDate, startOfToday, startOfWeek, toIsoDate, weekdayIndex} from '../utils/dates';
+import {
+    addDays,
+    daysBetween,
+    isoWeek,
+    parseIsoDate,
+    startOfToday,
+    startOfWeek,
+    toIsoDate,
+    weekdayIndex
+} from '../utils/dates';
 import '@frontend/src/index.css';
 import './Termin.css';
 
@@ -76,28 +93,29 @@ interface DayInfo {
 
 type DayDataFn = (d: string) => DayInfo;
 
-const VIEWS: { id: View; label: string }[] = [
-    {id: 'day', label: 'Tag'},
-    {id: 'week', label: 'Woche'},
-    {id: 'month', label: 'Monat'},
-    {id: 'year', label: 'Jahr'},
-    {id: 'deadlines', label: 'Fristen'}
-];
+// Ansichten; Beschriftung über die Übersetzung tm_view_<id>.
+const VIEWS: View[] = ['day', 'week', 'month', 'year', 'deadlines'];
 
-const CATEGORY: Record<AppointmentCategory, { label: string; color: string }> = {
-    deadline: {label: 'Frist', color: '#dc2626'},
-    milestone: {label: 'Meilenstein', color: '#7c3aed'},
-    inspection: {label: 'Abnahme/Prüfung', color: '#16a34a'},
-    meeting: {label: 'Besprechung', color: '#2563eb'},
-    delivery: {label: 'Lieferung/Logistik', color: '#d97706'}
+// Termin-Kategorien mit Farbe; Beschriftung über tm_cat_<kategorie>.
+const CATEGORY: Record<AppointmentCategory, { color: string }> = {
+    deadline: {color: '#dc2626'},
+    milestone: {color: '#7c3aed'},
+    inspection: {color: '#16a34a'},
+    meeting: {color: '#2563eb'},
+    delivery: {color: '#d97706'}
 };
 
-const WEEKDAYS = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'];
-const MONTHS = ['Januar', 'Februar', 'März', 'April', 'Mai', 'Juni', 'Juli', 'August', 'September', 'Oktober', 'November', 'Dezember'];
+/** Wochentage Mo–So kurz, in der Sprache der Oberfläche (1.1.2024 war ein Montag). */
+const weekdayNames = (locale: string) =>
+    Array.from({length: 7}, (_, i) => new Date(2024, 0, 1 + i).toLocaleDateString(locale, {weekday: 'short'}));
+/** Monatsnamen Januar–Dezember in der Sprache der Oberfläche. */
+const monthNames = (locale: string) =>
+    Array.from({length: 12}, (_, m) => new Date(2024, m, 1).toLocaleDateString(locale, {month: 'long'}));
 
 const iso = toIsoDate;
 const parseIso = parseIsoDate;
-const fmt = (d: Date, opts: Intl.DateTimeFormatOptions) => formatDe(d, opts);
+// Standard 'de-DE' für Texte, die in den deutschen Briefentwurf gehen; Oberfläche übergibt die Locale der Sprache.
+const fmt = (d: Date, opts: Intl.DateTimeFormatOptions, locale = 'de-DE') => d.toLocaleDateString(locale, opts);
 const todayDate = startOfToday;
 
 /** Ist ein Timeline-Eintrag ein Mangel? (Mängelrüge-Brief oder Diktat "Mangel") */
@@ -139,7 +157,8 @@ function chunks(from: Date, to: Date, size: number): [Date, Date][] {
 
 export const Termin: React.FC = () => {
     const navigate = useNavigate();
-    const {t} = useLanguage();
+    const {t, tf, locale} = useLanguage();
+    const catLabel = (c: AppointmentCategory) => t(`tm_cat_${c}`);
     const {activeProject} = useProjects();
     const projectId = Number(activeProject.id);
     const today = useMemo(todayDate, []);
@@ -147,7 +166,7 @@ export const Termin: React.FC = () => {
 
     // Startansicht: aus Navigation (z. B. /fristen → {view: 'deadlines'}), sonst Monat
     const navView = (useLocation().state as { view?: View } | null)?.view;
-    const [view, setView] = useState<View>(navView && VIEWS.some((v) => v.id === navView) ? navView : 'month');
+    const [view, setView] = useState<View>(navView && VIEWS.includes(navView) ? navView : 'month');
     const [anchor, setAnchor] = useState<Date>(today);
     const [selected, setSelected] = useState<string>(todayIso);
     const [visibleCategories, setVisibleCategories] = useState<Set<AppointmentCategory>>(
@@ -297,7 +316,7 @@ export const Termin: React.FC = () => {
         setLoading(true);
         const results = await Promise.allSettled(jobs);
         const failed = results.filter((r): r is PromiseRejectedResult => r.status === 'rejected');
-        setError(failed.length > 0 ? `Einige Daten konnten nicht geladen werden: ${failed[0].reason?.message ?? failed[0].reason}` : null);
+        setError(failed.length > 0 ? `${t('tm_load_partial')} ${failed[0].reason?.message ?? failed[0].reason}` : null);
         setLoading(false);
     };
 
@@ -395,15 +414,18 @@ export const Termin: React.FC = () => {
     const rangeLabel = (() => {
         switch (view) {
             case 'day':
-                return fmt(anchor, {weekday: 'long', day: '2-digit', month: 'long', year: 'numeric'});
+                return fmt(anchor, {weekday: 'long', day: '2-digit', month: 'long', year: 'numeric'}, locale);
             case 'week':
-                return `KW ${isoWeek(rangeFrom)} • ${fmt(rangeFrom, {day: '2-digit', month: '2-digit'})} – ${fmt(rangeTo, {day: '2-digit', month: '2-digit', year: 'numeric'})}`;
+                return `${t('tm_week_short')} ${isoWeek(rangeFrom)} • ${fmt(rangeFrom, {
+                    day: '2-digit',
+                    month: '2-digit'
+                }, locale)} – ${fmt(rangeTo, {day: '2-digit', month: '2-digit', year: 'numeric'}, locale)}`;
             case 'month':
-                return `${MONTHS[anchor.getMonth()]} ${anchor.getFullYear()}`;
+                return `${monthNames(locale)[anchor.getMonth()]} ${anchor.getFullYear()}`;
             case 'year':
                 return String(anchor.getFullYear());
             case 'deadlines':
-                return 'Fristen aus Briefen, Bauzeitenplan und Terminen';
+                return t('tm_deadlines_label');
         }
     })();
 
@@ -470,7 +492,7 @@ export const Termin: React.FC = () => {
             setEditingId(null);
             setSelected(saved.date);
         } catch (err: any) {
-            setModalError(err?.message || 'Termin konnte nicht gespeichert werden');
+            setModalError(err?.message || t('tm_save_failed'));
         } finally {
             setSaving(false);
         }
@@ -489,7 +511,7 @@ export const Termin: React.FC = () => {
                 return next;
             });
         } catch (err: any) {
-            setError(err?.message || 'Termin konnte nicht gelöscht werden');
+            setError(err?.message || t('tm_delete_failed'));
         }
     };
 
@@ -507,7 +529,7 @@ export const Termin: React.FC = () => {
                 return next;
             });
         } catch (err: any) {
-            setError(err?.message || 'Foto konnte nicht hochgeladen werden');
+            setError(err?.message || t('tm_photo_upload_failed'));
         } finally {
             setUploadingPhoto(false);
         }
@@ -523,14 +545,14 @@ export const Termin: React.FC = () => {
             });
             if (activePhoto?.id === photo.id) setActivePhoto(null);
         } catch (err: any) {
-            setError(err?.message || 'Foto konnte nicht gelöscht werden');
+            setError(err?.message || t('tm_photo_delete_failed'));
         }
     };
 
     /** Termine des sichtbaren Zeitraums als .ics (Outlook, Google, Apple) */
     const exportIcs = () => {
         const esc = (s: string) => s.replace(/\\/g, '\\\\').replace(/[,;]/g, (m) => `\\${m}`).replace(/\n/g, '\\n');
-        const lines = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//BauManager//Terminplaner//DE'];
+        const lines = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//EasyBuild//Terminplaner//DE'];
         allAppts
             .filter((a) => a.date >= iso(rangeFrom) && a.date <= iso(rangeTo))
             .forEach((a) => {
@@ -538,7 +560,7 @@ export const Termin: React.FC = () => {
                 lines.push('BEGIN:VEVENT', `UID:${a.id}@baumanager`, `SUMMARY:${esc(a.title)}`);
                 if (a.time) lines.push(`DTSTART:${d}T${a.time.slice(0, 5).replace(':', '')}00`);
                 else lines.push(`DTSTART;VALUE=DATE:${d}`);
-                const desc = [CATEGORY[a.category]?.label, a.trade, a.description, a.vobReference].filter(Boolean).join(' • ');
+                const desc = [catLabel(a.category), a.trade, a.description, a.vobReference].filter(Boolean).join(' • ');
                 if (desc) lines.push(`DESCRIPTION:${esc(desc)}`);
                 lines.push('END:VEVENT');
             });
@@ -550,7 +572,7 @@ export const Termin: React.FC = () => {
         try {
             saveBlob(await api.downloadReportExport(date, format, projectId), `Bautagesbericht_${date}.${format}`);
         } catch (err: any) {
-            alert(err?.message || 'Export fehlgeschlagen');
+            alert(err?.message || t('tm_export_failed'));
         }
     };
 
@@ -570,16 +592,19 @@ export const Termin: React.FC = () => {
                     </div>
                 </div>
                 <div className="tp-header-actions">
-                    <button className="tp-btn" onClick={reload} title="Neu laden"><RefreshCw size={14} className={loading ? 'tp-spin' : ''}/></button>
-                    <button className="tp-btn" onClick={exportIcs} title="Termine des Zeitraums als .ics exportieren (Outlook/Google/Apple)">
+                    <button className="tp-btn" onClick={reload} title={t('btn_reload')}><RefreshCw size={14}
+                                                                                                   className={loading ? 'tp-spin' : ''}/>
+                    </button>
+                    <button className="tp-btn" onClick={exportIcs} title={t('tm_ics_title')}>
                         <Download size={14}/> <span>.ics</span>
                     </button>
-                    <button className="tp-btn" onClick={() => setShowIcsModal(true)} title="Live-Kalender-Abo (Outlook/Google/Apple) über Backend-Feed">
-                        <Link2 size={14}/> <span>Kalender verbinden</span>
+                    <button className="tp-btn" onClick={() => setShowIcsModal(true)} title={t('tm_connect_title')}>
+                        <Link2 size={14}/> <span>{t('tm_connect')}</span>
                     </button>
-                    <button className="tp-btn" onClick={() => window.print()} title="Drucken"><Printer size={14}/></button>
+                    <button className="tp-btn" onClick={() => window.print()} title={t('tm_print')}><Printer size={14}/>
+                    </button>
                     <button className="btn btn-primary" onClick={() => openAdd(selected)}>
-                        <Plus size={15}/> <span>Termin</span>
+                        <Plus size={15}/> <span>{t('tm_appointment')}</span>
                     </button>
                 </div>
             </div>
@@ -587,15 +612,15 @@ export const Termin: React.FC = () => {
             {/* Kategorien-Farblegende */}
             {view !== 'deadlines' && (
                 <div className="tp-layers">
-                    {(Object.entries(CATEGORY) as [AppointmentCategory, { label: string; color: string }][]).map(([cat, info]) => (
+                    {(Object.entries(CATEGORY) as [AppointmentCategory, { color: string }][]).map(([cat, info]) => (
                         <button
                             key={cat}
                             className={`tp-layer ${visibleCategories.has(cat) ? 'on' : ''}`}
                             style={{'--layer': info.color} as React.CSSProperties}
                             onClick={() => toggleCategory(cat)}
-                            title={`${info.label} ein-/ausblenden`}
+                            title={tf('tm_toggle_cat', {label: catLabel(cat)})}
                         >
-                            <i/>{info.label}
+                            <i/>{catLabel(cat)}
                         </button>
                     ))}
                 </div>
@@ -603,27 +628,30 @@ export const Termin: React.FC = () => {
 
             {/* Steuerleiste */}
             <div className="tp-toolbar">
-                <div className="tp-segment" role="tablist" aria-label="Zeitraum">
+                <div className="tp-segment" role="tablist" aria-label={t('tm_period')}>
                     {VIEWS.map((v) => (
-                        <button key={v.id} className={view === v.id ? 'active' : ''} onClick={() => changeView(v.id)}>
-                            {v.label}
+                        <button key={v} className={view === v ? 'active' : ''} onClick={() => changeView(v)}>
+                            {t(`tm_view_${v}`)}
                         </button>
                     ))}
                 </div>
                 <div className="tp-nav">
                     {view !== 'deadlines' && (
                         <>
-                            <button className="tp-icon-btn" onClick={() => shift(-1)} aria-label="Zurück"><ChevronLeft size={16}/></button>
-                            <button className="tp-btn" onClick={goToday}>Heute</button>
-                            <button className="tp-icon-btn" onClick={() => shift(1)} aria-label="Weiter"><ChevronRight size={16}/></button>
+                            <button className="tp-icon-btn" onClick={() => shift(-1)} aria-label={t('tm_back')}>
+                                <ChevronLeft size={16}/></button>
+                            <button className="tp-btn" onClick={goToday}>{t('tm_today')}</button>
+                            <button className="tp-icon-btn" onClick={() => shift(1)} aria-label={t('tm_forward')}>
+                                <ChevronRight size={16}/></button>
                         </>
                     )}
                     <span className="tp-range-label">{rangeLabel}</span>
                 </div>
                 <div className="tp-search">
                     <Search size={14}/>
-                    <input placeholder="Suchen: Vorgang, Firma, Termin, Foto…" value={search} onChange={(e) => setSearch(e.target.value)}/>
-                    {search && <button className="tp-icon-btn small" onClick={() => setSearch('')} aria-label="Suche leeren"><X size={12}/></button>}
+                    <input placeholder={t('tm_search_ph')} value={search} onChange={(e) => setSearch(e.target.value)}/>
+                    {search && <button className="tp-icon-btn small" onClick={() => setSearch('')}
+                                       aria-label={t('tm_clear_search')}><X size={12}/></button>}
                 </div>
             </div>
 
@@ -671,8 +699,7 @@ export const Termin: React.FC = () => {
             </div>
 
             <div className="tp-footnote">
-                Quellen: Bautagesberichte, Diktate, Briefe, Fotos, Bauzeitenplan und manuelle Termine aus dem Backend.
-                Klick auf einen Tag zeigt Details, Doppelklick öffnet die Tagesansicht. Automatische Termine sind entsprechend gekennzeichnet.
+                {t('tm_footnote')}
             </div>
             </>}
 
@@ -681,46 +708,51 @@ export const Termin: React.FC = () => {
                 <div className="tp-modal-overlay" onClick={() => !saving && setShowAdd(false)}>
                     <form className="tp-modal" onClick={(e) => e.stopPropagation()} onSubmit={submitAdd}>
                         <div className="tp-modal-header">
-                            <strong>{editingId ? 'Termin bearbeiten' : 'Neuer Termin / Frist'}</strong>
-                            <button type="button" className="tp-icon-btn" onClick={() => setShowAdd(false)} disabled={saving} aria-label="Schließen"><X size={16}/></button>
+                            <strong>{editingId ? t('tm_edit_appt') : t('tm_new_appt')}</strong>
+                            <button type="button" className="tp-icon-btn" onClick={() => setShowAdd(false)}
+                                    disabled={saving} aria-label={t('btn_close')}><X size={16}/></button>
                         </div>
                         <div className="tp-form-grid">
-                            <label className="span-2">Bezeichnung *
+                            <label className="span-2">{t('tm_f_title')}
                                 <input className="form-input" required autoFocus value={form.title}
                                        onChange={(e) => setForm({...form, title: e.target.value})}/>
                             </label>
-                            <label>Datum
+                            <label>{t('tm_f_date')}
                                 <input className="form-input" type="date" required value={form.date} onChange={(e) => setForm({...form, date: e.target.value})}/>
                             </label>
-                            <label>Uhrzeit
+                            <label>{t('tm_f_time')}
                                 <input className="form-input" type="time" value={form.time ?? ''} onChange={(e) => setForm({...form, time: e.target.value})}/>
                             </label>
-                            <label>Kategorie
+                            <label>{t('tm_f_category')}
                                 <select className="form-input" value={form.category}
                                         onChange={(e) => setForm({...form, category: e.target.value as AppointmentCategory})}>
-                                    {Object.entries(CATEGORY).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+                                    {(Object.keys(CATEGORY) as AppointmentCategory[]).map((k) => <option key={k}
+                                                                                                         value={k}>{catLabel(k)}</option>)}
                                 </select>
                             </label>
-                            <label>Gewerk / Firma
+                            <label>{t('tm_f_trade')}
                                 <input className="form-input" value={form.trade ?? ''} onChange={(e) => setForm({...form, trade: e.target.value})}/>
                             </label>
-                            <label className="span-2">Beschreibung
+                            <label className="span-2">{t('tm_f_desc')}
                                 <textarea className="form-textarea" rows={2} value={form.description ?? ''}
                                           onChange={(e) => setForm({...form, description: e.target.value})}/>
                             </label>
-                            <label>VOB-Bezug
-                                <input className="form-input" placeholder="z. B. § 6 Abs. 1 VOB/B" value={form.vobReference ?? ''}
+                            <label>{t('tm_f_vob')}
+                                <input className="form-input" placeholder={t('tm_f_vob_ph')}
+                                       value={form.vobReference ?? ''}
                                        onChange={(e) => setForm({...form, vobReference: e.target.value})}/>
                             </label>
                             <label className="tp-check">
                                 <input type="checkbox" checked={!!form.isUrgent} onChange={(e) => setForm({...form, isUrgent: e.target.checked})}/>
-                                Dringend
+                                {t('tm_f_urgent')}
                             </label>
                         </div>
                         {modalError && <div className="tp-error">{modalError}</div>}
                         <div className="tp-modal-actions">
-                            <button type="button" className="btn btn-secondary" onClick={() => setShowAdd(false)} disabled={saving}>Abbrechen</button>
-                            <button type="submit" className="btn btn-primary" disabled={saving}>{saving ? 'Speichert…' : 'Speichern'}</button>
+                            <button type="button" className="btn btn-secondary" onClick={() => setShowAdd(false)}
+                                    disabled={saving}>{t('btn_cancel')}</button>
+                            <button type="submit" className="btn btn-primary"
+                                    disabled={saving}>{saving ? t('tm_saving') : t('btn_save')}</button>
                         </div>
                     </form>
                 </div>
@@ -731,26 +763,33 @@ export const Termin: React.FC = () => {
                 <div className="tp-modal-overlay" onClick={() => setAutoInfo(null)}>
                     <div className="tp-modal" onClick={(e) => e.stopPropagation()}>
                         <div className="tp-modal-header">
-                            <strong><Lock size={15} style={{verticalAlign: '-2px', marginRight: 6}}/>Automatischer Termin</strong>
-                            <button type="button" className="tp-icon-btn" onClick={() => setAutoInfo(null)} aria-label="Schließen"><X size={16}/></button>
+                            <strong><Lock size={15} style={{verticalAlign: '-2px', marginRight: 6}}/>{t('tm_auto_appt')}
+                            </strong>
+                            <button type="button" className="tp-icon-btn" onClick={() => setAutoInfo(null)}
+                                    aria-label={t('btn_close')}><X size={16}/></button>
                         </div>
                         <div className="tp-auto-box">
                             <strong>{autoInfo.title}</strong>
                             <div className="tp-appt-meta">
-                                {fmt(parseIso(autoInfo.date), {day: '2-digit', month: '2-digit', year: 'numeric'})}
-                                {' • '}{CATEGORY[autoInfo.category]?.label}
-                                {autoInfo.sourceLabel ? ` • Quelle: ${autoInfo.sourceLabel}` : ''}
+                                {fmt(parseIso(autoInfo.date), {
+                                    day: '2-digit',
+                                    month: '2-digit',
+                                    year: 'numeric'
+                                }, locale)}
+                                {' • '}{catLabel(autoInfo.category)}
+                                {autoInfo.sourceLabel ? ` • ${t('tm_source')} ${autoInfo.sourceLabel}` : ''}
                             </div>
                             {autoInfo.description && <div>{autoInfo.description}</div>}
                             {autoInfo.vobReference && <div className="tp-appt-meta">VOB: {autoInfo.vobReference}</div>}
                         </div>
                         <p className="tp-auto-hint">
                             {autoInfo.source === 'workforce'
-                                ? 'Dieser Hinweis wird automatisch aus dem Sollstärke-Check (Vertrag vs. Tagesbericht) berechnet und kann im Kalender nicht direkt bearbeitet werden. Sobald eine Behinderungsanzeige angelegt ist, verschwindet er automatisch.'
-                                : 'Dieser Termin wird automatisch aus dem Bauzeitenplan berechnet und kann im Kalender nicht direkt bearbeitet werden. Änderungen am Start- oder Enddatum bitte direkt im Bauzeitenplan vornehmen.'}
+                                ? t('tm_auto_workforce')
+                                : t('tm_auto_plan')}
                         </p>
                         <div className="tp-modal-actions">
-                            <button type="button" className="btn btn-secondary" onClick={() => setAutoInfo(null)}>Schließen</button>
+                            <button type="button" className="btn btn-secondary"
+                                    onClick={() => setAutoInfo(null)}>{t('btn_close')}</button>
                             {autoInfo.source === 'workforce' ? (
                                 <button
                                     type="button"
@@ -763,7 +802,7 @@ export const Termin: React.FC = () => {
                                         });
                                     }}
                                 >
-                                    <Mail size={14}/> Behinderungsanzeige erstellen
+                                    <Mail size={14}/> {t('tm_create_delay')}
                                 </button>
                             ) : (
                                 <button
@@ -774,7 +813,7 @@ export const Termin: React.FC = () => {
                                         navigate('/stammdaten', {state: {tab: 'plans'}});
                                     }}
                                 >
-                                    Zum Bauzeitenplan
+                                    {t('tm_to_plan')}
                                 </button>
                             )}
                         </div>
@@ -788,7 +827,8 @@ export const Termin: React.FC = () => {
                     <div className="tp-modal" style={{maxWidth: '680px'}} onClick={(e) => e.stopPropagation()}>
                         <div className="tp-modal-header">
                             <strong><Camera size={15} style={{verticalAlign: '-2px', marginRight: 6}}/>{activePhoto.caption}</strong>
-                            <button type="button" className="tp-icon-btn" onClick={() => setActivePhoto(null)} aria-label="Schließen"><X size={16}/></button>
+                            <button type="button" className="tp-icon-btn" onClick={() => setActivePhoto(null)}
+                                    aria-label={t('btn_close')}><X size={16}/></button>
                         </div>
                         <img
                             src={api.getPhotoFileUrl(activePhoto)}
@@ -797,10 +837,15 @@ export const Termin: React.FC = () => {
                         />
                         <div className="tp-auto-box">
                             <div className="tp-appt-meta">
-                                Aufnahmedatum: {fmt(parseIso(activePhoto.report_date), {day: '2-digit', month: '2-digit', year: 'numeric'})}
-                                {' • '}Datei: {activePhoto.file_name}
+                                {t('tm_photo_date')} {fmt(parseIso(activePhoto.report_date), {
+                                day: '2-digit',
+                                month: '2-digit',
+                                year: 'numeric'
+                            }, locale)}
+                                {' • '}{t('tm_file')} {activePhoto.file_name}
                             </div>
-                            {activePhoto.diary_text && <div><strong>Tagebuch-Eintrag:</strong> {activePhoto.diary_text}</div>}
+                            {activePhoto.diary_text &&
+                                <div><strong>{t('tm_diary_entry')}</strong> {activePhoto.diary_text}</div>}
                             {activePhoto.issues.length > 0 && (
                                 <div style={{color: '#b91c1c', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '5px'}}>
                                     <AlertTriangle size={13}/> {activePhoto.issues.join(' • ')}
@@ -814,7 +859,7 @@ export const Termin: React.FC = () => {
                                 style={{color: '#dc2626'}}
                                 onClick={() => handleDeletePhoto(activePhoto)}
                             >
-                                <Trash2 size={14}/> Foto löschen
+                                <Trash2 size={14}/> {t('tm_delete_photo')}
                             </button>
                             <button
                                 type="button"
@@ -825,7 +870,7 @@ export const Termin: React.FC = () => {
                                     navigate('/reports', {state: {date: dt}});
                                 }}
                             >
-                                Im Tagesbericht öffnen
+                                {t('tm_open_in_report')}
                             </button>
                         </div>
                     </div>
@@ -837,11 +882,14 @@ export const Termin: React.FC = () => {
                 <div className="tp-modal-overlay" onClick={() => setShowIcsModal(false)}>
                     <div className="tp-modal" onClick={(e) => e.stopPropagation()}>
                         <div className="tp-modal-header">
-                            <strong><Link2 size={15} style={{verticalAlign: '-2px', marginRight: 6}}/>Kalender verbinden (Outlook / Google / Apple)</strong>
-                            <button type="button" className="tp-icon-btn" onClick={() => setShowIcsModal(false)} aria-label="Schließen"><X size={16}/></button>
+                            <strong><Link2 size={15}
+                                           style={{verticalAlign: '-2px', marginRight: 6}}/>{t('tm_connect_modal')}
+                            </strong>
+                            <button type="button" className="tp-icon-btn" onClick={() => setShowIcsModal(false)}
+                                    aria-label={t('btn_close')}><X size={16}/></button>
                         </div>
                         <p className="tp-auto-hint">
-                            Über diese Live-iCalendar-URL können alle Projekttermine (manuelle Termine, Bauzeitenplan-Meilensteine und VOB-Fristen) direkt in Outlook, Google Calendar oder Apple Kalender abonniert oder heruntergeladen werden:
+                            {t('tm_connect_hint')}
                         </p>
                         <div style={{display: 'flex', gap: '8px'}}>
                             <input className="form-input" readOnly value={icsFeedUrl} onFocus={(e) => e.target.select()}/>
@@ -854,13 +902,14 @@ export const Termin: React.FC = () => {
                                     setTimeout(() => setIcsCopied(false), 2500);
                                 }}
                             >
-                                {icsCopied ? 'Kopiert!' : 'URL kopieren'}
+                                {icsCopied ? t('btn_copied') : t('tm_copy_url')}
                             </button>
                         </div>
                         <div className="tp-modal-actions">
-                            <button type="button" className="btn btn-secondary" onClick={() => setShowIcsModal(false)}>Schließen</button>
+                            <button type="button" className="btn btn-secondary"
+                                    onClick={() => setShowIcsModal(false)}>{t('btn_close')}</button>
                             <a className="btn btn-primary" href={icsFeedUrl} target="_blank" rel="noreferrer">
-                                <Download size={14}/> Kompletten Projekt-Kalender (.ics) laden
+                                <Download size={14}/> {t('tm_download_all')}
                             </a>
                         </div>
                     </div>
@@ -876,16 +925,23 @@ export const Termin: React.FC = () => {
 
 /** Kleine Markierungen für eine Tageszelle */
 const DayBadges: React.FC<{ d: DayInfo; compact?: boolean }> = ({d, compact}) => {
+    const {t, tf} = useLanguage();
     const warn = warningCount(d);
     const late = d.tasks.some((tk) => tk.isOverdue || tk.status === 'delayed');
     return (
         <div className="tp-badges">
-            {d.reports.length > 0 && <span className="tp-badge report" title="Bautagesbericht"><FileText size={10}/>{!compact && 'Bericht'}</span>}
-            {d.photos.length > 0 && <span className="tp-badge photo" title={`${d.photos.length} Foto(s)`}><Camera size={10}/>{d.photos.length}</span>}
-            {d.defects.length > 0 && <span className="tp-badge defect" title="Mängel"><Wrench size={10}/>{d.defects.length}</span>}
-            {warn > 0 && <span className="tp-badge alert" title="Warnungen"><AlertTriangle size={10}/>{warn}</span>}
+            {d.reports.length > 0 && <span className="tp-badge report" title={t('tm_badge_report')}><FileText
+                size={10}/>{!compact && t('tm_badge_report_short')}</span>}
+            {d.photos.length > 0 &&
+                <span className="tp-badge photo" title={tf('tm_badge_photos', {n: d.photos.length})}><Camera
+                    size={10}/>{d.photos.length}</span>}
+            {d.defects.length > 0 && <span className="tp-badge defect" title={t('tm_badge_defects')}><Wrench
+                size={10}/>{d.defects.length}</span>}
+            {warn > 0 &&
+                <span className="tp-badge alert" title={t('tm_badge_warnings')}><AlertTriangle size={10}/>{warn}</span>}
             {d.tasks.length > 0 && (
-                <span className={`tp-badge task ${late ? 'late' : ''}`} title="geplante Vorgänge"><ClipboardList size={10}/>{d.tasks.length}</span>
+                <span className={`tp-badge task ${late ? 'late' : ''}`} title={t('tm_badge_tasks')}><ClipboardList
+                    size={10}/>{d.tasks.length}</span>
             )}
         </div>
     );
@@ -894,11 +950,12 @@ const DayBadges: React.FC<{ d: DayInfo; compact?: boolean }> = ({d, compact}) =>
 const MonthGrid: React.FC<{
     anchor: Date; from: Date; todayIso: string; selected: string; dayData: DayDataFn; onSelect: (d: string, toDay?: boolean) => void;
 }> = ({anchor, from, todayIso, selected, dayData, onSelect}) => {
+    const {t, tf, locale} = useLanguage();
     const cells = Array.from({length: 42}, (_, n) => addDays(from, n));
     const visible = cells[35].getMonth() === anchor.getMonth() ? cells : cells.slice(0, 35);
     return (
         <div className="tp-month">
-            {WEEKDAYS.map((w) => <div key={w} className="tp-month-head">{w}</div>)}
+            {weekdayNames(locale).map((w) => <div key={w} className="tp-month-head">{w}</div>)}
             {visible.map((day) => {
                 const k = iso(day);
                 const d = dayData(k);
@@ -921,7 +978,9 @@ const MonthGrid: React.FC<{
                         </div>
                         <div className="tp-cell-items">
                             {shownAppts.map((a) => (
-                                <span key={a.id} className="tp-chip" style={{'--c': CATEGORY[a.category]?.color} as React.CSSProperties}>
+                                <span key={a.id} className="tp-chip"
+                                      style={{'--c': CATEGORY[a.category]?.color} as React.CSSProperties}
+                                      title={t(`tm_cat_${a.category}`)}>
                                     {a.time ? `${a.time.slice(0, 5)} ` : ''}{a.title}
                                 </span>
                             ))}
@@ -930,7 +989,7 @@ const MonthGrid: React.FC<{
                                     {tk.isStart ? '▶ ' : tk.isEnd ? '◼ ' : ''}{tk.title}
                                 </span>
                             ))}
-                            {rest > 0 && <span className="tp-more">+{rest} weitere</span>}
+                            {rest > 0 && <span className="tp-more">{tf('tm_more', {n: rest})}</span>}
                         </div>
                     </button>
                 );
@@ -941,7 +1000,9 @@ const MonthGrid: React.FC<{
 
 const WeekColumns: React.FC<{
     from: Date; todayIso: string; selected: string; dayData: DayDataFn; onSelect: (d: string, toDay?: boolean) => void;
-}> = ({from, todayIso, selected, dayData, onSelect}) => (
+}> = ({from, todayIso, selected, dayData, onSelect}) => {
+    const {t, tf, locale} = useLanguage();
+    return (
     <div className="tp-week">
         {Array.from({length: 7}, (_, n) => addDays(from, n)).map((day) => {
             const k = iso(day);
@@ -956,21 +1017,25 @@ const WeekColumns: React.FC<{
                     onDoubleClick={() => onSelect(k, true)}
                 >
                     <div className="tp-week-head">
-                        <span>{WEEKDAYS[weekdayIndex(day)]}</span>
-                        <strong>{fmt(day, {day: '2-digit', month: '2-digit'})}</strong>
+                        <span>{weekdayNames(locale)[weekdayIndex(day)]}</span>
+                        <strong>{fmt(day, {day: '2-digit', month: '2-digit'}, locale)}</strong>
                     </div>
                     <DayBadges d={d}/>
                     {d.appts.map((a) => (
                         <div key={a.id} className="tp-card appt" style={{'--c': CATEGORY[a.category]?.color} as React.CSSProperties}>
                             <div className="tp-card-title">{a.time ? `${a.time.slice(0, 5)} • ` : ''}{a.title}</div>
-                            <div className="tp-card-meta">{CATEGORY[a.category]?.label}{a.isUrgent ? ' • dringend' : ''}</div>
+                            <div
+                                className="tp-card-meta">{t(`tm_cat_${a.category}`)}{a.isUrgent ? t('tm_urgent_suffix') : ''}</div>
                         </div>
                     ))}
                     {d.tasks.map((tk) => (
                         <div key={tk.taskId} className={`tp-card task ${tk.status} ${tk.isOverdue ? 'overdue' : ''}`}>
                             <div className="tp-card-title">{tk.isStart ? '▶ ' : tk.isEnd ? '◼ ' : ''}{tk.title}</div>
                             <div className="tp-card-meta">
-                                {tk.company || tk.trade || '–'}{tk.plannedWorkforce ? ` • ${tk.plannedWorkforce} P.` : ''} • Ist {tk.actualPercent} / Soll {tk.planPercent} %
+                                {tk.company || tk.trade || '–'}{tk.plannedWorkforce ? ` • ${tk.plannedWorkforce} ${t('tm_persons_short')}` : ''} • {tf('tm_actual_plan', {
+                                actual: tk.actualPercent,
+                                plan: tk.planPercent
+                            })}
                             </div>
                         </div>
                     ))}
@@ -985,15 +1050,18 @@ const WeekColumns: React.FC<{
             );
         })}
     </div>
-);
+    );
+};
 
 const YearGrid: React.FC<{
     year: number; todayIso: string; selected: string; dayData: DayDataFn;
     onSelect: (d: string, toDay?: boolean) => void; onMonth: (m: number) => void;
-}> = ({year, todayIso, selected, dayData, onSelect, onMonth}) => (
+}> = ({year, todayIso, selected, dayData, onSelect, onMonth}) => {
+    const {t, tf, locale} = useLanguage();
+    return (
     <div className="tp-year-wrap">
         <div className="tp-year">
-            {MONTHS.map((name, m) => {
+            {monthNames(locale).map((name, m) => {
                 const offset = weekdayIndex(new Date(year, m, 1));
                 const len = new Date(year, m + 1, 0).getDate();
                 let reports = 0, defects = 0, warns = 0, tasks = 0;
@@ -1024,7 +1092,18 @@ const YearGrid: React.FC<{
                             style={{background: bg || undefined, gridColumnStart: n === 0 ? offset + 1 : undefined}}
                             onClick={() => onSelect(k)}
                             onDoubleClick={() => onSelect(k, true)}
-                            title={`${fmt(day, {weekday: 'short', day: '2-digit', month: '2-digit'})}: ${d.reports.length} Bericht(e), ${d.defects.length} Mängel, ${d.tasks.length} Vorgänge, ${d.appts.length} Termine, ${d.photos.length} Fotos`}
+                            title={tf('tm_year_day_title', {
+                                date: fmt(day, {
+                                    weekday: 'short',
+                                    day: '2-digit',
+                                    month: '2-digit'
+                                }, locale),
+                                reports: d.reports.length,
+                                defects: d.defects.length,
+                                tasks: d.tasks.length,
+                                appts: d.appts.length,
+                                photos: d.photos.length
+                            })}
                         >
                             {n + 1}
                         </button>
@@ -1035,14 +1114,14 @@ const YearGrid: React.FC<{
                         <div className="tp-year-month-head">
                             <button className="tp-year-title" onClick={() => onMonth(m)}>{name}</button>
                             <div className="tp-year-stats">
-                                <span title="Berichte"><FileText size={10}/>{reports}</span>
-                                <span title="Mängel"><Wrench size={10}/>{defects}</span>
-                                <span title="Warnungen"><AlertTriangle size={10}/>{warns}</span>
-                                <span title="geplante Vorgangs-Tage"><ClipboardList size={10}/>{tasks}</span>
+                                <span title={t('tm_stat_reports')}><FileText size={10}/>{reports}</span>
+                                <span title={t('tm_badge_defects')}><Wrench size={10}/>{defects}</span>
+                                <span title={t('tm_badge_warnings')}><AlertTriangle size={10}/>{warns}</span>
+                                <span title={t('tm_stat_task_days')}><ClipboardList size={10}/>{tasks}</span>
                             </div>
                         </div>
                         <div className="tp-year-grid">
-                            {WEEKDAYS.map((w) => <span key={w} className="tp-year-wd">{w[0]}</span>)}
+                            {weekdayNames(locale).map((w) => <span key={w} className="tp-year-wd">{w[0]}</span>)}
                             {cells}
                         </div>
                     </div>
@@ -1050,14 +1129,15 @@ const YearGrid: React.FC<{
             })}
         </div>
         <div className="tp-legend">
-            <span><i style={{background: '#22c55e'}}/>Bericht</span>
-            <span><i style={{background: '#f59e0b'}}/>1 Problem</span>
-            <span><i style={{background: '#dc2626'}}/>mehrere Probleme</span>
-            <span><i style={{background: '#bfdbfe'}}/>wenig geplant</span>
-            <span><i style={{background: '#1d4ed8'}}/>viel geplant</span>
+            <span><i style={{background: '#22c55e'}}/>{t('tm_legend_report')}</span>
+            <span><i style={{background: '#f59e0b'}}/>{t('tm_legend_one')}</span>
+            <span><i style={{background: '#dc2626'}}/>{t('tm_legend_many')}</span>
+            <span><i style={{background: '#bfdbfe'}}/>{t('tm_legend_low')}</span>
+            <span><i style={{background: '#1d4ed8'}}/>{t('tm_legend_high')}</span>
         </div>
     </div>
-);
+    );
+};
 
 const TYPE_ICON: Record<TimelineItem['type'], React.ReactNode> = {
     report: <FileText size={12}/>,
@@ -1067,7 +1147,9 @@ const TYPE_ICON: Record<TimelineItem['type'], React.ReactNode> = {
     alert: <AlertTriangle size={12}/>
 };
 
-const TimelineRow: React.FC<{ it: TimelineItem; navigate: ReturnType<typeof useNavigate> }> = ({it, navigate}) => (
+const TimelineRow: React.FC<{ it: TimelineItem; navigate: ReturnType<typeof useNavigate> }> = ({it, navigate}) => {
+    const {t} = useLanguage();
+    return (
     <div className={`tp-tl ${it.severity ?? 'info'}`}>
         <div className="tp-tl-top">
             <span className="tp-tl-title">{TYPE_ICON[it.type]} {it.title}</span>
@@ -1075,18 +1157,20 @@ const TimelineRow: React.FC<{ it: TimelineItem; navigate: ReturnType<typeof useN
         </div>
         <div className="tp-tl-sum">{it.summary}</div>
         <div className="tp-tl-foot">
-            <span>Quelle: {it.source}</span>
+            <span>{t('tm_source')} {it.source}</span>
             {it.type === 'notice' && it.refId != null && (
-                <button className="tp-link" onClick={() => navigate('/drafts', {state: {noticeId: it.refId}})}>Brief öffnen</button>
+                <button className="tp-link"
+                        onClick={() => navigate('/drafts', {state: {noticeId: it.refId}})}>{t('tm_open_letter')}</button>
             )}
             {it.type === 'alert' && (
                 <button className="tp-link danger" onClick={() => navigate('/drafts', {state: {type: 'delay', keywords: `${it.title}. ${it.summary} (Quelle: ${it.source})`}})}>
-                    <Mail size={11}/> Brief
+                    <Mail size={11}/> {t('tm_letter')}
                 </button>
             )}
         </div>
     </div>
-);
+    );
+};
 
 /** Rechte Spalte bzw. Tagesansicht: alles zu einem Tag */
 const DayDetail: React.FC<{
@@ -1105,6 +1189,7 @@ const DayDetail: React.FC<{
     onOpenDay?: () => void;
     large?: boolean;
 }> = ({date, rel, data, navigate, onExport, onAdd, onEdit, onDelete, onUploadPhotos, onDeletePhoto, onOpenPhoto, uploadingPhoto, onOpenDay, large}) => {
+    const {t, tf, locale} = useLanguage();
     const d = parseIso(date);
     const report = data.reports[0];
     const events = [...data.notes, ...data.notices, ...data.progress, ...data.alerts].sort((a, b) => (b.time ?? '').localeCompare(a.time ?? ''));
@@ -1114,9 +1199,9 @@ const DayDetail: React.FC<{
     const photoBlock = (
         <div className="tp-block">
             <div className="tp-block-head">
-                <span><Camera size={13}/> Fotos ({data.photos.length})</span>
+                <span><Camera size={13}/> {tf('tm_photos_n', {n: data.photos.length})}</span>
                 <label className="tp-link" style={{cursor: 'pointer'}}>
-                    <Plus size={11}/> {uploadingPhoto ? 'Lädt…' : 'Foto hinzufügen'}
+                    <Plus size={11}/> {uploadingPhoto ? t('tm_uploading') : t('tm_add_photo')}
                     <input
                         type="file"
                         accept="image/*"
@@ -1131,7 +1216,7 @@ const DayDetail: React.FC<{
                 </label>
             </div>
             {data.photos.length === 0 ? (
-                <p className="tp-muted">Noch keine Fotos für diesen Tag hinterlegt.</p>
+                <p className="tp-muted">{t('tm_no_photos')}</p>
             ) : (
                 <div className="tp-photo-grid">
                     {data.photos.map((p) => (
@@ -1149,7 +1234,7 @@ const DayDetail: React.FC<{
                             <button
                                 type="button"
                                 className="tp-photo-del"
-                                title="Foto löschen"
+                                title={t('tm_delete_photo')}
                                 onClick={(e) => {
                                     e.stopPropagation();
                                     onDeletePhoto(p);
@@ -1166,40 +1251,44 @@ const DayDetail: React.FC<{
 
     const past = (
         <section className="tp-section">
-            <h3><CheckCircle2 size={14}/> Was passiert ist</h3>
+            <h3><CheckCircle2 size={14}/> {t('tm_what_happened')}</h3>
 
             <div className="tp-block">
                 <div className="tp-block-head">
-                    <span><FileText size={13}/> Bautagesbericht</span>
+                    <span><FileText size={13}/> {t('tm_daily_report')}</span>
                     {report ? (
                         <div className="tp-block-actions">
-                            <button className="tp-link" onClick={() => navigate('/reports', {state: {date}})}>Öffnen</button>
+                            <button className="tp-link"
+                                    onClick={() => navigate('/reports', {state: {date}})}>{t('tm_open')}</button>
                             <button className="tp-link" onClick={() => onExport(date, 'pdf')}>PDF</button>
                             <button className="tp-link" onClick={() => onExport(date, 'docx')}>Word</button>
                         </div>
                     ) : (
-                        !weekend && <button className="tp-link" onClick={() => navigate('/reports', {state: {date}})}>Bericht anlegen</button>
+                        !weekend && <button className="tp-link"
+                                            onClick={() => navigate('/reports', {state: {date}})}>{t('tm_create_report')}</button>
                     )}
                 </div>
                 {report ? (
                     <p className="tp-text">{report.summary}</p>
                 ) : (
-                    <p className="tp-muted">{weekend ? 'Wochenende – kein Bericht.' : 'Kein Bericht für diesen Tag.'}</p>
+                    <p className="tp-muted">{weekend ? t('tm_weekend_no_report') : t('tm_no_report')}</p>
                 )}
             </div>
 
             {photoBlock}
 
             <div className="tp-block">
-                <div className="tp-block-head"><span><Wrench size={13}/> Mängel ({data.defects.length})</span></div>
+                <div className="tp-block-head"><span><Wrench size={13}/> {tf('tm_defects_n', {n: data.defects.length})}</span>
+                </div>
                 {data.defects.length === 0
-                    ? <p className="tp-muted">Keine Mängel erfasst.</p>
+                    ? <p className="tp-muted">{t('tm_no_defects')}</p>
                     : data.defects.map((it) => <TimelineRow key={it.id} it={it} navigate={navigate}/>)}
             </div>
 
             {events.length > 0 && (
                 <div className="tp-block">
-                    <div className="tp-block-head"><span><StickyNote size={13}/> Ereignisse ({events.length})</span></div>
+                    <div className="tp-block-head"><span><StickyNote size={13}/> {tf('tm_events_n', {n: events.length})}</span>
+                    </div>
                     {events.map((it) => <TimelineRow key={it.id} it={it} navigate={navigate}/>)}
                 </div>
             )}
@@ -1208,37 +1297,44 @@ const DayDetail: React.FC<{
 
     const plan = (
         <section className="tp-section">
-            <h3><ClipboardList size={14}/> {rel === 'past' ? 'Was geplant war' : 'Was zu tun ist'}</h3>
+            <h3><ClipboardList size={14}/> {rel === 'past' ? t('tm_what_planned') : t('tm_what_todo')}</h3>
             <div className="tp-block">
-                <div className="tp-block-head"><span><ClipboardList size={13}/> Arbeiten laut Bauzeitenplan ({data.tasks.length})</span></div>
-                {data.tasks.length === 0 ? <p className="tp-muted">Keine Vorgänge geplant.</p> : data.tasks.map((tk) => (
+                <div className="tp-block-head"><span><ClipboardList
+                    size={13}/> {tf('tm_works_n', {n: data.tasks.length})}</span></div>
+                {data.tasks.length === 0 ? <p className="tp-muted">{t('tm_no_tasks')}</p> : data.tasks.map((tk) => (
                     <div key={tk.taskId} className={`tp-task ${tk.isOverdue ? 'overdue' : tk.status}`}>
                         <div className="tp-task-top">
                             <strong>{tk.code ? `${tk.code} ` : ''}{tk.title}</strong>
                             <span className={`tp-status ${tk.isOverdue ? 'overdue' : tk.status}`}>
-                                {tk.isOverdue ? 'Restarbeiten' : tk.status === 'delayed' ? 'Verzug' : tk.status === 'warning' ? 'Achtung' : 'im Plan'}
+                                {tk.isOverdue ? t('tm_st_remaining') : tk.status === 'delayed' ? t('tm_st_delayed') : tk.status === 'warning' ? t('tm_st_warning') : t('tm_st_ok')}
                             </span>
                         </div>
                         <div className="tp-task-meta">
-                            {tk.isStart && <span><PlayCircle size={11}/> Start</span>}
-                            {tk.isEnd && <span><Flag size={11}/> Soll-Ende</span>}
+                            {tk.isStart && <span><PlayCircle size={11}/> {t('tm_start')}</span>}
+                            {tk.isEnd && <span><Flag size={11}/> {t('tm_planned_end')}</span>}
                             {(tk.company || tk.trade) && <span>{tk.company || tk.trade}</span>}
-                            {tk.plannedWorkforce != null && <span><Users size={11}/> Soll {tk.plannedWorkforce} P.</span>}
+                            {tk.plannedWorkforce != null &&
+                                <span><Users size={11}/> {tf('tm_planned_persons', {n: tk.plannedWorkforce})}</span>}
                         </div>
-                        <div className="tp-progress" title={`Ist ${tk.actualPercent} % • Soll ${tk.planPercent} %`}>
+                        <div className="tp-progress"
+                             title={tf('tm_actual_plan_pct', {actual: tk.actualPercent, plan: tk.planPercent})}>
                             <div className="tp-progress-fill" style={{width: `${Math.min(100, tk.actualPercent)}%`}}/>
                             <div className="tp-progress-plan" style={{left: `${Math.min(100, tk.planPercent)}%`}}/>
                         </div>
                         <div className="tp-task-foot">
-                            <span>Ist {tk.actualPercent} % • Soll {tk.planPercent} %</span>
+                            <span>{tf('tm_actual_plan_pct', {actual: tk.actualPercent, plan: tk.planPercent})}</span>
                             {(tk.status === 'delayed' || tk.isOverdue) && (
                                 <button
                                     className="tp-link danger"
                                     onClick={() => navigate('/drafts', {
-                                        state: {type: 'delay', keywords: `${tk.title}: Soll ${tk.planPercent} %, Ist ${tk.actualPercent} % am ${dateDe}. Quelle: ${tk.source}`}
+                                        // Bewusst Deutsch: Stichworte für den deutschen VOB/B-Briefentwurf
+                                        state: {
+                                            type: 'delay',
+                                            keywords: `${tk.title}: Soll ${tk.planPercent} %, Ist ${tk.actualPercent} % am ${dateDe}. Quelle: ${tk.source}`
+                                        }
                                     })}
                                 >
-                                    <Mail size={11}/> Behinderung
+                                    <Mail size={11}/> {t('tm_hindrance')}
                                 </button>
                             )}
                         </div>
@@ -1248,10 +1344,10 @@ const DayDetail: React.FC<{
 
             <div className="tp-block">
                 <div className="tp-block-head">
-                    <span><CalendarIcon size={13}/> Termine ({data.appts.length})</span>
-                    <button className="tp-link" onClick={onAdd}><Plus size={11}/> Termin</button>
+                    <span><CalendarIcon size={13}/> {tf('tm_appts_n', {n: data.appts.length})}</span>
+                    <button className="tp-link" onClick={onAdd}><Plus size={11}/> {t('tm_appointment')}</button>
                 </div>
-                {data.appts.length === 0 ? <p className="tp-muted">Keine Termine.</p> : data.appts.map((a) => {
+                {data.appts.length === 0 ? <p className="tp-muted">{t('tm_no_appts')}</p> : data.appts.map((a) => {
                     const isAuto = !a.editable;
                     return (
                         <div key={a.id} className={`tp-appt ${isAuto ? 'auto' : ''}`} style={{'--c': CATEGORY[a.category]?.color} as React.CSSProperties}>
@@ -1259,30 +1355,32 @@ const DayDetail: React.FC<{
                                 <strong>
                                     {a.time ? `${a.time.slice(0, 5)} • ` : ''}{a.title}
                                     {isAuto && (
-                                        <span className="tp-auto-badge" title={`Automatisch aus ${a.sourceLabel || 'Bauzeitenplan'}`}>
-                                            <Lock size={9}/> automatisch
+                                        <span className="tp-auto-badge"
+                                              title={tf('tm_auto_from', {src: a.sourceLabel || t('tm_schedule')})}>
+                                            <Lock size={9}/> {t('tm_auto')}
                                         </span>
                                     )}
                                 </strong>
                                 <div className="tp-appt-actions">
                                     <button
                                         className="tp-icon-btn small"
-                                        title={isAuto ? 'Automatischer Termin – Hinweis anzeigen' : 'Termin bearbeiten'}
+                                        title={isAuto ? t('tm_auto_hint_title') : t('tm_edit_appt')}
                                         onClick={() => onEdit(a)}
                                     >
                                         <Pencil size={11}/>
                                     </button>
                                     {!isAuto && (
-                                        <button className="tp-icon-btn small" title="Termin löschen" onClick={() => onDelete(a)}>
+                                        <button className="tp-icon-btn small" title={t('tm_delete_appt')}
+                                                onClick={() => onDelete(a)}>
                                             <Trash2 size={11}/>
                                         </button>
                                     )}
                                 </div>
                             </div>
                             <div className="tp-appt-meta">
-                                {CATEGORY[a.category]?.label}
+                                {t(`tm_cat_${a.category}`)}
                                 {a.trade ? ` • ${a.trade}` : ''}
-                                {a.isUrgent ? ' • dringend' : ''}
+                                {a.isUrgent ? t('tm_urgent_suffix') : ''}
                                 {isAuto && a.sourceLabel ? ` • ${a.sourceLabel}` : ''}
                             </div>
                             {a.description && <div className="tp-appt-desc">{a.description}</div>}
@@ -1291,7 +1389,7 @@ const DayDetail: React.FC<{
                                 <button className="tp-link danger" onClick={() => navigate('/drafts', {
                                     state: {type: 'delay', keywords: [a.title, a.description, `Frist: ${dateDe}`].filter(Boolean).join('. ')}
                                 })}>
-                                    <Mail size={11}/> VOB-Brief
+                                    <Mail size={11}/> {t('tm_vob_letter')}
                                 </button>
                             )}
                         </div>
@@ -1307,10 +1405,15 @@ const DayDetail: React.FC<{
         <div className={`tp-detail ${large ? 'large' : ''}`}>
             <div className="tp-detail-head">
                 <div>
-                    <div className="tp-detail-date">{fmt(d, {weekday: 'long', day: '2-digit', month: 'long', year: 'numeric'})}</div>
-                    <span className={`tp-rel ${rel}`}>{rel === 'past' ? 'Rückblick' : rel === 'today' ? 'Heute' : 'Planung'}</span>
+                    <div className="tp-detail-date">{fmt(d, {
+                        weekday: 'long',
+                        day: '2-digit',
+                        month: 'long',
+                        year: 'numeric'
+                    }, locale)}</div>
+                    <span className={`tp-rel ${rel}`}>{t(`tm_rel_${rel}`)}</span>
                 </div>
-                {onOpenDay && <button className="tp-link" onClick={onOpenDay}>Tagesansicht →</button>}
+                {onOpenDay && <button className="tp-link" onClick={onOpenDay}>{t('tm_day_view')}</button>}
             </div>
             <div className={large ? 'tp-detail-cols' : 'tp-detail-stack'}>
                 {plan}

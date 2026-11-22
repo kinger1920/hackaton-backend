@@ -1,36 +1,29 @@
-import React, { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import React, {useEffect, useState} from 'react';
+import {useNavigate} from 'react-router-dom';
 import {
-    Users,
-    CloudSun,
-    Layers,
-    PhoneCall,
-    Phone,
-    Mail,
-    Search,
-    X,
-    Building2,
-    CheckCircle2,
-    ArrowRight,
     AlertCircle,
     AlertTriangle,
-    LayoutDashboard,
-    Wind,
+    ArrowRight,
+    Building2,
+    CheckCircle2,
+    ClipboardList,
+    CloudSun,
     Droplets,
-    ClipboardList
+    Layers,
+    LayoutDashboard,
+    Mail,
+    Phone,
+    PhoneCall,
+    Search,
+    Users,
+    Wind,
+    X
 } from 'lucide-react';
 import './Dashboard.css';
 import '@frontend/src/index.css';
-import { useProjects } from '../context/ProjectContext';
-import { useLanguage } from '../context/LanguageContext';
-import {
-    api,
-    Company,
-    Contract,
-    DailyReportOut,
-    DefectSummary,
-    WeatherResponse
-} from '../services/api';
+import {useProjects} from '../context/ProjectContext';
+import {useLanguage} from '../context/LanguageContext';
+import {api, Company, Contract, DailyReportOut, DefectSummary, WeatherResponse} from '../services/api';
 import {daysBetween, formatDe, parseIsoDate, startOfToday, todayIso} from '../utils/dates';
 
 
@@ -46,7 +39,7 @@ interface WorkerPerson {
 
 export const Dashboard: React.FC = () => {
     const navigate = useNavigate();
-    const { t } = useLanguage();
+    const {t, tf, tv, locale} = useLanguage();
     const userName = localStorage.getItem('userName') || t('role_site_manager');
     const { projects, activeProject, setActiveProjectId } = useProjects();
 
@@ -224,11 +217,11 @@ export const Dashboard: React.FC = () => {
               temp: lw.temperature_c ?? demoWeather.temp,
               condition: lw.condition,
               wind: lw.wind_kmh != null
-                  ? `${lw.wind_kmh} km/h${lw.wind_gusts_kmh != null ? ` (Böen ${lw.wind_gusts_kmh} km/h)` : ''}`
+                  ? `${lw.wind_kmh} km/h${lw.wind_gusts_kmh != null ? ` (${t('db_gusts')} ${lw.wind_gusts_kmh} km/h)` : ''}`
                   : '– km/h',
               rainRisk: lw.precipitation_probability != null
-                  ? `${lw.precipitation_probability}% Niederschlag`
-                  : lw.precipitation_mm != null ? `${lw.precipitation_mm} mm Niederschlag` : '– Niederschlag',
+                  ? `${lw.precipitation_probability}% ${t('db_precip')}`
+                  : lw.precipitation_mm != null ? `${lw.precipitation_mm} mm ${t('db_precip')}` : `– ${t('db_precip')}`,
               craneStatus: lw.crane_status ?? demoWeather.craneStatus,
               concreteStatus: lw.concrete_status ?? demoWeather.concreteStatus,
               isWindWarning: lw.is_wind_warning ?? false,
@@ -242,8 +235,8 @@ export const Dashboard: React.FC = () => {
               concreteStatus:
                   todayReport.temperature_c != null
                       ? todayReport.temperature_c > 5
-                          ? 'Betonage zulässig (> +5°C)'
-                          : 'Achtung: Winterbaumaßnahmen prüfen (≤ +5°C)'
+                          ? t('db_concrete_ok')
+                          : t('db_concrete_winter')
                       : demoWeather.concreteStatus
           }
         : demoWeather;
@@ -375,19 +368,22 @@ export const Dashboard: React.FC = () => {
                 </div>
                 <div className="hero-stats">
                     {/* Bauzeit statt Anwesenheit (die steht schon in der Mitarbeiter-Kachel darunter) */}
-                    <div className="hero-stat-card" title={buildTime ? `Bauzeit ${formatDe(activeProject.start_date)} – ${formatDe(activeProject.end_date)}` : 'Bauzeit unter Projekte eintragen'}>
+                    <div className="hero-stat-card" title={buildTime ? tf('db_buildtime_title', {
+                        from: formatDe(activeProject.start_date),
+                        to: formatDe(activeProject.end_date)
+                    }) : t('db_buildtime_missing')}>
                         <div className="hero-stat-number">{buildTime ? `${buildTime.percent} %` : '–'}</div>
                         <div className="hero-stat-label">
                             {buildTime
                                 ? buildTime.remainingWeeks > 0
-                                    ? `Bauzeit • noch ${buildTime.remainingWeeks} Wo.`
-                                    : 'Bauzeit abgelaufen'
-                                : 'Bauzeit'}
+                                    ? tf('db_buildtime_left', {n: buildTime.remainingWeeks})
+                                    : t('db_buildtime_over')
+                                : t('db_buildtime')}
                         </div>
                     </div>
                     <div className="hero-stat-card">
-                        <div className="hero-stat-number">{activeProject.status}</div>
-                        <div className="hero-stat-label">Projektstatus</div>
+                        <div className="hero-stat-number">{tv(activeProject.status)}</div>
+                        <div className="hero-stat-label">{t('db_project_status')}</div>
                     </div>
                 </div>
             </section>
@@ -404,21 +400,21 @@ export const Dashboard: React.FC = () => {
                 <div
                     className="kpi-card interactive"
                     onClick={() => setShowStaffModal(true)}
-                    title="Klicken, um die Namensliste aller anwesenden und fehlenden Personen zu sehen"
+                    title={t('db_staff_title')}
                 >
                     <div style={{ flex: 1 }}>
-                        <div className="kpi-label">Mitarbeiter-Stand</div>
+                        <div className="kpi-label">{t('db_staff')}</div>
                         <div className="kpi-value">
                             {staffData.presentCount} / {staffData.plannedCount}
                         </div>
                         <div className={`kpi-sub ${staffData.absentCount > 0 ? 'alert' : ''}`}>
                             {staffData.absentCount > 0
-                                ? `${staffData.absentCount} Personen fehlen`
-                                : 'Vollzählig vor Ort'}
+                                ? tf('db_missing_n', {n: staffData.absentCount})
+                                : t('db_full')}
                         </div>
                         <div className="kpi-click-hint">
                             <Search size={12} />
-                            <span>Klick für Namensliste</span>
+                            <span>{t('db_click_names')}</span>
                         </div>
                     </div>
                     <div className="kpi-icon" style={{ backgroundColor: '#eff6ff', color: '#2563eb' }}>
@@ -438,21 +434,21 @@ export const Dashboard: React.FC = () => {
                             navigate('/maengel');
                         }
                     }}
-                    title="Klicken, um die Mängelliste zu öffnen"
+                    title={t('db_defects_title')}
                 >
                     <div style={{ flex: 1 }}>
-                        <div className="kpi-label">Offene Mängel</div>
+                        <div className="kpi-label">{t('db_open_defects')}</div>
                         <div className="kpi-value">{defectSummary ? defectSummary.open : '–'}</div>
                         <div className={`kpi-sub ${defectSummary && defectSummary.overdue > 0 ? 'alert' : ''}`}>
                             {!defectSummary
-                                ? 'Mängelliste nicht verfügbar'
+                                ? t('db_defects_unavailable')
                                 : defectSummary.overdue > 0
-                                    ? `${defectSummary.overdue} überfällig${defectSummary.by_company[0]?.overdue ? ` • ${defectSummary.by_company[0].company}` : ''}`
-                                    : `${defectSummary.by_status.behoben} warten auf Abnahme`}
+                                    ? `${tf('db_n_overdue', {n: defectSummary.overdue})}${defectSummary.by_company[0]?.overdue ? ` • ${defectSummary.by_company[0].company}` : ''}`
+                                    : tf('db_n_awaiting', {n: defectSummary.by_status.behoben})}
                         </div>
                         <div className="kpi-click-hint">
                             <Search size={12} />
-                            <span>Klick für Mängelliste</span>
+                            <span>{t('db_click_defects')}</span>
                         </div>
                     </div>
                     <div className="kpi-icon" style={{ backgroundColor: '#fef2f2', color: '#dc2626' }}>
@@ -463,10 +459,10 @@ export const Dashboard: React.FC = () => {
                 {/* 2. KACHEL: WETTER */}
                 <div
                     className="kpi-card"
-                    title={`Baustellenwetter für ${activeProject.name}${'source' in weatherData ? ` – ${weatherData.source}` : ''}`}
+                    title={`${tf('db_weather_title', {name: activeProject.name})}${'source' in weatherData ? ` – ${weatherData.source}` : ''}`}
                 >
                     <div style={{ flex: 1 }}>
-                        <div className="kpi-label">Baustellenwetter</div>
+                        <div className="kpi-label">{t('db_weather')}</div>
                         <div className="kpi-value">{weatherData.temp}°C • {weatherData.condition}</div>
                         <div className="kpi-weather-details">
                             <span className="kpi-weather-chip" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}><Wind size={12} /> {weatherData.wind}</span>
@@ -484,12 +480,12 @@ export const Dashboard: React.FC = () => {
                 {/* 3. KACHEL: ZUSTAND BETON */}
                 <div
                     className="kpi-card"
-                    title="Aktuelle Betonage, Reifegrad und Ausschalfrist"
+                    title={t('db_concrete_title')}
                 >
                     <div style={{ flex: 1 }}>
-                        <div className="kpi-label">Zustand Beton & Reifegrad</div>
+                        <div className="kpi-label">{t('db_concrete')}</div>
                         <div className="kpi-value" style={{ fontSize: '22px' }}>
-                            {concreteData.strengthPercent}% Festigkeit
+                            {tf('db_strength', {n: concreteData.strengthPercent})}
                         </div>
                         <div className="kpi-concrete-progress">
                             <div className="kpi-concrete-bar">
@@ -503,7 +499,7 @@ export const Dashboard: React.FC = () => {
                             {concreteData.component}
                         </div>
                         <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-                            Kern: {concreteData.temp} • {concreteData.stripDays}
+                            {t('db_core')} {concreteData.temp} • {concreteData.stripDays}
                         </div>
                     </div>
                     <div className="kpi-icon" style={{ backgroundColor: '#f1f5f9', color: '#475569' }}>
@@ -514,10 +510,10 @@ export const Dashboard: React.FC = () => {
                 {/* 4. KACHEL: AUFTRAGGEBER & NOTFALLKONTAKT */}
                 <div
                     className="kpi-card"
-                    title="Auftraggeber-Daten und direkte Notfall-Erreichbarkeit"
+                    title={t('db_client_title')}
                 >
                     <div style={{ flex: 1 }}>
-                        <div className="kpi-label">Auftraggeber & Notfall</div>
+                        <div className="kpi-label">{t('db_client')}</div>
                         <div className="kpi-value" style={{ fontSize: '17px', lineHeight: 1.25 }}>
                             {clientData.clientShort}
                         </div>
@@ -533,7 +529,7 @@ export const Dashboard: React.FC = () => {
                             }}
                         >
                             <PhoneCall size={12} />
-                            <span>Notfall kontaktieren</span>
+                            <span>{t('db_contact_emergency')}</span>
                         </button>
                     </div>
                     <div className="kpi-icon" style={{ backgroundColor: '#fef2f2', color: '#dc2626' }}>
@@ -552,7 +548,7 @@ export const Dashboard: React.FC = () => {
                             <Building2 size={20} />
                         </div>
                         <div>
-                            <h2 className="dash-recent-title">Zuletzt geöffnete Bauprojekte</h2>
+                            <h2 className="dash-recent-title">{t('db_recent')}</h2>
                         </div>
                     </div>
 
@@ -562,7 +558,7 @@ export const Dashboard: React.FC = () => {
                         onClick={() => navigate('/projects')}
                         style={{ fontSize: '12px' }}
                     >
-                        Alle Projekte verwalten →
+                        {t('db_manage_projects')}
                     </button>
                 </div>
 
@@ -582,25 +578,25 @@ export const Dashboard: React.FC = () => {
                                     {isActive && (
                                         <span className="dash-badge-active-proj">
                                             <CheckCircle2 size={12} />
-                                            <span>Aktiv</span>
+                                            <span>{t('db_active')}</span>
                                         </span>
                                     )}
                                 </div>
 
                                 <div className="dash-recent-details">
-                                    <div><strong>Auftraggeber:</strong> {proj.client || 'Keine Angabe'}</div>
-                                    <div><strong>Standort:</strong> {proj.location || 'Berlin'}</div>
-                                    <div><strong>Leistungsphase:</strong> {proj.phase || 'Rohbau'}</div>
+                                    <div><strong>{t('db_client_label')}</strong> {proj.client || t('db_no_info')}</div>
+                                    <div><strong>{t('db_location')}</strong> {proj.location || 'Berlin'}</div>
+                                    <div><strong>{t('db_phase')}</strong> {tv(proj.phase || 'Rohbau')}</div>
                                 </div>
 
                                 <div className="dash-recent-actions">
                                     <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-                                        Status: <strong>{proj.status}</strong>
+                                        {t('db_status')} <strong>{tv(proj.status)}</strong>
                                     </span>
 
                                     {isActive ? (
                                         <span style={{ fontSize: '12px', color: 'var(--color-primary)', fontWeight: 600 }}>
-                                            Aktuell geöffnet
+                                            {t('db_currently_open')}
                                         </span>
                                     ) : (
                                         <button
@@ -608,7 +604,7 @@ export const Dashboard: React.FC = () => {
                                             className="dash-btn-switch-proj"
                                             onClick={() => setActiveProjectId(proj.id)}
                                         >
-                                            <span>Projekt öffnen</span>
+                                            <span>{t('db_open_project')}</span>
                                             <ArrowRight size={12} />
                                         </button>
                                     )}
@@ -631,9 +627,12 @@ export const Dashboard: React.FC = () => {
                                     <Users size={22} />
                                 </div>
                                 <div>
-                                    <h3 className="dash-modal-title">Mitarbeiter-Anwesenheit</h3>
+                                    <h3 className="dash-modal-title">{t('db_attendance')}</h3>
                                     <p className="dash-modal-sub">
-                                        {activeProject.name} • Geplant: {staffData.plannedCount} • Anwesend: {staffData.presentCount}
+                                        {activeProject.name} • {tf('db_attendance_sub', {
+                                        planned: staffData.plannedCount,
+                                        present: staffData.presentCount
+                                    })}
                                     </p>
                                 </div>
                             </div>
@@ -653,7 +652,7 @@ export const Dashboard: React.FC = () => {
                                     className={`dash-modal-tab ${staffTab === 'present' ? 'active' : ''}`}
                                     onClick={() => setStaffTab('present')}
                                 >
-                                    <span>Anwesend</span>
+                                    <span>{t('db_present')}</span>
                                     <span className="dash-modal-tab-badge present">
                                         {staffData.presentCount}
                                     </span>
@@ -663,7 +662,7 @@ export const Dashboard: React.FC = () => {
                                     className={`dash-modal-tab ${staffTab === 'absent' ? 'active' : ''}`}
                                     onClick={() => setStaffTab('absent')}
                                 >
-                                    <span>Fehlend / Abwesend</span>
+                                    <span>{t('db_absent')}</span>
                                     <span className="dash-modal-tab-badge absent">
                                         {staffData.absentCount}
                                     </span>
@@ -673,7 +672,7 @@ export const Dashboard: React.FC = () => {
                             <input
                                 type="text"
                                 className="dash-modal-search"
-                                placeholder="Name, Gewerk, Firma suchen..."
+                                placeholder={t('db_search_ph')}
                                 value={staffSearch}
                                 onChange={(e) => setStaffSearch(e.target.value)}
                             />
@@ -684,7 +683,7 @@ export const Dashboard: React.FC = () => {
                             {attendance.length > 0 && (
                                 <div style={{ marginBottom: '14px' }}>
                                     <div style={{ fontSize: '12px', fontWeight: 700, marginBottom: '6px' }}>
-                                        Anwesenheit je Firma (Bautagesbericht {new Date(todayIso()).toLocaleDateString('de-DE')})
+                                        {tf('db_attendance_company', {date: new Date(todayIso()).toLocaleDateString(locale)})}
                                     </div>
                                     <div className="dash-workers-grid">
                                         {attendance.map((a, idx) => {
@@ -695,14 +694,15 @@ export const Dashboard: React.FC = () => {
                                             return (
                                                 <div key={idx} className={`dash-worker-card ${below ? 'absent' : 'present'}`}>
                                                     <div className="dash-worker-info">
-                                                        <div className="dash-worker-name">{a.company || 'Ohne Firma'}</div>
+                                                        <div
+                                                            className="dash-worker-name">{a.company || t('db_no_company')}</div>
                                                         <div className="dash-worker-trade">{a.trade || '–'}</div>
                                                     </div>
                                                     <div className="dash-worker-meta">
                                                         <span className={below ? 'dash-worker-reason' : 'dash-worker-time'}>
                                                             {a.workers}
-                                                            {contract?.planned_workforce != null ? ` / Soll ${contract.planned_workforce}` : ''} Personen
-                                                            {a.hours != null ? ` • ${a.hours} Std.` : ''}
+                                                            {contract?.planned_workforce != null ? tf('db_planned_n', {n: contract.planned_workforce}) : ''} {t('db_people')}
+                                                            {a.hours != null ? ` • ${a.hours} ${t('db_hours')}` : ''}
                                                         </span>
                                                     </div>
                                                 </div>
@@ -710,15 +710,15 @@ export const Dashboard: React.FC = () => {
                                         })}
                                     </div>
                                     <div style={{ fontSize: '11px', color: 'var(--text-muted)', margin: '10px 0 4px' }}>
-                                        Namensliste unten: Beispieldaten (personenbezogene Anwesenheit gibt es im Backend noch nicht).
+                                        {t('db_demo_names')}
                                     </div>
                                 </div>
                             )}
                             {filteredWorkers.length === 0 ? (
                                 <div style={{ textAlign: 'center', padding: '32px 0', color: 'var(--text-muted)' }}>
                                     {staffTab === 'absent'
-                                        ? 'Keine fehlenden Mitarbeiter eingetragen – alle Fachkräfte sind anwesend!'
-                                        : 'Keine Mitarbeiter für diesen Filter gefunden.'}
+                                        ? t('db_none_absent')
+                                        : t('db_none_filter')}
                                 </div>
                             ) : (
                                 <div className="dash-workers-grid">
@@ -736,11 +736,11 @@ export const Dashboard: React.FC = () => {
                                             <div className="dash-worker-meta">
                                                 {worker.present ? (
                                                     <span className="dash-worker-time">
-                                                        Seit {worker.arrivalTime}
+                                                        {t('db_since')} {worker.arrivalTime}
                                                     </span>
                                                 ) : (
                                                     <span className="dash-worker-reason">
-                                                        {worker.absenceReason || 'Abwesend'}
+                                                        {worker.absenceReason || t('db_absent_short')}
                                                     </span>
                                                 )}
                                             </div>
@@ -765,7 +765,7 @@ export const Dashboard: React.FC = () => {
                                     <PhoneCall size={22} />
                                 </div>
                                 <div>
-                                    <h3 className="dash-modal-title">Auftraggeber & Notfallkontakt</h3>
+                                    <h3 className="dash-modal-title">{t('db_emergency_title')}</h3>
                                     <p className="dash-modal-sub">{activeProject.name}</p>
                                 </div>
                             </div>
@@ -783,7 +783,7 @@ export const Dashboard: React.FC = () => {
                             <div className="dash-emergency-box">
                                 <div>
                                     <div style={{ fontSize: '11px', color: '#991b1b', fontWeight: 700, textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: '5px' }}>
-                                        <AlertTriangle size={12} /> Sofortiger Notfall / Havariedienst (24/7)
+                                        <AlertTriangle size={12}/> {t('db_hotline')}
                                     </div>
                                     <a href={`tel:${clientData.hotline24h.replace(/\s+/g, '')}`} className="dash-emergency-hotline">
                                         <Phone size={18} />
@@ -795,7 +795,7 @@ export const Dashboard: React.FC = () => {
                                     className="btn btn-primary"
                                     style={{ backgroundColor: '#dc2626', borderColor: '#dc2626', fontSize: '12px', padding: '8px 14px' }}
                                 >
-                                    Jetzt anrufen
+                                    {t('db_call_now')}
                                 </a>
                             </div>
 
@@ -803,21 +803,21 @@ export const Dashboard: React.FC = () => {
                             <div className="dash-contact-list">
                                 <div className="dash-contact-row">
                                     <div>
-                                        <div className="dash-contact-label">Auftraggeber / Bauherr</div>
+                                        <div className="dash-contact-label">{t('db_client_owner')}</div>
                                         <div className="dash-contact-val">{clientData.clientName}</div>
                                     </div>
                                 </div>
 
                                 <div className="dash-contact-row">
                                     <div>
-                                        <div className="dash-contact-label">Leitende Bauherrenvertreterin</div>
+                                        <div className="dash-contact-label">{t('db_client_rep')}</div>
                                         <div className="dash-contact-val">{clientData.contactPerson}</div>
                                     </div>
                                 </div>
 
                                 <div className="dash-contact-row">
                                     <div>
-                                        <div className="dash-contact-label">Telefonische Direktdurchwahl</div>
+                                        <div className="dash-contact-label">{t('db_direct_phone')}</div>
                                         <div className="dash-contact-val">{clientData.emergencyPhone}</div>
                                     </div>
                                     <a
@@ -826,13 +826,13 @@ export const Dashboard: React.FC = () => {
                                         style={{ color: '#2563eb', fontWeight: 600 }}
                                     >
                                         <Phone size={13} />
-                                        <span>Anrufen</span>
+                                        <span>{t('db_call')}</span>
                                     </a>
                                 </div>
 
                                 <div className="dash-contact-row">
                                     <div>
-                                        <div className="dash-contact-label">E-Mail für VOB-Fristen & Eilpost</div>
+                                        <div className="dash-contact-label">{t('db_email_vob')}</div>
                                         <div className="dash-contact-val">{clientData.email}</div>
                                     </div>
                                     <a
@@ -841,13 +841,13 @@ export const Dashboard: React.FC = () => {
                                         style={{ color: '#2563eb', fontWeight: 600 }}
                                     >
                                         <Mail size={13} />
-                                        <span>E-Mail</span>
+                                        <span>{t('db_email')}</span>
                                     </a>
                                 </div>
 
                                 <div className="dash-contact-row">
                                     <div>
-                                        <div className="dash-contact-label">Bauherren-Anschrift</div>
+                                        <div className="dash-contact-label">{t('db_client_address')}</div>
                                         <div className="dash-contact-val">{clientData.address}</div>
                                     </div>
                                 </div>

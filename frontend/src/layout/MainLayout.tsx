@@ -1,27 +1,27 @@
 import React, {useEffect, useRef, useState} from 'react';
-import {Outlet, useNavigate, useLocation} from 'react-router-dom';
+import {Outlet, useLocation, useNavigate} from 'react-router-dom';
 import {
+    BookOpen,
+    Building2,
+    Calendar,
+    ClipboardList,
+    CloudSun,
+    FileText,
+    FolderKanban,
     HardHat,
     LayoutDashboard,
-    Mic,
-    FileText,
-    Mail,
-    FolderKanban,
     LogOut,
-    CloudSun,
-    BookOpen,
-    TrendingUp,
-    Calendar,
-    Building2,
+    Mail,
     MessageSquare,
-    WifiOff,
+    Mic,
+    Moon,
     PanelLeftClose,
     PanelLeftOpen,
-    Sun,
-    Moon,
     PenLine,
-    ClipboardList,
-    Smartphone
+    Smartphone,
+    Sun,
+    TrendingUp,
+    WifiOff
 } from 'lucide-react';
 import {useOnlineStatus} from '../components/useOnlineStatus';
 import {todayIso} from '../utils/dates';
@@ -259,8 +259,8 @@ export const MainLayout: React.FC = () => {
                         <HardHat size={20}/>
                     </div>
                     <div className="app-brand-text">
-                        <div className="app-brand-title">Bau<span>Manager</span></div>
-                        <div className="app-brand-sub">Bautagesbericht &amp; Planung</div>
+                        <div className="app-brand-title">Easy<span>Build</span></div>
+                        <div className="app-brand-sub">{t('hdr_brand_sub')}</div>
                     </div>
                     <button
                         type="button"
