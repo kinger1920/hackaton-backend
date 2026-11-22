@@ -104,7 +104,7 @@ export const Login: React.FC = () => {
                         textAlign: 'center'
                     }}
                 >
-                    Bauleiter-Portal
+                    {t('login_portal')}
                 </h1>
 
                 <div className="form-group" style={{marginBottom: '20px'}}>
@@ -115,7 +115,7 @@ export const Login: React.FC = () => {
                         id="nameInput"
                         className="form-input"
                         type="text"
-                        placeholder="z. B. Max Mustermann"
+                        placeholder={t('login_name_ph')}
                         value={name}
                         onChange={(e) => setName(e.target.value)}
                         required

@@ -67,7 +67,7 @@ export const DailyReports: React.FC = () => {
   const navigate = useNavigate();
   // Aus dem Terminplaner: navigate('/reports', {state: {date: 'YYYY-MM-DD'}}) öffnet diesen Tag
   const navDate = (useLocation().state as { date?: string } | null)?.date;
-  const { t } = useLanguage();
+  const { t, tf } = useLanguage();
   const { activeProject } = useProjects();
   const userName = localStorage.getItem('userName') || t('role_site_manager');
   const todayDe = isoToDe(todayIso());
@@ -196,12 +196,12 @@ export const DailyReports: React.FC = () => {
       const w = await api.getWeather(toIsoDate(reportDate), Number(activeProject.id));
       setWeather([w.condition, w.wind_kmh != null ? `Wind ${w.wind_kmh} km/h` : null, w.precipitation_mm != null ? `${w.precipitation_mm} mm Niederschlag` : null].filter(Boolean).join(', '));
       if (w.temperature_c != null) setTemperatureC(String(w.temperature_c));
-      setWeatherHint({ text: `Wetter übernommen – Quelle: ${w.source}`, error: false });
+      setWeatherHint({ text: tf('rep_weather_taken', { src: w.source }), error: false });
     } catch (err) {
       setWeatherHint({
         text: isNotImplemented(err)
-          ? 'Wetterdaten stehen auf diesem Server aktuell nicht zur Verfügung. Bitte von Hand eintragen.'
-          : `Wetter konnte nicht geladen werden: ${(err as Error)?.message ?? err}`,
+          ? t('rep_weather_na')
+          : `${t('rep_weather_failed')} ${(err as Error)?.message ?? err}`,
         error: true,
       });
     } finally {
@@ -531,8 +531,8 @@ export const DailyReports: React.FC = () => {
       const blob = await api.downloadReportExport(iso, format, Number(activeProject.id));
       saveBlob(blob, `Bautagesbericht_${reportNumber}_${iso}.${format}`);
     } catch (err: any) {
-      const msg = err?.message || 'Unbekannter Fehler';
-      if (format === 'pdf' && window.confirm(`${msg}\n\nStattdessen über den Browser drucken?`)) {
+      const msg = err?.message || t('rep_unknown_error');
+      if (format === 'pdf' && window.confirm(`${msg}\n\n${t('rep_print_instead')}`)) {
         window.print();
       } else if (format !== 'pdf') {
         alert(msg);
@@ -550,7 +550,7 @@ export const DailyReports: React.FC = () => {
       const res = await api.getDayAnalysis(toIsoDate(reportDate), Number(activeProject.id));
       setDayAnalysis(res);
     } catch (err: any) {
-      alert(`Tagesanalyse nicht möglich: ${err?.message || err}`);
+      alert(`${t('rep_analysis_failed')} ${err?.message || err}`);
     } finally {
       setIsAnalyzing(false);
     }
@@ -666,7 +666,7 @@ export const DailyReports: React.FC = () => {
             {isHistoryDropdownOpen && (
               <div className="reports-history-dropdown-menu" role="menu">
                 <div className="reports-history-dropdown-header">
-                  <span>Bautagesbericht auswählen</span>
+                  <span>{t('rep_pick_report')}</span>
                   <span className="history-badge">{1 + dropdownReports.length}</span>
                 </div>
 
@@ -677,17 +677,17 @@ export const DailyReports: React.FC = () => {
                     onClick={() => handleSelectDateFromDropdown(todayDe)}
                   >
                     <div className="reports-history-dropdown-item-top">
-                      <span>Heutiger Bautagesbericht</span>
-                      <span className="reports-history-dropdown-item-date">Heute, {todayDe}</span>
+                      <span>{t('rep_today_report')}</span>
+                      <span className="reports-history-dropdown-item-date">{t('rep_today_prefix')} {todayDe}</span>
                     </div>
                     <div className="reports-history-dropdown-item-sub">
-                      Aktuellen Tagesbericht anzeigen &amp; verfassen
+                      {t('rep_today_sub')}
                     </div>
                   </button>
 
                   {dropdownReports.length === 0 ? (
                     <div style={{ padding: '12px', fontSize: '12px', color: 'var(--text-muted)', textAlign: 'center' }}>
-                      Keine weiteren vergangenen Bautagesberichte vorhanden.
+                      {t('rep_no_past')}
                     </div>
                   ) : (
                     dropdownReports.map((item) => (
@@ -749,7 +749,7 @@ export const DailyReports: React.FC = () => {
       {/* Main Grid: 2-Tab Report View & Editor */}
       <div className="reports-grid">
         <div className="reports-folder-shell">
-          <div className="reports-folder-tabs" role="tablist" aria-label="Bautagesbericht-Ansicht">
+          <div className="reports-folder-tabs" role="tablist" aria-label={t('rep_view_tabs')}>
             <button
               type="button"
               role="tab"
@@ -758,7 +758,7 @@ export const DailyReports: React.FC = () => {
               onClick={() => setActiveReportTab('view')}
             >
               <Eye size={15} />
-              <span>{isTodaySelected ? 'Heutiger Bautagesbericht' : `Bautagesbericht (${reportDate})`}</span>
+              <span>{isTodaySelected ? t('rep_today_report') : tf('rep_report_of', { date: reportDate })}</span>
             </button>
 
             <button
@@ -769,7 +769,7 @@ export const DailyReports: React.FC = () => {
               onClick={() => setActiveReportTab('edit')}
             >
               <PenLine size={15} />
-              <span>{isTodaySelected ? t('rep_editor_title') : `Bearbeitung (${reportDate})`}</span>
+              <span>{isTodaySelected ? t('rep_editor_title') : tf('rep_editing_of', { date: reportDate })}</span>
             </button>
           </div>
 
@@ -781,11 +781,11 @@ export const DailyReports: React.FC = () => {
                 <span>
                   {activeReportTab === 'view'
                     ? isTodaySelected
-                      ? 'Aktuelle Tagesübersicht'
-                      : `Tagesübersicht vom ${reportDate}`
+                      ? t('rep_overview_today')
+                      : tf('rep_overview_of', { date: reportDate })
                     : isTodaySelected
-                    ? 'Tagesbericht bearbeiten'
-                    : `Bearbeitung (${reportDate})`}
+                    ? t('rep_edit_today')
+                    : tf('rep_editing_of', { date: reportDate })}
                 </span>
               </div>
 
@@ -795,10 +795,10 @@ export const DailyReports: React.FC = () => {
                   className="history-btn-small"
                   onClick={() => handleExport('docx')}
                   disabled={exporting !== null}
-                  title="Als Word-Datei exportieren (speichert vorher)"
+                  title={t('rep_export_word')}
                 >
                   <FileDown size={13} />
-                  <span>{exporting === 'docx' ? 'Export…' : 'Word'}</span>
+                  <span>{exporting === 'docx' ? t('rep_exporting') : 'Word'}</span>
                 </button>
 
                 <button
@@ -806,10 +806,10 @@ export const DailyReports: React.FC = () => {
                   className="history-btn-small"
                   onClick={() => handleExport('pdf')}
                   disabled={exporting !== null}
-                  title="Als PDF exportieren (speichert vorher)"
+                  title={t('rep_export_pdf')}
                 >
                   <FileDown size={13} />
-                  <span>{exporting === 'pdf' ? 'Export…' : 'PDF'}</span>
+                  <span>{exporting === 'pdf' ? t('rep_exporting') : 'PDF'}</span>
                 </button>
 
                 <button
@@ -855,7 +855,7 @@ export const DailyReports: React.FC = () => {
                     onClick={() => setActiveReportTab('edit')}
                   >
                     <PenLine size={15} />
-                    <span>{isTodaySelected ? t('rep_editor_title') : `Bericht für ${reportDate} verfassen`}</span>
+                    <span>{isTodaySelected ? t('rep_editor_title') : tf('rep_write_for', { date: reportDate })}</span>
                   </button>
                 </div>
               ) : (
@@ -881,7 +881,7 @@ export const DailyReports: React.FC = () => {
                         onClick={() => setActiveReportTab('edit')}
                       >
                         <PenLine size={14} />
-                        <span>Bearbeiten</span>
+                        <span>{t('btn_edit')}</span>
                       </button>
                     </div>
                   </div>
@@ -907,12 +907,12 @@ export const DailyReports: React.FC = () => {
                     <div className="report-view-meta-card">
                       <span className="report-view-meta-label">{t('rep_form_workforce')}</span>
                       <span className="report-view-meta-value">
-                        {committedReport.workforceCount} Personen
+                        {tf('rep_persons', { n: committedReport.workforceCount })}
                       </span>
                     </div>
 
                     <div className="report-view-meta-card">
-                      <span className="report-view-meta-label">Bauleitung</span>
+                      <span className="report-view-meta-label">{t('rep_site_manager')}</span>
                       <span className="report-view-meta-value">
                         {committedReport.siteManager || userName}
                       </span>
@@ -927,10 +927,10 @@ export const DailyReports: React.FC = () => {
                       <table className="report-view-table">
                         <thead>
                           <tr>
-                            <th>Firma</th>
-                            <th>Gewerk</th>
-                            <th>Arbeitskräfte</th>
-                            <th>Std.</th>
+                            <th>{t('rep_col_company')}</th>
+                            <th>{t('rep_col_trade')}</th>
+                            <th>{t('rep_col_workers')}</th>
+                            <th>{t('rep_col_hours')}</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -965,7 +965,7 @@ export const DailyReports: React.FC = () => {
                   <div className="report-view-section">
                     <div className="report-view-section-title">{t('rep_form_progress')}</div>
                     <div className="report-view-text">
-                      {committedReport.workCompleted.trim() || 'Keine Angaben zur Tagesleistung erfasst.'}
+                      {committedReport.workCompleted.trim() || t('rep_no_progress')}
                     </div>
                   </div>
 
@@ -1027,7 +1027,7 @@ export const DailyReports: React.FC = () => {
                       disabled={isAnalyzing}
                     >
                       <TrendingUp size={16} />
-                      <span>{isAnalyzing ? 'Analysiere…' : 'Tag analysieren'}</span>
+                      <span>{isAnalyzing ? t('rep_analyzing') : t('rep_analyze_day')}</span>
                     </button>
 
                     <button
@@ -1036,7 +1036,7 @@ export const DailyReports: React.FC = () => {
                       onClick={handleSaveReport}
                     >
                       <CheckCircle2 size={16} />
-                      <span>Änderungen speichern</span>
+                      <span>{t('rep_save_changes')}</span>
                     </button>
                   </div>
                 </>
@@ -1095,7 +1095,7 @@ export const DailyReports: React.FC = () => {
                       style={{ padding: '2px 7px', fontSize: '10px' }}
                       onClick={handleAutoWeather}
                       disabled={isLoadingWeather}
-                      title="Wetter für Datum und Baustelle automatisch übernehmen"
+                      title={t('rep_auto_weather_title')}
                     >
                       <CloudSun size={11} />
                       <span>{isLoadingWeather ? '…' : 'Automatisch'}</span>
@@ -1110,7 +1110,7 @@ export const DailyReports: React.FC = () => {
                 </div>
 
                 <div className="form-group">
-                  <label className="form-label">Temperatur (°C)</label>
+                  <label className="form-label">{t('rep_temperature')}</label>
                   <input
                     type="number"
                     className="form-input"
@@ -1128,12 +1128,12 @@ export const DailyReports: React.FC = () => {
                     className="form-input"
                     value={workforceCount}
                     onChange={(e) => setWorkforceCount(Number(e.target.value))}
-                    title={attendance.length > 0 ? 'Summe aus der Anwesenheit je Firma' : undefined}
+                    title={attendance.length > 0 ? t('rep_sum_attendance') : undefined}
                   />
                 </div>
 
                 <div className="form-group">
-                  <label className="form-label">Bauleitung</label>
+                  <label className="form-label">{t('rep_site_manager')}</label>
                   <input
                     type="text"
                     className="form-input"
@@ -1167,10 +1167,10 @@ export const DailyReports: React.FC = () => {
                         type="button"
                         className="history-btn-small"
                         onClick={handleAttendanceFromContracts}
-                        title="Firmen aus den hinterlegten Verträgen übernehmen"
+                        title={t('rep_from_contracts_title')}
                       >
                         <Copy size={11} />
-                        <span>Firmen aus Verträgen</span>
+                        <span>{t('rep_from_contracts')}</span>
                       </button>
                     )}
                     <button
@@ -1179,13 +1179,13 @@ export const DailyReports: React.FC = () => {
                       onClick={() => setAttendance([...attendance, { company: '', trade: '', workers: 0, hours: null }])}
                     >
                       <Plus size={11} />
-                      <span>Firma</span>
+                      <span>{t('rep_col_company')}</span>
                     </button>
                   </div>
                 </div>
                 {attendance.length === 0 ? (
                   <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
-                    Noch keine Anwesenheit erfasst. Pro Firma eintragen, damit die Sollstärke laut Vertrag geprüft werden kann.
+                    {t('rep_no_attendance')}
                   </div>
                 ) : (
                   <div className="attendance-list">
@@ -1196,13 +1196,13 @@ export const DailyReports: React.FC = () => {
                         <div key={idx} className="attendance-row">
                           <input
                             className="form-input"
-                            placeholder="Firma"
+                            placeholder={t('rep_col_company')}
                             value={a.company ?? ''}
                             onChange={(e) => updateAttendance(idx, { company: e.target.value })}
                           />
                           <input
                             className="form-input"
-                            placeholder="Gewerk"
+                            placeholder={t('rep_col_trade')}
                             value={a.trade ?? ''}
                             onChange={(e) => updateAttendance(idx, { trade: e.target.value })}
                           />
@@ -1210,7 +1210,7 @@ export const DailyReports: React.FC = () => {
                             className="form-input"
                             type="number"
                             min={0}
-                            title={planned != null ? `Sollstärke laut Vertrag: ${planned}` : 'Arbeitskräfte'}
+                            title={planned != null ? tf('rep_planned_per_contract', { n: planned }) : t('rep_col_workers')}
                             style={below ? { borderColor: '#f87171', backgroundColor: '#fef2f2' } : undefined}
                             value={a.workers}
                             onChange={(e) => updateAttendance(idx, { workers: Math.max(0, Number(e.target.value) || 0) })}
@@ -1220,7 +1220,7 @@ export const DailyReports: React.FC = () => {
                             type="number"
                             min={0}
                             step="0.5"
-                            placeholder="Std."
+                            placeholder={t('rep_col_hours')}
                             value={a.hours ?? ''}
                             onChange={(e) => updateAttendance(idx, { hours: e.target.value === '' ? null : Number(e.target.value) })}
                           />
@@ -1228,7 +1228,7 @@ export const DailyReports: React.FC = () => {
                             type="button"
                             className="history-btn-small danger-tint"
                             onClick={() => setAttendance(attendance.filter((_, i) => i !== idx))}
-                            title="Zeile entfernen"
+                            title={t('rep_remove_row')}
                           >
                             <Trash2 size={12} />
                           </button>
@@ -1276,7 +1276,7 @@ export const DailyReports: React.FC = () => {
                   <input
                     type="text"
                     className="form-input"
-                    placeholder="Gewerk..."
+                    placeholder={t('rep_trade_ph')}
                     value={newTradeInput}
                     onChange={(e) => setNewTradeInput(e.target.value)}
                     onKeyDown={(e) => {
@@ -1286,9 +1286,9 @@ export const DailyReports: React.FC = () => {
                       }
                     }}
                   />
-                  <button type="button" className="btn btn-secondary" onClick={handleAddTrade} title="Gewerk hinzufügen">
+                  <button type="button" className="btn btn-secondary" onClick={handleAddTrade} title={t('rep_add_trade')}>
                     <Plus size={15} />
-                    <span>Hinzufügen</span>
+                    <span>{t('rep_add')}</span>
                   </button>
                 </div>
               </div>
@@ -1301,7 +1301,7 @@ export const DailyReports: React.FC = () => {
                   </label>
                   <label className="history-btn-small" style={{ cursor: 'pointer' }}>
                     <Camera size={12} />
-                    <span>Foto aufnehmen / hochladen</span>
+                    <span>{t('rep_photo_upload')}</span>
                     <input
                       type="file"
                       accept="image/*"
@@ -1324,14 +1324,14 @@ export const DailyReports: React.FC = () => {
                       >
                         <img src={p.url} alt={p.fileName} style={{ width: '100%', height: '90px', objectFit: 'cover', display: 'block' }} />
                         <div style={{ padding: '6px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                          {p.status === 'analyzing' && <span>Wird ausgewertet…</span>}
+                          {p.status === 'analyzing' && <span>{t('rep_photo_analyzing')}</span>}
                           {p.status === 'done' && p.result && (
                             <>
                               <span><strong>{p.result.caption}</strong></span>
                               {p.result.issues.length > 0 && <span style={{ color: '#b91c1c' }}>Mängel: {p.result.issues.join(', ')}</span>}
                             </>
                           )}
-                          {p.status === 'unavailable' && <span style={{ color: '#92400e' }}>Fotoauswertung nicht verfügbar</span>}
+                          {p.status === 'unavailable' && <span style={{ color: '#92400e' }}>{t('rep_photo_unavailable')}</span>}
                           {p.status === 'error' && <span style={{ color: '#b91c1c' }}>{p.error}</span>}
                           <button
                             type="button"
@@ -1356,7 +1356,7 @@ export const DailyReports: React.FC = () => {
                   rows={4}
                   value={progressText}
                   onChange={(e) => setProgressText(e.target.value)}
-                  placeholder="Arbeiten..."
+                  placeholder={t('rep_works_ph')}
                 />
               </div>
 
@@ -1419,14 +1419,14 @@ export const DailyReports: React.FC = () => {
                 <div className="editor-footer-actions">
                   <label
                     className={`finalize-checkbox-chip ${isFinalized ? 'active' : ''}`}
-                    title="Abgeschlossene Berichte werden ohne ENTWURF-Wasserzeichen exportiert"
+                    title={t('rep_finalize_title')}
                   >
                     <input
                       type="checkbox"
                       checked={isFinalized}
                       onChange={(e) => setIsFinalized(e.target.checked)}
                     />
-                    <span>Bericht abschließen</span>
+                    <span>{t('rep_finalize')}</span>
                   </label>
 
                   <button
@@ -1434,10 +1434,10 @@ export const DailyReports: React.FC = () => {
                     className="btn btn-secondary"
                     onClick={handleAnalyzeDay}
                     disabled={isAnalyzing}
-                    title="Was lief heute gut, was lief schlecht? (speichert vorher)"
+                    title={t('rep_analyze_title')}
                   >
                     <TrendingUp size={16} />
-                    <span>{isAnalyzing ? 'Analysiere…' : 'Tag analysieren'}</span>
+                    <span>{isAnalyzing ? t('rep_analyzing') : t('rep_analyze_day')}</span>
                   </button>
 
                   <button
@@ -1446,7 +1446,7 @@ export const DailyReports: React.FC = () => {
                     onClick={handleSaveReport}
                   >
                     <CheckCircle2 size={16} />
-                    <span>Änderungen speichern</span>
+                    <span>{t('rep_save_changes')}</span>
                   </button>
                 </div>
               </div>
@@ -1474,7 +1474,7 @@ export const DailyReports: React.FC = () => {
                     type="button"
                     onClick={() => setDayAnalysis(null)}
                     style={{ background: 'none', border: 'none', cursor: 'pointer' }}
-                    title="Schließen"
+                    title={t('btn_close')}
                   >
                     <X size={14} />
                   </button>
@@ -1485,11 +1485,11 @@ export const DailyReports: React.FC = () => {
                 {dayAnalysis.stats.workers != null && (
                   <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
                     <Users size={12} />
-                    {dayAnalysis.stats.workers} Personen
-                    {dayAnalysis.stats.plannedWorkers != null ? ` (Soll ${dayAnalysis.stats.plannedWorkers})` : ''}
+                    {tf('rep_persons', { n: dayAnalysis.stats.workers })}
+                    {dayAnalysis.stats.plannedWorkers != null ? tf('rep_planned_short', { n: dayAnalysis.stats.plannedWorkers }) : ''}
                   </span>
                 )}
-                {dayAnalysis.stats.hours != null && <span>{dayAnalysis.stats.hours} Std.</span>}
+                {dayAnalysis.stats.hours != null && <span>{tf('rep_hours_n', { n: dayAnalysis.stats.hours })}</span>}
                 {dayAnalysis.stats.weather && (
                   <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
                     <CloudSun size={12} />
@@ -1501,10 +1501,10 @@ export const DailyReports: React.FC = () => {
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '10px' }}>
                 <div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 700, fontSize: '13px', color: '#15803d' }}>
-                    <ThumbsUp size={14} /> Lief gut
+                    <ThumbsUp size={14} /> {t('rep_went_well')}
                   </div>
                   <ul style={{ margin: '6px 0 0', paddingLeft: '18px', fontSize: '12px' }}>
-                    {dayAnalysis.wentWell.length === 0 && <li style={{ color: 'var(--color-slate-500)' }}>Keine Einträge</li>}
+                    {dayAnalysis.wentWell.length === 0 && <li style={{ color: 'var(--color-slate-500)' }}>{t('rep_no_entries')}</li>}
                     {dayAnalysis.wentWell.map((item, idx) => (
                       <li key={idx}>
                         {item.text} <span style={{ color: 'var(--color-slate-400)' }}>({item.source})</span>
@@ -1514,10 +1514,10 @@ export const DailyReports: React.FC = () => {
                 </div>
                 <div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 700, fontSize: '13px', color: '#b91c1c' }}>
-                    <ThumbsDown size={14} /> Lief schlecht
+                    <ThumbsDown size={14} /> {t('rep_went_badly')}
                   </div>
                   <ul style={{ margin: '6px 0 0', paddingLeft: '18px', fontSize: '12px' }}>
-                    {dayAnalysis.wentBadly.length === 0 && <li style={{ color: 'var(--color-slate-500)' }}>Keine Einträge</li>}
+                    {dayAnalysis.wentBadly.length === 0 && <li style={{ color: 'var(--color-slate-500)' }}>{t('rep_no_entries')}</li>}
                     {dayAnalysis.wentBadly.map((item, idx) => (
                       <li key={idx}>
                         {item.text} <span style={{ color: 'var(--color-slate-400)' }}>({item.source})</span>
@@ -1534,11 +1534,11 @@ export const DailyReports: React.FC = () => {
                   style={{ fontSize: '12px', backgroundColor: '#fef2f2', border: '1px solid #fecaca', borderRadius: 'var(--radius-md)', padding: '8px 10px' }}
                 >
                   <strong>
-                    {gap.company || gap.trade || gap.contractTitle}: {gap.actual} statt {gap.planned} Personen (−{gap.shortfallPercent} %)
+                    {tf('rep_gap', { who: gap.company || gap.trade || gap.contractTitle, actual: gap.actual, planned: gap.planned, pct: gap.shortfallPercent })}
                   </strong>
-                  {gap.consecutiveDays > 1 && <span> • seit {gap.consecutiveDays} Tagen</span>}
+                  {gap.consecutiveDays > 1 && <span>{tf('rep_since_days', { n: gap.consecutiveDays })}</span>}
                   <div style={{ color: 'var(--color-slate-500)', marginTop: '2px' }}>
-                    Quelle: {gap.source} • Vertrag: {gap.contractSource}
+                    {tf('rep_gap_source', { src: gap.source, contract: gap.contractSource })}
                   </div>
                   {gap.vobHints.length > 0 && (
                     <ul style={{ margin: '4px 0 0', paddingLeft: '18px' }}>
@@ -1572,7 +1572,7 @@ export const DailyReports: React.FC = () => {
                 >
                   <strong>{dev.title}</strong> — {dev.cause} <em>({dev.vobReference})</em>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', marginTop: '6px', gap: '8px' }}>
-                    <span style={{ color: '#92400e', flex: '1 1 220px' }}>Empfehlung: {dev.suggestedAction}</span>
+                    <span style={{ color: '#92400e', flex: '1 1 220px' }}>{t('rep_recommendation')} {dev.suggestedAction}</span>
                     <button
                       type="button"
                       className="btn btn-primary"

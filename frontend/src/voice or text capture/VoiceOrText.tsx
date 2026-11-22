@@ -418,11 +418,11 @@ export const VoiceOrText: React.FC<VoiceOrTextProps> = ({ mode = 'voice' }) => {
         }
         setActionErrorMsg(null);
       } else {
-        setAudioTranscript('Transkription aktuell nicht verfügbar – bitte Kategorie auswählen.');
+        setAudioTranscript(t('cap_tr_unavailable'));
       }
     } catch (err) {
       console.warn('Transkription fehlgeschlagen:', err);
-      setAudioTranscript('Transkription fehlgeschlagen – bitte Kategorie auswählen.');
+      setAudioTranscript(t('cap_tr_failed'));
     } finally {
       setIsTranscribing(false);
     }
@@ -449,7 +449,7 @@ export const VoiceOrText: React.FC<VoiceOrTextProps> = ({ mode = 'voice' }) => {
 
   const handleStartRealRecording = async () => {
     if (!(await recorder.start())) {
-      alert('Mikrofon nicht verfügbar (Berechtigung fehlt oder kein HTTPS). Bitte die Notiz eintippen.');
+      alert(t('cap_mic_unavailable'));
     }
   };
 
@@ -894,7 +894,7 @@ Kategorisierte Stichpunkte:
           onClick={() => setIsAddingTemplate((prev) => !prev)}
         >
           {isAddingTemplate ? <X size={12} /> : <Plus size={12} />}
-          <span>{isAddingTemplate ? 'Abbrechen' : 'Neuen Standardtext erstellen'}</span>
+          <span>{isAddingTemplate ? t('btn_cancel') : t('cap_tpl_new')}</span>
         </button>
       </div>
 
@@ -903,14 +903,14 @@ Kategorisierte Stichpunkte:
           <input
             type="text"
             className="bullet-input"
-            placeholder="Titel / Kurzname (optional, z. B. 'Tagesabschluss Rohbau')"
+            placeholder={t('cap_tpl_title_ph')}
             value={newTemplateTitle}
             onChange={(e) => setNewTemplateTitle(e.target.value)}
           />
           <textarea
             className="form-textarea"
             rows={3}
-            placeholder="Standardtext eingeben, der später per Klick ins Notizfeld eingefügt werden kann..."
+            placeholder={t('cap_tpl_text_ph')}
             value={newTemplateText}
             onChange={(e) => setNewTemplateText(e.target.value)}
           />
@@ -922,7 +922,7 @@ Kategorisierte Stichpunkte:
               onClick={() => setNewTemplateText(generalNotes)}
               disabled={!generalNotes.trim()}
             >
-              Aktuelles Textfeld übernehmen
+              {t('cap_tpl_take_current')}
             </button>
             <button
               type="button"
@@ -931,7 +931,7 @@ Kategorisierte Stichpunkte:
               onClick={handleCreateCustomTemplate}
               disabled={!newTemplateText.trim()}
             >
-              Vorlage speichern
+              {t('cap_tpl_save')}
             </button>
           </div>
         </div>
@@ -945,7 +945,7 @@ Kategorisierte Stichpunkte:
                 type="button"
                 className="custom-template-insert-btn"
                 onClick={() => handleInsertCustomTemplate(tpl.text)}
-                title="Text direkt in das Notizfeld einfügen"
+                title={t('cap_tpl_insert')}
               >
                 <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>
                   <strong>{tpl.title}</strong>
@@ -962,7 +962,7 @@ Kategorisierte Stichpunkte:
                 type="button"
                 className="custom-template-delete-btn"
                 onClick={() => handleDeleteCustomTemplate(tpl.id)}
-                title="Vorlage löschen"
+                title={t('cap_tpl_delete')}
               >
                 <Trash2 size={13} />
               </button>
@@ -972,7 +972,7 @@ Kategorisierte Stichpunkte:
       ) : (
         !isAddingTemplate && (
           <p style={{ fontSize: '12px', color: 'var(--text-muted)', margin: 0 }}>
-            Noch keine eigenen Standardtexte gespeichert. Über „Neuen Standardtext erstellen“ kannst du eigene Textbausteine anlegen und per Klick einfügen.
+            {t('cap_tpl_none')}
           </p>
         )
       )}
@@ -983,7 +983,7 @@ Kategorisierte Stichpunkte:
     <>
       {isTranscribing && (
         <div style={{ fontSize: '12px', color: 'var(--color-primary)', fontWeight: 600 }}>
-          Audio wird transkribiert…
+          {t('cap_transcribing')}
         </div>
       )}
 
@@ -1015,7 +1015,7 @@ Kategorisierte Stichpunkte:
           }}
         >
           <span>
-            ✓ <strong>VOB-Brief #{lastDraft.notice_id}</strong> ({lastDraft.type}) angelegt.
+            ✓ <strong>VOB-Brief #{lastDraft.notice_id}</strong> ({lastDraft.type}) {t('cap_draft_created')}
           </span>
           <button
             type="button"
@@ -1023,7 +1023,7 @@ Kategorisierte Stichpunkte:
             style={{ fontSize: '11px', padding: '4px 8px' }}
             onClick={() => navigate('/drafts', { state: { noticeId: lastDraft.notice_id } })}
           >
-            Zum Entwurf →
+            {t('cap_to_draft')}
           </button>
         </div>
       )}
@@ -1040,7 +1040,7 @@ Kategorisierte Stichpunkte:
             color: '#92400e'
           }}
         >
-          <strong>Offene Rückfragen für den VOB-Brief:</strong>
+          <strong>{t('cap_open_questions')}</strong>
           <ul style={{ margin: '6px 0 0 16px', padding: 0 }}>
             {aiQuestions.map((q, idx) => (
               <li key={idx} style={{ marginBottom: '2px' }}>
@@ -1077,7 +1077,7 @@ Kategorisierte Stichpunkte:
       <textarea
         className="form-textarea"
         rows={5}
-        placeholder="z. B. 'Betonprüfer war um 14 Uhr da, Schacht 3 blockiert, 24t Stahl geliefert, Elektriker braucht Freigabe...'"
+        placeholder={t('cap_notes_ph')}
         value={generalNotes}
         onChange={(e) => {
           setGeneralNotes(e.target.value);
@@ -1267,7 +1267,7 @@ Kategorisierte Stichpunkte:
                   color: '#1e40af'
                 }}
               >
-                <strong>Transkribierte Sprachnotiz:</strong>
+                <strong>{t('cap_transcript')}</strong>
                 <div style={{ marginTop: '4px' }}>{audioTranscript}</div>
               </div>
             )}
@@ -1353,7 +1353,7 @@ Kategorisierte Stichpunkte:
                 <input
                   type="text"
                   className="bullet-input"
-                  placeholder="Stichpunkt hinzufügen (z. B. 'Schalung 1. OG fertig')..."
+                  placeholder={t('cap_bullet_ph')}
                   value={newInputs.progress}
                   onChange={(e) => {
                     setNewInputs((prev) => ({ ...prev, progress: e.target.value }));
@@ -1409,7 +1409,7 @@ Kategorisierte Stichpunkte:
                 <input
                   type="text"
                   className="bullet-input"
-                  placeholder="Stichpunkt..."
+                  placeholder={t('cap_bullet_short_ph')}
                   value={newInputs.hindrance}
                   onChange={(e) => {
                     setNewInputs((prev) => ({ ...prev, hindrance: e.target.value }));
@@ -1456,7 +1456,7 @@ Kategorisierte Stichpunkte:
                 <input
                   type="text"
                   className="bullet-input"
-                  placeholder="Stichpunkt..."
+                  placeholder={t('cap_bullet_short_ph')}
                   value={newInputs.cost}
                   onChange={(e) => {
                     setNewInputs((prev) => ({ ...prev, cost: e.target.value }));
@@ -1503,7 +1503,7 @@ Kategorisierte Stichpunkte:
                 <input
                   type="text"
                   className="bullet-input"
-                  placeholder="Stichpunkt..."
+                  placeholder={t('cap_bullet_short_ph')}
                   value={newInputs.defect}
                   onChange={(e) => {
                     setNewInputs((prev) => ({ ...prev, defect: e.target.value }));
@@ -1548,7 +1548,7 @@ Kategorisierte Stichpunkte:
                 <input
                   type="text"
                   className="bullet-input"
-                  placeholder="Stichpunkt..."
+                  placeholder={t('cap_bullet_short_ph')}
                   value={newInputs.delivery}
                   onChange={(e) => {
                     setNewInputs((prev) => ({ ...prev, delivery: e.target.value }));
@@ -1601,7 +1601,7 @@ Kategorisierte Stichpunkte:
               onChange={(e) => setTargetDailyReport(e.target.checked)}
             />
             <FileText size={15} />
-            <span>In Bautagesbericht</span>
+            <span>{t('cap_to_report')}</span>
           </label>
 
           <label className={`action-toggle-chip ${targetLetterDraft ? 'active' : ''}`}>
@@ -1611,7 +1611,7 @@ Kategorisierte Stichpunkte:
               onChange={(e) => setTargetLetterDraft(e.target.checked)}
             />
             <Mail size={15} />
-            <span>In Brief umwandeln</span>
+            <span>{t('cap_to_letter')}</span>
           </label>
 
           <button
@@ -1623,12 +1623,12 @@ Kategorisierte Stichpunkte:
             <CheckCircle2 size={16} />
             <span>
               {isExecutingActions
-                ? 'Wird ausgeführt...'
+                ? t('cap_executing')
                 : targetDailyReport && targetLetterDraft
-                  ? 'In Bautagesbericht & Brief'
+                  ? t('cap_to_both')
                   : targetLetterDraft
-                    ? 'In Brief umwandeln'
-                    : 'In Bautagesbericht'}
+                    ? t('cap_to_letter')
+                    : t('cap_to_report')}
             </span>
           </button>
         </div>
