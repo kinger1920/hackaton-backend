@@ -90,6 +90,78 @@ def test_fill_offline(client, engine):
         assert note.content == text and note.category == "delay"
 
 
+def test_fill_with_categorized_bullets(client, engine):
+    ids = _setup(engine)
+    payload = {
+        "text": "",
+        "project_id": ids["project"],
+        "categories": {
+            "progress": ["Aushub Achse B zu 75 % fertig", "Decke 1. OG geschalt"],
+            "hindrance": ["Kran steht wegen Sturm"],
+            "cost": ["Zusätzliche Wasserhaltung"],
+            "defect": ["Riss im Treppenhaus"],
+            "delivery": ["2x LKW Betonstahl B500B angeliefert"],
+        },
+    }
+    r = client.post("/api/reports/2026-11-22/fill", json=payload)
+    assert r.status_code == 200
+    data = r.json()
+    assert "Aushub Achse B zu 75 % fertig" in data["work_completed"]
+    assert "Decke 1. OG geschalt" in data["work_completed"]
+    assert "Behinderung: Kran steht wegen Sturm" in data["deviations_incidents"]
+    assert "Mehrkosten: Zusätzliche Wasserhaltung" in data["deviations_incidents"]
+    assert "Mangel: Riss im Treppenhaus" in data["deviations_incidents"]
+    assert "2x LKW Betonstahl B500B angeliefert" in data["deliveries"]
+    assert data["progress"][0]["task_code"] == "B-200"
+    assert data["progress"][0]["percent"] == 75
+    assert data["categories"] == payload["categories"]
+
+    # GET liefert die übernommenen Stichpunkte weiterhin zurück
+    loaded = client.get(f"/api/reports/2026-11-22?project_id={ids['project']}").json()
+    assert loaded["categories"] == payload["categories"]
+
+    # Entfernen eines Stichpunkts löscht ihn aus categories UND aus dem Tagesbericht (andere bleiben erhalten)
+    after_rm_progress = client.post(
+        "/api/reports/2026-11-22/bullets/remove",
+        json={"category": "progress", "text": "Decke 1. OG geschalt", "project_id": ids["project"]},
+    ).json()
+    assert after_rm_progress["categories"]["progress"] == ["Aushub Achse B zu 75 % fertig"]
+    assert "Decke 1. OG geschalt" not in (after_rm_progress["work_completed"] or "")
+    assert "Aushub Achse B zu 75 % fertig" in (after_rm_progress["work_completed"] or "")
+
+    after_rm_hindrance = client.post(
+        "/api/reports/2026-11-22/bullets/remove",
+        json={"category": "hindrance", "text": "Kran steht wegen Sturm", "project_id": ids["project"]},
+    ).json()
+    assert after_rm_hindrance["categories"]["hindrance"] == []
+    assert "Kran steht wegen Sturm" not in (after_rm_hindrance["deviations_incidents"] or "")
+    assert "Mehrkosten: Zusätzliche Wasserhaltung" in (after_rm_hindrance["deviations_incidents"] or "")
+
+    after_rm_delivery = client.post(
+        "/api/reports/2026-11-22/bullets/remove",
+        json={"category": "delivery", "text": "2x LKW Betonstahl B500B angeliefert", "project_id": ids["project"]},
+    ).json()
+    assert after_rm_delivery["categories"]["delivery"] == []
+    assert after_rm_delivery["deliveries"] is None
+
+    # Manuelles Löschen im Tagesbericht (PUT) bereinigt auch categories
+    after_put = client.put(
+        f"/api/reports/2026-11-22?project_id={ids['project']}",
+        json={"work_completed": "", "deviations_incidents": "Mehrkosten: Zusätzliche Wasserhaltung", "deliveries": ""},
+    ).json()
+    assert after_put["categories"]["progress"] == []
+    assert after_put["categories"]["cost"] == ["Zusätzliche Wasserhaltung"]
+    assert after_put["categories"]["defect"] == []
+
+    with Session(engine) as s:
+        note = s.get(SiteNote, data["site_note_id"])
+        assert note.category == "delay"
+        assert "Behinderungen: Kran steht wegen Sturm" in note.content
+
+    # Leerer Text ohne Stichpunkte wird weiterhin abgelehnt (422).
+    assert client.post("/api/reports/2026-11-22/fill", json={"text": "   ", "project_id": ids["project"]}).status_code == 422
+
+
 def test_fill_ai_validates_and_appends(client, engine, monkeypatch):
     ids = _setup(engine)
     url = f"/api/reports/2026-11-21?project_id={ids['project']}"

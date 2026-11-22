@@ -850,11 +850,27 @@ export interface DailyReportOut {
   summary: string | null;
   status: string;
   progress: ReportProgressOut[];
+  categories?: CategorizedBulletsPayload;
+}
+
+export interface CategorizedBulletsPayload {
+  progress?: string[];
+  hindrance?: string[];
+  cost?: string[];
+  defect?: string[];
+  delivery?: string[];
 }
 
 export interface FillRequest {
   text: string;
   lang?: string;
+  project_id?: number | null;
+  categories?: CategorizedBulletsPayload;
+}
+
+export interface BulletRemoveRequest {
+  category: 'progress' | 'hindrance' | 'cost' | 'defect' | 'delivery';
+  text: string;
   project_id?: number | null;
 }
 
@@ -1138,6 +1154,15 @@ export const api = {
       body: JSON.stringify(req),
     });
     return handleResponse<FillResponse>(res, 'Fehler beim Ausfüllen des Tagesberichts');
+  },
+
+  async removeReportBullet(reportDate: string, req: BulletRemoveRequest): Promise<DailyReportOut> {
+    const res = await fetch(`${API_BASE_URL}/api/reports/${reportDate}/bullets/remove`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(req),
+    });
+    return handleResponse<DailyReportOut>(res, 'Fehler beim Entfernen des Stichpunkts');
   },
 
   /** GET /api/reports/{date}/pdf|docx – 404 wenn der Tag nicht gespeichert ist, 503 wenn Pango fehlt (PDF). */

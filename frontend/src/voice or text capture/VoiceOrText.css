@@ -317,6 +317,12 @@
 .bullet-chip-remove {
   cursor: pointer;
   color: var(--text-muted);
+  background: none;
+  border: none;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 .bullet-chip-remove:hover {
   color: var(--color-danger);

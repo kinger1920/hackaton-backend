@@ -21,8 +21,8 @@ import {
 import { useProjects } from '../context/ProjectContext';
 import { saveProjectDocument } from '../context/ProjectDocuments';
 import { useLanguage } from '../context/LanguageContext';
-import { api, NoticeDraft, NoticeType } from '../services/api';
-import { todayIso } from '../utils/dates';
+import { api, CategorizedBulletsPayload, NoticeDraft, NoticeType } from '../services/api';
+import { isoToDe, todayIso } from '../utils/dates';
 import { useAudioRecorder } from '../utils/useAudioRecorder';
 import '@frontend/src/index.css';
 import './VoiceOrText.css';
@@ -43,6 +43,238 @@ interface CustomTextTemplate {
 
 const CUSTOM_TEMPLATES_STORAGE_KEY = 'site_assistant_custom_text_templates';
 
+const EMPTY_CATEGORIES: CategoryBullets = {
+  progress: [],
+  hindrance: [],
+  cost: [],
+  defect: [],
+  delivery: []
+};
+
+const EMPTY_INPUTS: Record<keyof CategoryBullets, string> = {
+  progress: '',
+  hindrance: '',
+  cost: '',
+  defect: '',
+  delivery: ''
+};
+
+const CATEGORY_KEYS: (keyof CategoryBullets)[] = ['progress', 'hindrance', 'cost', 'defect', 'delivery'];
+
+const ABBREVIATION_END_RE = /\b(?:fa|nr|z\.?b|z|ca|bzw|inkl|ggf|abs|st|std|tel|dr|ing|dipl|v|u|d|min|max|ggü|lt|gem)\.$/i;
+const ORDINAL_BEFORE_LEVEL_RE = /\b\d+\.$/;
+const LEVEL_START_RE = /^(?:og|ug|eg|dg|ba|bt|abschnitt|bauabschnitt|bauteil)\b/i;
+
+function splitTextIntoItems(text: string): string[] {
+  const items: string[] = [];
+  for (const rawLine of text.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line) continue;
+    const semiParts = line.split(/;\s*/).map((s) => s.trim()).filter(Boolean);
+    for (const part of semiParts) {
+      const tokens = part.split(/\s+/);
+      let current = '';
+      for (let i = 0; i < tokens.length; i++) {
+        const tok = tokens[i];
+        const next = tokens[i + 1] || '';
+        current = current ? `${current} ${tok}` : tok;
+        const endsSentence = /[.!?]$/.test(tok);
+        const isAbbrev =
+          ABBREVIATION_END_RE.test(tok) ||
+          (ORDINAL_BEFORE_LEVEL_RE.test(tok) && LEVEL_START_RE.test(next));
+        if (endsSentence && !isAbbrev && next) {
+          items.push(current.trim());
+          current = '';
+        }
+      }
+      if (current.trim()) items.push(current.trim());
+    }
+  }
+  return items;
+}
+
+function classifySingleItem(rawItem: string): { category: keyof CategoryBullets; text: string } {
+  const trimmed = rawItem.replace(/^[-•*]\s*/, '').trim();
+  const prefixMatch = trimmed.match(
+    /^(baufortschritt|fortschritt|behinderung(?:en)?|störung(?:en)?|mehrkosten|nachtrag|nachträge|mangel|mängel|lieferung(?:en)?|material)\s*:\s*(.+)$/i
+  );
+  if (prefixMatch) {
+    const head = prefixMatch[1].toLowerCase();
+    const body = prefixMatch[2].trim();
+    if (head.startsWith('baufortschritt') || head.startsWith('fortschritt')) return { category: 'progress', text: body };
+    if (head.startsWith('mehrkosten') || head.startsWith('nachtrag') || head.startsWith('nachträge')) return { category: 'cost', text: body };
+    if (head.startsWith('mangel') || head.startsWith('mängel')) return { category: 'defect', text: body };
+    if (head.startsWith('liefer') || head.startsWith('material')) return { category: 'delivery', text: body };
+    return { category: 'hindrance', text: body };
+  }
+
+  const lower = trimmed.toLowerCase();
+  const hasAny = (words: string[]) => words.some((w) => lower.includes(w));
+
+  if (
+    hasAny([
+      'mehrkosten',
+      'nachtrag',
+      'zusatzleistung',
+      'mehraufwand',
+      'zusätzliche',
+      'teurer',
+      'regie',
+      'stundenlohn',
+      'wasserhaltung',
+      'dodatkow',
+      'koszt'
+    ])
+  ) {
+    return { category: 'cost', text: trimmed };
+  }
+  if (
+    hasAny([
+      'mangel',
+      'mängel',
+      'riss',
+      'feuchtigkeit',
+      'undicht',
+      'schaden',
+      'fehlerhaft',
+      'nachbesser',
+      'usterk',
+      'pęknię',
+      'wad'
+    ])
+  ) {
+    return { category: 'defect', text: trimmed };
+  }
+  if (
+    hasAny([
+      'behinder',
+      'stillstand',
+      'steht',
+      'ausfall',
+      'hydraulikdefekt',
+      'defekt',
+      'fehlt',
+      'fehlen',
+      'blockiert',
+      'wartet',
+      'warten',
+      'verzög',
+      'freigabe',
+      'störung',
+      'unterbrochen',
+      'stoi',
+      'brak',
+      'czeka',
+      'opóźni'
+    ])
+  ) {
+    return { category: 'hindrance', text: trimmed };
+  }
+  if (
+    hasAny([
+      'angeliefert',
+      'lieferung',
+      'geliefert',
+      'lieferschein',
+      'sattelzug',
+      'lkw',
+      'abgeladen',
+      'abnahme',
+      'prüfstatiker',
+      'betonprüfer',
+      'begehung',
+      'dostaw'
+    ])
+  ) {
+    return { category: 'delivery', text: trimmed };
+  }
+  return { category: 'progress', text: trimmed };
+}
+
+function categorizeTextIntoBullets(text: string): {
+  bullets: CategoryBullets;
+  count: number;
+  detectedKeys: (keyof CategoryBullets)[];
+} {
+  const buckets: CategoryBullets = {
+    progress: [],
+    hindrance: [],
+    cost: [],
+    defect: [],
+    delivery: []
+  };
+  const items = splitTextIntoItems(text);
+  let count = 0;
+  for (const item of items) {
+    const { category, text: clean } = classifySingleItem(item);
+    if (clean && !buckets[category].includes(clean)) {
+      buckets[category].push(clean);
+      count++;
+    }
+  }
+  const detectedKeys = CATEGORY_KEYS.filter((k) => buckets[k].length > 0);
+  return { bullets: buckets, count, detectedKeys };
+}
+
+function mergeCategoryBullets(base: CategoryBullets, extra: CategoryBullets): CategoryBullets {
+  const next: CategoryBullets = {
+    progress: [...base.progress],
+    hindrance: [...base.hindrance],
+    cost: [...base.cost],
+    defect: [...base.defect],
+    delivery: [...base.delivery]
+  };
+  for (const key of CATEGORY_KEYS) {
+    for (const item of extra[key]) {
+      const clean = item.trim();
+      if (clean && !next[key].includes(clean)) {
+        next[key].push(clean);
+      }
+    }
+  }
+  return next;
+}
+
+function hasAnyCategoryBullets(cats: CategoryBullets): boolean {
+  return CATEGORY_KEYS.some((k) => cats[k].length > 0);
+}
+
+function normalizeCategories(raw?: CategorizedBulletsPayload | null): CategoryBullets {
+  return {
+    progress: Array.isArray(raw?.progress) ? raw.progress.map((s) => String(s).trim()).filter(Boolean) : [],
+    hindrance: Array.isArray(raw?.hindrance) ? raw.hindrance.map((s) => String(s).trim()).filter(Boolean) : [],
+    cost: Array.isArray(raw?.cost) ? raw.cost.map((s) => String(s).trim()).filter(Boolean) : [],
+    defect: Array.isArray(raw?.defect) ? raw.defect.map((s) => String(s).trim()).filter(Boolean) : [],
+    delivery: Array.isArray(raw?.delivery) ? raw.delivery.map((s) => String(s).trim()).filter(Boolean) : []
+  };
+}
+
+const bulletsStorageKey = (projectId: string | number, isoDate: string) =>
+  `site_assistant_capture_bullets_${projectId}_${isoDate}`;
+
+function readLocalBullets(projectId: string | number, isoDate: string): CategoryBullets {
+  try {
+    const raw = localStorage.getItem(bulletsStorageKey(projectId, isoDate));
+    if (!raw) return EMPTY_CATEGORIES;
+    return normalizeCategories(JSON.parse(raw));
+  } catch {
+    return EMPTY_CATEGORIES;
+  }
+}
+
+function writeLocalBullets(projectId: string | number, isoDate: string, cats: CategoryBullets): void {
+  try {
+    const key = bulletsStorageKey(projectId, isoDate);
+    if (hasAnyCategoryBullets(cats)) {
+      localStorage.setItem(key, JSON.stringify(cats));
+    } else {
+      localStorage.removeItem(key);
+    }
+  } catch {
+    // ignore storage errors
+  }
+}
+
 const AUDIO_CATEGORY_OPTIONS: {
   key: keyof CategoryBullets;
   labelKey: string;
@@ -60,7 +292,7 @@ export interface VoiceOrTextProps {
 }
 
 export const VoiceOrText: React.FC<VoiceOrTextProps> = ({ mode = 'voice' }) => {
-    const navigate = useNavigate();
+  const navigate = useNavigate();
   const { t } = useLanguage();
   const { activeProject } = useProjects();
   const userName = localStorage.getItem('userName') || t('role_site_manager');
@@ -80,39 +312,59 @@ export const VoiceOrText: React.FC<VoiceOrTextProps> = ({ mode = 'voice' }) => {
   const [targetLetterDraft, setTargetLetterDraft] = useState(false);
   const [isExecutingActions, setIsExecutingActions] = useState(false);
 
-  // General notes field (Sonstige Notizen)
-  const [generalNotes, setGeneralNotes] = useState(
-    'Bewehrung Decke 1. OG zu 80% fertig. Hydraulikdefekt an 24t Kettenbagger Tiefbau seit 10:15 Uhr behoben. TGA-Freigabepläne für Schacht 3 fehlen weiterhin, Durchbrüche können nicht geschalt werden. 2x Sattelzug Betonstahl B500B angeliefert.'
-  );
+  // General notes field (Sonstige Notizen) — leer starten, keine Vorauswahl
+  const [generalNotes, setGeneralNotes] = useState('');
 
-  // Categorized bullet points state
-  const [categories, setCategories] = useState<CategoryBullets>({
-    progress: ['Decke über 1. OG Bauteil B zu 80% bewehrt', '12 Rohbauer Fa. BetonTech vor Ort'],
-    hindrance: ['Hydraulikdefekt an Kettenbagger 24t Tiefbau (4,5h Stillstand)', 'Freigabepläne TGA Schacht 3 fehlen'],
-    cost: ['Mehraufwand Stillstandszeiten Rammgerät', 'Zusätzliche Wasserhaltung'],
-    defect: ['Feuchtigkeitseintritt im Treppenhauskern 2 nach Starkregen'],
-    delivery: ['2x Sattelzug Betonstahl B500B angeliefert', 'Lieferschein 4481 gegengezeichnet']
-  });
+  // Categorized bullet points state — leer starten, keine Vorauswahl
+  const [categories, setCategories] = useState<CategoryBullets>(EMPTY_CATEGORIES);
 
   // Inputs for adding a bullet to a specific category
-  const [newInputs, setNewInputs] = useState<Record<string, string>>({
-    progress: '',
-    hindrance: '',
-    cost: '',
-    defect: '',
-    delivery: ''
-  });
+  const [newInputs, setNewInputs] = useState<Record<keyof CategoryBullets, string>>(EMPTY_INPUTS);
 
-  const [aiClassifiedSuccess, setAiClassifiedSuccess] = useState(false);
+  const [classificationFeedback, setClassificationFeedback] = useState<string | null>(null);
+  const [actionErrorMsg, setActionErrorMsg] = useState<string | null>(null);
   const [saveSuccessMsg, setSaveSuccessMsg] = useState(false);
   const [isTranscribing, setIsTranscribing] = useState(false);
-  const [isCapturing, setIsCapturing] = useState(false);
   const [lastDraft, setLastDraft] = useState<NoticeDraft | null>(null);
   const [aiQuestions, setAiQuestions] = useState<string[]>([]);
-  // Jeder POST /api/capture legt im Backend eine Notiz UND einen Brief-Entwurf an,
-  // POST /api/reports/{date}/fill ebenfalls eine Notiz → nichts doppelt auslösen.
-  const lastCapturedTextRef = useRef<string | null>(null);
+  // Merkt sich, ob generalNotes bereits in Kategorien zerlegt wurde (verhindert Duplikate bei Übergabe).
+  const categorizedNotesRef = useRef<string | null>(null);
   const lastSavedContentRef = useRef<string | null>(null);
+  // Stichpunkte, die bereits in den heutigen Bautagesbericht übernommen wurden (für synchrones Löschen).
+  const syncedCategoriesRef = useRef<CategoryBullets>(EMPTY_CATEGORIES);
+
+  // Bereits heute übernommene Stichpunkte des aktiven Projekts aus dem Bautagesbericht laden
+  useEffect(() => {
+    if (isVoiceMode) return;
+    let cancelled = false;
+    const today = todayIso();
+
+    const loadTodayBullets = async () => {
+      try {
+        const report = await api.getReport(today, Number(activeProject.id));
+        if (cancelled) return;
+        const loaded = normalizeCategories(report.categories);
+        setCategories(loaded);
+        syncedCategoriesRef.current = loaded;
+        writeLocalBullets(activeProject.id, today, loaded);
+      } catch {
+        if (cancelled) return;
+        const local = readLocalBullets(activeProject.id, today);
+        setCategories(local);
+        syncedCategoriesRef.current = local;
+      }
+      setNewInputs(EMPTY_INPUTS);
+      setGeneralNotes('');
+      categorizedNotesRef.current = null;
+      setLastDraft(null);
+      setActionErrorMsg(null);
+    };
+
+    loadTodayBullets();
+    return () => {
+      cancelled = true;
+    };
+  }, [activeProject.id, isVoiceMode]);
 
   // User-created custom text templates (stored in localStorage, empty by default)
   const [customTemplates, setCustomTemplates] = useState<CustomTextTemplate[]>(() => {
@@ -129,10 +381,18 @@ export const VoiceOrText: React.FC<VoiceOrTextProps> = ({ mode = 'voice' }) => {
   const [newTemplateTitle, setNewTemplateTitle] = useState('');
   const [newTemplateText, setNewTemplateText] = useState('');
 
+  const showClassificationFeedback = (msg: string) => {
+    setClassificationFeedback(msg);
+    window.setTimeout(() => {
+      setClassificationFeedback((prev) => (prev === msg ? null : prev));
+    }, 4000);
+  };
+
   const toggleAudioCategory = (catKey: keyof CategoryBullets) => {
     setSelectedAudioCategories((prev) =>
       prev.includes(catKey) ? prev.filter((k) => k !== catKey) : [...prev, catKey]
     );
+    setActionErrorMsg(null);
   };
 
   // Audio Playback Listener
@@ -142,7 +402,7 @@ export const VoiceOrText: React.FC<VoiceOrTextProps> = ({ mode = 'voice' }) => {
     }
   }, [audioUrl]);
 
-  // Mikrofon-Aufnahme (gemeinsamer Hook) → Wiedergabe + Transkription (Whisper) → KI-Kategorisierung.
+  // Mikrofon-Aufnahme (gemeinsamer Hook) → Wiedergabe + Transkription (Whisper) → Kategorie-Erkennung.
   // Kein erfundener Ersatztext mehr, wenn Mikrofon oder Transkription fehlen: lieber Hinweis + selbst tippen.
   const recorder = useAudioRecorder(async (audioBlob) => {
     setAudioUrl(URL.createObjectURL(audioBlob));
@@ -152,7 +412,11 @@ export const VoiceOrText: React.FC<VoiceOrTextProps> = ({ mode = 'voice' }) => {
       if (res?.text?.trim()) {
         setAudioTranscript(res.text);
         setGeneralNotes((prev) => (prev ? prev + '\n' + res.text : res.text));
-        handleAutoCategorize(res.text);
+        const { detectedKeys } = categorizeTextIntoBullets(res.text);
+        if (detectedKeys.length > 0) {
+          setSelectedAudioCategories((prev) => Array.from(new Set([...prev, ...detectedKeys])));
+        }
+        setActionErrorMsg(null);
       } else {
         setAudioTranscript('Transkription aktuell nicht verfügbar – bitte Kategorie auswählen.');
       }
@@ -183,7 +447,6 @@ export const VoiceOrText: React.FC<VoiceOrTextProps> = ({ mode = 'voice' }) => {
     };
   }, [isRecording]);
 
-
   const handleStartRealRecording = async () => {
     if (!(await recorder.start())) {
       alert('Mikrofon nicht verfügbar (Berechtigung fehlt oder kein HTTPS). Bitte die Notiz eintippen.');
@@ -205,23 +468,76 @@ export const VoiceOrText: React.FC<VoiceOrTextProps> = ({ mode = 'voice' }) => {
     }
   };
 
+  // Alle Kategorien inkl. noch nicht mit "+" bestätigter Eingaben zusammenführen
+  const getEffectiveCategories = (): CategoryBullets => {
+    const next: CategoryBullets = {
+      progress: [...categories.progress],
+      hindrance: [...categories.hindrance],
+      cost: [...categories.cost],
+      defect: [...categories.defect],
+      delivery: [...categories.delivery]
+    };
+    for (const key of CATEGORY_KEYS) {
+      const pending = newInputs[key]?.trim();
+      if (pending && !next[key].includes(pending)) {
+        next[key].push(pending);
+      }
+    }
+    return next;
+  };
+
   // Add bullet point to category
   const handleAddBullet = (catKey: keyof CategoryBullets) => {
     const val = newInputs[catKey]?.trim();
     if (!val) return;
     setCategories((prev) => ({
       ...prev,
-      [catKey]: [...prev[catKey], val]
+      [catKey]: prev[catKey].includes(val) ? prev[catKey] : [...prev[catKey], val]
     }));
     setNewInputs((prev) => ({ ...prev, [catKey]: '' }));
+    setActionErrorMsg(null);
+    setLastDraft(null);
   };
 
-  // Remove bullet point from category
-  const handleRemoveBullet = (catKey: keyof CategoryBullets, index: number) => {
-    setCategories((prev) => ({
-      ...prev,
-      [catKey]: prev[catKey].filter((_, i) => i !== index)
-    }));
+  // Remove bullet point from category (und falls bereits übernommen, auch aus dem heutigen Bautagesbericht)
+  const handleRemoveBullet = async (catKey: keyof CategoryBullets, index: number) => {
+    const removedText = categories[catKey][index];
+    if (!removedText) return;
+
+    const nextCategories: CategoryBullets = {
+      ...categories,
+      [catKey]: categories[catKey].filter((_, i) => i !== index)
+    };
+    setCategories(nextCategories);
+    setLastDraft(null);
+
+    const syncedKey = syncedCategoriesRef.current[catKey].includes(removedText)
+      ? catKey
+      : CATEGORY_KEYS.find((k) => syncedCategoriesRef.current[k].includes(removedText));
+
+    if (!syncedKey) return;
+
+    const today = todayIso();
+    const nextSynced: CategoryBullets = {
+      ...syncedCategoriesRef.current,
+      [syncedKey]: syncedCategoriesRef.current[syncedKey].filter((item) => item !== removedText)
+    };
+    syncedCategoriesRef.current = nextSynced;
+    writeLocalBullets(activeProject.id, today, nextSynced);
+
+    try {
+      const updated = await api.removeReportBullet(today, {
+        category: syncedKey,
+        text: removedText,
+        project_id: Number(activeProject.id)
+      });
+      const serverCats = normalizeCategories(updated.categories);
+      syncedCategoriesRef.current = serverCats;
+      writeLocalBullets(activeProject.id, today, serverCats);
+      showClassificationFeedback('✓ Stichpunkt auch aus dem heutigen Bautagesbericht entfernt');
+    } catch (err) {
+      console.warn('Stichpunkt konnte im Backend-Bericht nicht entfernt werden:', err);
+    }
   };
 
   const persistCustomTemplates = (next: CustomTextTemplate[]) => {
@@ -235,6 +551,8 @@ export const VoiceOrText: React.FC<VoiceOrTextProps> = ({ mode = 'voice' }) => {
 
   const handleInsertCustomTemplate = (templateText: string) => {
     setGeneralNotes((prev) => (prev.trim() ? `${prev}\n${templateText}` : templateText));
+    setActionErrorMsg(null);
+    setLastDraft(null);
   };
 
   const handleCreateCustomTemplate = () => {
@@ -256,124 +574,67 @@ export const VoiceOrText: React.FC<VoiceOrTextProps> = ({ mode = 'voice' }) => {
     persistCustomTemplates(customTemplates.filter((tpl) => tpl.id !== id));
   };
 
-  // AI Categorization: Parse general notes into categories via backend API or fallback
-  const handleAutoCategorize = async (textToParse = generalNotes) => {
-    if (!textToParse.trim()) return;
-    // gleicher Text wurde schon erfasst → kein zweiter Tagebucheintrag / Brief-Entwurf
-    if (lastCapturedTextRef.current === textToParse.trim()) {
-      setAiClassifiedSuccess(true);
-      setTimeout(() => setAiClassifiedSuccess(false), 3000);
+  // Freitext satzweise in die 5 Kategorien einordnen – ohne unerwünschten Brief-Entwurf als Nebeneffekt.
+  const handleAutoCategorize = (textToParse = generalNotes) => {
+    const clean = textToParse.trim();
+    if (!clean) {
+      showClassificationFeedback('Bitte zuerst Text im Notizfeld eingeben.');
       return;
     }
 
-    setIsCapturing(true);
-    setAiQuestions([]);
-
-    try {
-      const draft = await api.captureText({
-        text: textToParse,
-        project_id: Number(activeProject.id)
-      });
-      setLastDraft(draft);
-      if (draft.site_note_id) lastCapturedTextRef.current = textToParse.trim();
-
-      if (draft.questions && draft.questions.length > 0) {
-        setAiQuestions(draft.questions);
+    const { bullets, count, detectedKeys } = categorizeTextIntoBullets(clean);
+    if (isVoiceMode) {
+      if (detectedKeys.length > 0) {
+        setSelectedAudioCategories((prev) => Array.from(new Set([...prev, ...detectedKeys])));
       }
-
-      // Map fields from backend into UI categories
-      const updated = { ...categories };
-      const fields = draft.fields || {};
-      const cause = fields.cause?.value || fields.reason?.value || '';
-      const impact = fields.impact?.value || '';
-      const summaryPoint = cause || textToParse.slice(0, 60);
-
-      if (draft.type === 'delay') {
-        if (!updated.hindrance.includes(summaryPoint)) {
-          updated.hindrance = [summaryPoint, ...updated.hindrance];
-        }
-        if (impact && !updated.hindrance.includes(impact)) {
-          updated.hindrance.push(impact);
-        }
-        setSelectedAudioCategories((prev) => (prev.includes('hindrance') ? prev : [...prev, 'hindrance']));
-      } else if (draft.type === 'cost') {
-        if (!updated.cost.includes(summaryPoint)) {
-          updated.cost = [summaryPoint, ...updated.cost];
-        }
-        setSelectedAudioCategories((prev) => (prev.includes('cost') ? prev : [...prev, 'cost']));
-      } else if (draft.type === 'defect') {
-        if (!updated.defect.includes(summaryPoint)) {
-          updated.defect = [summaryPoint, ...updated.defect];
-        }
-        setSelectedAudioCategories((prev) => (prev.includes('defect') ? prev : [...prev, 'defect']));
-      } else {
-        if (!updated.progress.includes(summaryPoint)) {
-          updated.progress = [summaryPoint, ...updated.progress];
-        }
-        setSelectedAudioCategories((prev) => (prev.includes('progress') ? prev : [...prev, 'progress']));
-      }
-
-      setCategories(updated);
-      setAiClassifiedSuccess(true);
-      setTimeout(() => setAiClassifiedSuccess(false), 5000);
-    } catch (err) {
-      console.warn('Backend KI-Erfassung Fallback:', err);
-      // Fallback detection rules based on construction terms
-      const lower = textToParse.toLowerCase();
-      const updated = { ...categories };
-      const detectedAudioCats: (keyof CategoryBullets)[] = [];
-
-      if (lower.includes('bewehrt') || lower.includes('beton') || lower.includes('fertig') || lower.includes('rohbau')) {
-        if (!updated.progress.includes('Bewehrung & Rohbauarbeiten Decke 1. OG')) {
-          updated.progress = [...updated.progress, 'Bewehrung & Rohbauarbeiten Decke 1. OG'];
-        }
-        detectedAudioCats.push('progress');
-      }
-      if (lower.includes('bagger') || lower.includes('defekt') || lower.includes('stillstand') || lower.includes('fehlt') || lower.includes('schacht')) {
-        if (!updated.hindrance.includes('Stillstand Bagger / Fehlende TGA-Freigabe Schacht 3')) {
-          updated.hindrance = [...updated.hindrance, 'Stillstand Bagger / Fehlende TGA-Freigabe Schacht 3'];
-        }
-        detectedAudioCats.push('hindrance');
-      }
-      if (lower.includes('mehrkosten') || lower.includes('nachtrag') || lower.includes('altfundament') || lower.includes('meißel')) {
-        if (!updated.cost.includes('Mehraufwand & Gerätestillstand Baugrund')) {
-          updated.cost = [...updated.cost, 'Mehraufwand & Gerätestillstand Baugrund'];
-        }
-        detectedAudioCats.push('cost');
-      }
-      if (lower.includes('feuchtigkeit') || lower.includes('mangel') || lower.includes('riss') || lower.includes('regen')) {
-        if (!updated.defect.includes('Feuchtigkeitskontrolle im Treppenhaus erforderlich')) {
-          updated.defect = [...updated.defect, 'Feuchtigkeitskontrolle im Treppenhaus erforderlich'];
-        }
-        detectedAudioCats.push('defect');
-      }
-      if (lower.includes('angeliefert') || lower.includes('sattelzug') || lower.includes('stahl') || lower.includes('lieferschein')) {
-        if (!updated.delivery.includes('Lieferung 2x Sattelzug Bewehrungsstahl B500B erfasst')) {
-          updated.delivery = [...updated.delivery, 'Lieferung 2x Sattelzug Bewehrungsstahl B500B erfasst'];
-        }
-        detectedAudioCats.push('delivery');
-      }
-
-      if (detectedAudioCats.length > 0) {
-        setSelectedAudioCategories((prev) => Array.from(new Set([...prev, ...detectedAudioCats])));
-      }
-      setCategories(updated);
-      setAiClassifiedSuccess(true);
-      setTimeout(() => setAiClassifiedSuccess(false), 3000);
-    } finally {
-      setIsCapturing(false);
+      showClassificationFeedback(`✓ ${detectedKeys.length} Kategorie(n) erkannt`);
+      return;
     }
+
+    const base = getEffectiveCategories();
+    setCategories(mergeCategoryBullets(base, bullets));
+    setNewInputs(EMPTY_INPUTS);
+    if (textToParse === generalNotes) {
+      categorizedNotesRef.current = clean;
+    }
+    setActionErrorMsg(null);
+    setLastDraft(null);
+    showClassificationFeedback(`✓ ${count} Stichpunkt${count === 1 ? '' : 'e'} zugeordnet`);
   };
 
-  const buildCapturePayload = () => {
+  // Alle vorhandenen Stichpunkte (+ offene Eingaben + ggf. neues Notizfeld) neu sortieren.
+  const handleReclassify = () => {
+    const effective = getEffectiveCategories();
+    const existingAll = CATEGORY_KEYS.flatMap((k) => effective[k]);
+    const notesTrimmed = generalNotes.trim();
+    const includeNotes = notesTrimmed && categorizedNotesRef.current !== notesTrimmed;
+    const combinedInput = [...existingAll, ...(includeNotes ? [notesTrimmed] : [])].join('\n');
+
+    if (!combinedInput.trim()) {
+      showClassificationFeedback('Noch keine Stichpunkte oder Notizen zum Zuordnen vorhanden.');
+      return;
+    }
+
+    const { bullets, count } = categorizeTextIntoBullets(combinedInput);
+    setCategories(bullets);
+    setNewInputs(EMPTY_INPUTS);
+    if (notesTrimmed) {
+      categorizedNotesRef.current = notesTrimmed;
+    }
+    setActionErrorMsg(null);
+    setLastDraft(null);
+    showClassificationFeedback(`✓ ${count} Stichpunkt${count === 1 ? '' : 'e'} neu zugeordnet`);
+  };
+
+  const buildCapturePayload = (effectiveCats: CategoryBullets) => {
     const selectedLabels = AUDIO_CATEGORY_OPTIONS
       .filter((opt) => selectedAudioCategories.includes(opt.key))
       .map((opt) => t(opt.labelKey));
 
     if (isVoiceMode) {
-      const catSummary = selectedLabels.length > 0 ? selectedLabels.join(', ') : 'Keine Kategorie gewählt';
+      const catSummary = selectedLabels.length > 0 ? selectedLabels.join(', ') : '';
       const transcriptText = audioTranscript.trim();
-      const combinedText = [transcriptText, selectedLabels.length > 0 ? `Kategorien: ${catSummary}` : '']
+      const combinedText = [transcriptText, catSummary ? `Kategorien: ${catSummary}` : '']
         .filter(Boolean)
         .join('\n');
 
@@ -387,46 +648,74 @@ export const VoiceOrText: React.FC<VoiceOrTextProps> = ({ mode = 'voice' }) => {
 
       return {
         modeLabel: 'Spracherfassung',
-        titleSnippet: (transcriptText || catSummary).slice(0, 35),
-        hasIncident: selectedAudioCategories.includes('hindrance') || selectedAudioCategories.includes('defect'),
-        combinedText: combinedText || 'Sprachaufnahme erfasst',
+        titleSnippet: (transcriptText || catSummary || 'Sprachaufnahme').slice(0, 35),
+        hasIncident:
+          selectedAudioCategories.includes('hindrance') ||
+          selectedAudioCategories.includes('cost') ||
+          selectedAudioCategories.includes('defect'),
+        hasContent: Boolean(transcriptText || selectedLabels.length > 0),
+        reportFreeText: combinedText,
+        reportCategories: undefined as CategoryBullets | undefined,
+        combinedText,
         keywords: transcriptText || catSummary,
         preferredType,
         selectedLabels
       };
     }
 
+    const notesTrimmed = generalNotes.trim();
+    const hasBullets = hasAnyCategoryBullets(effectiveCats);
+    const notesAlreadyCategorized = Boolean(
+      notesTrimmed && hasBullets && categorizedNotesRef.current === notesTrimmed
+    );
+    const reportFreeText = notesAlreadyCategorized ? '' : notesTrimmed;
+
     const combinedText = [
-      generalNotes.trim(),
-      categories.progress.length ? `Baufortschritt: ${categories.progress.join('; ')}` : '',
-      categories.hindrance.length ? `Behinderungen: ${categories.hindrance.join('; ')}` : '',
-      categories.cost.length ? `Mehrkosten: ${categories.cost.join('; ')}` : '',
-      categories.defect.length ? `Mängel: ${categories.defect.join('; ')}` : '',
-      categories.delivery.length ? `Lieferungen: ${categories.delivery.join('; ')}` : ''
+      reportFreeText,
+      effectiveCats.progress.length ? `Baufortschritt: ${effectiveCats.progress.join('; ')}` : '',
+      effectiveCats.hindrance.length ? `Behinderungen: ${effectiveCats.hindrance.join('; ')}` : '',
+      effectiveCats.cost.length ? `Mehrkosten: ${effectiveCats.cost.join('; ')}` : '',
+      effectiveCats.defect.length ? `Mängel: ${effectiveCats.defect.join('; ')}` : '',
+      effectiveCats.delivery.length ? `Lieferungen: ${effectiveCats.delivery.join('; ')}` : ''
     ]
       .filter(Boolean)
       .join('\n');
 
     const preferredType: NoticeType =
-      categories.hindrance.length > 0
+      effectiveCats.hindrance.length > 0
         ? 'delay'
-        : categories.cost.length > 0
+        : effectiveCats.cost.length > 0
           ? 'cost'
-          : categories.defect.length > 0
+          : effectiveCats.defect.length > 0
             ? 'defect'
             : 'delay';
 
     const keywords =
       preferredType === 'cost'
-        ? categories.cost.join('. ') || generalNotes.trim()
+        ? effectiveCats.cost.join('. ') || notesTrimmed
         : preferredType === 'defect'
-          ? categories.defect.join('. ') || generalNotes.trim()
-          : categories.hindrance.join('. ') || generalNotes.trim();
+          ? effectiveCats.defect.join('. ') || notesTrimmed
+          : effectiveCats.hindrance.join('. ') || notesTrimmed || combinedText;
+
+    const firstSnippet =
+      notesTrimmed ||
+      effectiveCats.progress[0] ||
+      effectiveCats.hindrance[0] ||
+      effectiveCats.cost[0] ||
+      effectiveCats.defect[0] ||
+      effectiveCats.delivery[0] ||
+      'Schreiberfassung';
 
     return {
       modeLabel: 'Schreiberfassung',
-      titleSnippet: generalNotes.slice(0, 35),
-      hasIncident: categories.hindrance.length > 0,
+      titleSnippet: firstSnippet.slice(0, 35),
+      hasIncident:
+        effectiveCats.hindrance.length > 0 ||
+        effectiveCats.cost.length > 0 ||
+        effectiveCats.defect.length > 0,
+      hasContent: Boolean(notesTrimmed || hasBullets),
+      reportFreeText,
+      reportCategories: hasBullets ? effectiveCats : undefined,
       combinedText,
       keywords,
       preferredType,
@@ -434,10 +723,10 @@ export const VoiceOrText: React.FC<VoiceOrTextProps> = ({ mode = 'voice' }) => {
     };
   };
 
-  // Save current capture to Project Diary & Backend DB
-  const handleSaveToDiary = async (showToast = true) => {
-    const today = new Date().toLocaleDateString('de-DE');
-    const payload = buildCapturePayload();
+  // Save current capture to Project Diary & Backend DB (Fallback wenn /fill nicht erreichbar)
+  const handleSaveToDiary = async (showToast = true, effectiveCats: CategoryBullets = getEffectiveCategories()) => {
+    const today = isoToDe(todayIso());
+    const payload = buildCapturePayload(effectiveCats);
     const content = isVoiceMode
       ? `${payload.modeLabel} — ${today}
 Bauprojekt: ${activeProject.name} (${activeProject.number})
@@ -449,18 +738,14 @@ ${audioTranscript || 'Audio-Aufnahme ohne Transkript'}`.trim()
       : `${payload.modeLabel} — ${today}
 Bauprojekt: ${activeProject.name} (${activeProject.number})
 Erfasser: ${userName}
-
-Allgemeine Notizen:
-${generalNotes}
-
+${generalNotes.trim() ? `\nAllgemeine Notizen:\n${generalNotes.trim()}\n` : ''}
 Kategorisierte Stichpunkte:
-- Baufortschritt: ${categories.progress.join('; ') || 'Keine Angaben'}
-- Behinderungen (§ 6 VOB/B): ${categories.hindrance.join('; ') || 'Keine'}
-- Mehrkosten & Nachträge (§ 2 VOB/B): ${categories.cost.join('; ') || 'Keine'}
-- Mängel / Qualität: ${categories.defect.join('; ') || 'Keine'}
-- Lieferungen & Material: ${categories.delivery.join('; ') || 'Keine'}`.trim();
+- Baufortschritt: ${effectiveCats.progress.join('; ') || 'Keine Angaben'}
+- Behinderungen (§ 6 VOB/B): ${effectiveCats.hindrance.join('; ') || 'Keine'}
+- Mehrkosten & Nachträge (§ 2 VOB/B): ${effectiveCats.cost.join('; ') || 'Keine'}
+- Mängel / Qualität: ${effectiveCats.defect.join('; ') || 'Keine'}
+- Lieferungen & Material: ${effectiveCats.delivery.join('; ') || 'Keine'}`.trim();
 
-    // Zweimal „Speichern“ ohne Änderung → kein zweiter identischer Eintrag
     if (lastSavedContentRef.current === content) {
       if (showToast) {
         setSaveSuccessMsg(true);
@@ -469,7 +754,12 @@ Kategorisierte Stichpunkte:
       return;
     }
 
-    // Tagebucheintrag im Backend; nur wenn das scheitert, lokal sichern (vorher immer doppelt gespeichert)
+    const hindranceLines = [
+      ...effectiveCats.hindrance.map((s) => `Behinderung: ${s}`),
+      ...effectiveCats.cost.map((s) => `Mehrkosten: ${s}`),
+      ...effectiveCats.defect.map((s) => `Mangel: ${s}`)
+    ].join('\n');
+
     try {
       await api.createSiteNote({
         project_id: Number(activeProject.id),
@@ -487,9 +777,9 @@ Kategorisierte Stichpunkte:
         title: `${payload.modeLabel}: ${payload.titleSnippet}...`,
         date: today,
         authorOrSender: userName,
-        content,
-        trades: categories.progress.slice(0, 3),
-        hindrance: categories.hindrance.join(', ')
+        content: payload.combinedText || content,
+        trades: effectiveCats.progress.slice(0, 3),
+        hindrance: hindranceLines || undefined
       });
     }
 
@@ -501,22 +791,51 @@ Kategorisierte Stichpunkte:
 
   const handleExecuteActions = async () => {
     if (!targetDailyReport && !targetLetterDraft) return;
+    setActionErrorMsg(null);
+
+    // Offene Texteingaben in den Kategorien automatisch übernehmen, damit nichts verloren geht
+    const effectiveCats = isVoiceMode ? categories : getEffectiveCategories();
+    if (!isVoiceMode && CATEGORY_KEYS.some((k) => newInputs[k]?.trim())) {
+      setCategories(effectiveCats);
+      setNewInputs(EMPTY_INPUTS);
+    }
+
+    const payload = buildCapturePayload(effectiveCats);
+    if (!payload.hasContent) {
+      setActionErrorMsg(
+        isVoiceMode
+          ? 'Bitte zuerst eine Sprachnotiz aufnehmen oder mindestens eine Kategorie auswählen.'
+          : 'Bitte mindestens einen Stichpunkt oder eine Notiz eingeben.'
+      );
+      return;
+    }
+
     setIsExecutingActions(true);
-    const payload = buildCapturePayload();
     const reportDate = todayIso();
 
     try {
       if (targetDailyReport) {
-        // /fill trägt in den Bericht ein UND legt selbst den Tagebucheintrag an →
-        // eigene Notiz nur, wenn das Backend nicht erreichbar ist (dann ggf. lokal).
+        // /fill trägt Freitext + kategorisierte Stichpunkte direkt in die passenden Berichtsfelder ein
+        // und legt selbst den Tagebucheintrag an → lokale Sicherung nur bei Backend-Ausfall.
         try {
-          await api.fillReport(reportDate, {
-            text: payload.combinedText,
-            project_id: Number(activeProject.id)
+          const filled = await api.fillReport(reportDate, {
+            text: payload.reportFreeText,
+            project_id: Number(activeProject.id),
+            categories: payload.reportCategories
           });
+          if (!isVoiceMode) {
+            const serverCats = normalizeCategories(filled.categories);
+            syncedCategoriesRef.current = serverCats;
+            setCategories(serverCats);
+            writeLocalBullets(activeProject.id, reportDate, serverCats);
+          }
         } catch (err) {
           console.warn('Backend fillReport Fallback:', err);
-          await handleSaveToDiary(false);
+          if (!isVoiceMode) {
+            syncedCategoriesRef.current = effectiveCats;
+            writeLocalBullets(activeProject.id, reportDate, effectiveCats);
+          }
+          await handleSaveToDiary(false, effectiveCats);
         }
       }
 
@@ -532,6 +851,9 @@ Kategorisierte Stichpunkte:
             force_type: payload.preferredType
           });
           setLastDraft(draft);
+          if (draft.questions && draft.questions.length > 0) {
+            setAiQuestions(draft.questions);
+          }
           if (draft.notice_id) {
             navigate('/drafts', { state: { noticeId: draft.notice_id } });
             return;
@@ -665,9 +987,15 @@ Kategorisierte Stichpunkte:
         </div>
       )}
 
-      {aiClassifiedSuccess && (
-        <div style={{ fontSize: '12px', color: '#16a34a', fontWeight: 600 }}>
-          ✓ Sachverhalt zugeordnet
+      {classificationFeedback && (
+        <div
+          style={{
+            fontSize: '12px',
+            color: classificationFeedback.startsWith('✓') ? '#16a34a' : '#b45309',
+            fontWeight: 600
+          }}
+        >
+          {classificationFeedback}
         </div>
       )}
 
@@ -738,11 +1066,11 @@ Kategorisierte Stichpunkte:
           className="btn btn-secondary"
           style={{ fontSize: '11px', padding: '4px 8px', color: 'var(--color-primary)' }}
           onClick={() => handleAutoCategorize()}
-          disabled={isCapturing}
+          disabled={!generalNotes.trim()}
           title={t('cap_btn_auto_categorize')}
         >
           <Tags size={12} />
-          <span>{isCapturing ? 'Wird zugeordnet…' : t('cap_btn_auto_categorize')}</span>
+          <span>{t('cap_btn_auto_categorize')}</span>
         </button>
       </div>
 
@@ -751,13 +1079,37 @@ Kategorisierte Stichpunkte:
         rows={5}
         placeholder="z. B. 'Betonprüfer war um 14 Uhr da, Schacht 3 blockiert, 24t Stahl geliefert, Elektriker braucht Freigabe...'"
         value={generalNotes}
-        onChange={(e) => setGeneralNotes(e.target.value)}
+        onChange={(e) => {
+          setGeneralNotes(e.target.value);
+          setActionErrorMsg(null);
+          setLastDraft(null);
+        }}
       />
 
       {renderAiFeedback()}
 
       {renderCustomTemplates()}
     </div>
+  );
+
+  const renderBulletChip = (
+    catKey: keyof CategoryBullets,
+    bullet: string,
+    idx: number,
+    chipStyle?: React.CSSProperties
+  ) => (
+    <span key={`${catKey}-${idx}`} className="bullet-chip" style={chipStyle}>
+      <span>{bullet}</span>
+      <button
+        type="button"
+        className="bullet-chip-remove"
+        onClick={() => handleRemoveBullet(catKey, idx)}
+        aria-label="Stichpunkt entfernen"
+        title="Stichpunkt entfernen"
+      >
+        <X size={12} />
+      </button>
+    </span>
   );
 
   return (
@@ -801,6 +1153,7 @@ Kategorisierte Stichpunkte:
             ✓ {activeProject.name}: {t('btn_save')}
           </span>
           <button
+            type="button"
             className="btn btn-secondary"
             style={{ fontSize: '11px', padding: '3px 8px' }}
             onClick={() => setSaveSuccessMsg(false)}
@@ -850,10 +1203,8 @@ Kategorisierte Stichpunkte:
                 <div style={{ fontSize: '15px', fontWeight: 700, color: isRecording ? '#dc2626' : 'var(--color-slate-900)' }}>
                   {isRecording ? `${t('cap_mic_active')} (${formatSeconds(recordingSeconds)})` : t('cap_mic_prompt')}
                 </div>
-                <div style={{fontSize: '12px', color: 'var(--text-muted)', marginTop: '4px' }}>
-                  {isRecording
-                    ? t('cap_playback_running')
-                    : t('cap_mic_desc')}
+                <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '4px' }}>
+                  {isRecording ? t('cap_playback_running') : t('cap_mic_desc')}
                 </div>
               </div>
 
@@ -953,242 +1304,275 @@ Kategorisierte Stichpunkte:
         <div className="capture-stack">
           {/* 1. Kategorisierte Stichpunkte (oben) */}
           <div className="categories-container">
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border-light)', paddingBottom: '14px' }}>
-            <div>
-              <h2 style={{ margin: 0, fontSize: '16px', fontWeight: 700, color: 'var(--color-slate-900)' }}>
-                {t('cap_categories_title')}
-              </h2>
-            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border-light)', paddingBottom: '14px', gap: '10px', flexWrap: 'wrap' }}>
+              <div>
+                <h2 style={{ margin: 0, fontSize: '16px', fontWeight: 700, color: 'var(--color-slate-900)' }}>
+                  {t('cap_categories_title')}
+                </h2>
+              </div>
 
-            <button
-              type="button"
-              className="btn btn-secondary"
-              style={{ fontSize: '11px', padding: '4px 8px' }}
-              onClick={() => handleAutoCategorize()}
-            >
-              <Tags size={12} />
-              <span>{t('cap_btn_reclassify')}</span>
-            </button>
-          </div>
-
-          {/* Category 1: Baufortschritt & Gewerke */}
-          <div className="category-card accent-progress">
-            <div className="category-card-header">
-              <span className="category-card-title">
-                <HardHat size={16} color="#2563eb" />
-                <span>{t('cap_cat_progress')} ({categories.progress.length})</span>
-              </span>
-            </div>
-
-            <div className="bullet-chips">
-              {categories.progress.map((bullet, idx) => (
-                <span key={idx} className="bullet-chip">
-                  <span>{bullet}</span>
-                  <X
-                    size={12}
-                    className="bullet-chip-remove"
-                    onClick={() => handleRemoveBullet('progress', idx)}
-                  />
-                </span>
-              ))}
-            </div>
-
-            <div className="bullet-input-row">
-              <input
-                type="text"
-                className="bullet-input"
-                placeholder="Stichpunkt hinzufügen (z. B. 'Schalung 1. OG fertig')..."
-                value={newInputs.progress}
-                onChange={(e) => setNewInputs({ ...newInputs, progress: e.target.value })}
-                onKeyDown={(e) => e.key === 'Enter' && handleAddBullet('progress')}
-              />
               <button
                 type="button"
                 className="btn btn-secondary"
-                style={{ padding: '4px 8px', fontSize: '12px' }}
-                onClick={() => handleAddBullet('progress')}
+                style={{ fontSize: '11px', padding: '4px 8px' }}
+                onClick={handleReclassify}
               >
-                <Plus size={14} />
+                <Tags size={12} />
+                <span>{t('cap_btn_reclassify')}</span>
               </button>
             </div>
-          </div>
 
-          {/* Category 2: Behinderungen & Störungen (§ 6 VOB/B) */}
-          <div className="category-card accent-hindrance">
-            <div className="category-card-header">
-              <span className="category-card-title">
-                <AlertTriangle size={16} color="#ef4444" />
-                <span>{t('cap_cat_hindrance')} ({categories.hindrance.length})</span>
-              </span>
-              {categories.hindrance.length > 0 && (
+            {classificationFeedback && (
+              <div
+                style={{
+                  fontSize: '12px',
+                  color: classificationFeedback.startsWith('✓') ? '#16a34a' : '#b45309',
+                  fontWeight: 600
+                }}
+              >
+                {classificationFeedback}
+              </div>
+            )}
+
+            {/* Category 1: Baufortschritt & Gewerke */}
+            <div className="category-card accent-progress">
+              <div className="category-card-header">
+                <span className="category-card-title">
+                  <HardHat size={16} color="#2563eb" />
+                  <span>{t('cap_cat_progress')} ({categories.progress.length})</span>
+                </span>
+              </div>
+
+              {categories.progress.length > 0 && (
+                <div className="bullet-chips">
+                  {categories.progress.map((bullet, idx) => renderBulletChip('progress', bullet, idx))}
+                </div>
+              )}
+
+              <div className="bullet-input-row">
+                <input
+                  type="text"
+                  className="bullet-input"
+                  placeholder="Stichpunkt hinzufügen (z. B. 'Schalung 1. OG fertig')..."
+                  value={newInputs.progress}
+                  onChange={(e) => {
+                    setNewInputs((prev) => ({ ...prev, progress: e.target.value }));
+                    setActionErrorMsg(null);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      handleAddBullet('progress');
+                    }
+                  }}
+                />
                 <button
                   type="button"
-                  style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '11px', color: '#b91c1c', fontWeight: 600 }}
-                  onClick={() => navigate('/drafts', { state: { type: 'delay', keywords: categories.hindrance.join('. ') } })}
+                  className="btn btn-secondary"
+                  style={{ padding: '4px 8px', fontSize: '12px' }}
+                  onClick={() => handleAddBullet('progress')}
+                  title="Stichpunkt hinzufügen"
+                  aria-label="Stichpunkt zu Baufortschritt hinzufügen"
                 >
-                  → {t('btn_generate')}
+                  <Plus size={14} />
                 </button>
+              </div>
+            </div>
+
+            {/* Category 2: Behinderungen & Störungen (§ 6 VOB/B) */}
+            <div className="category-card accent-hindrance">
+              <div className="category-card-header">
+                <span className="category-card-title">
+                  <AlertTriangle size={16} color="#ef4444" />
+                  <span>{t('cap_cat_hindrance')} ({categories.hindrance.length})</span>
+                </span>
+                {categories.hindrance.length > 0 && (
+                  <button
+                    type="button"
+                    style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '11px', color: '#b91c1c', fontWeight: 600 }}
+                    onClick={() => navigate('/drafts', { state: { type: 'delay', keywords: categories.hindrance.join('. ') } })}
+                  >
+                    → {t('btn_generate')}
+                  </button>
+                )}
+              </div>
+
+              {categories.hindrance.length > 0 && (
+                <div className="bullet-chips">
+                  {categories.hindrance.map((bullet, idx) =>
+                    renderBulletChip('hindrance', bullet, idx, { backgroundColor: '#fef2f2', borderColor: '#fca5a5' })
+                  )}
+                </div>
               )}
+
+              <div className="bullet-input-row">
+                <input
+                  type="text"
+                  className="bullet-input"
+                  placeholder="Stichpunkt..."
+                  value={newInputs.hindrance}
+                  onChange={(e) => {
+                    setNewInputs((prev) => ({ ...prev, hindrance: e.target.value }));
+                    setActionErrorMsg(null);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      handleAddBullet('hindrance');
+                    }
+                  }}
+                />
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  style={{ padding: '4px 8px', fontSize: '12px' }}
+                  onClick={() => handleAddBullet('hindrance')}
+                  title="Stichpunkt hinzufügen"
+                  aria-label="Stichpunkt zu Behinderungen hinzufügen"
+                >
+                  <Plus size={14} />
+                </button>
+              </div>
             </div>
 
-            <div className="bullet-chips">
-              {categories.hindrance.map((bullet, idx) => (
-                <span key={idx} className="bullet-chip" style={{ backgroundColor: '#fef2f2', borderColor: '#fca5a5' }}>
-                  <span>{bullet}</span>
-                  <X
-                    size={12}
-                    className="bullet-chip-remove"
-                    onClick={() => handleRemoveBullet('hindrance', idx)}
-                  />
+            {/* Category 3: Mehrkosten & Nachträge (§ 2 VOB/B) */}
+            <div className="category-card accent-cost">
+              <div className="category-card-header">
+                <span className="category-card-title">
+                  <DollarSign size={16} color="#d97706" />
+                  <span>{t('cap_cat_cost')} ({categories.cost.length})</span>
                 </span>
-              ))}
+              </div>
+
+              {categories.cost.length > 0 && (
+                <div className="bullet-chips">
+                  {categories.cost.map((bullet, idx) =>
+                    renderBulletChip('cost', bullet, idx, { backgroundColor: '#fffbeb', borderColor: '#fde68a' })
+                  )}
+                </div>
+              )}
+
+              <div className="bullet-input-row">
+                <input
+                  type="text"
+                  className="bullet-input"
+                  placeholder="Stichpunkt..."
+                  value={newInputs.cost}
+                  onChange={(e) => {
+                    setNewInputs((prev) => ({ ...prev, cost: e.target.value }));
+                    setActionErrorMsg(null);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      handleAddBullet('cost');
+                    }
+                  }}
+                />
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  style={{ padding: '4px 8px', fontSize: '12px' }}
+                  onClick={() => handleAddBullet('cost')}
+                  title="Stichpunkt hinzufügen"
+                  aria-label="Stichpunkt zu Mehrkosten hinzufügen"
+                >
+                  <Plus size={14} />
+                </button>
+              </div>
             </div>
 
-            <div className="bullet-input-row">
-              <input
-                type="text"
-                className="bullet-input"
-                placeholder="Stichpunkt..."
-                value={newInputs.hindrance}
-                onChange={(e) => setNewInputs({ ...newInputs, hindrance: e.target.value })}
-                onKeyDown={(e) => e.key === 'Enter' && handleAddBullet('hindrance')}
-              />
-              <button
-                type="button"
-                className="btn btn-secondary"
-                style={{ padding: '4px 8px', fontSize: '12px' }}
-                onClick={() => handleAddBullet('hindrance')}
-              >
-                <Plus size={14} />
-              </button>
-            </div>
-          </div>
-
-          {/* Category 3: Mehrkosten & Nachträge (§ 2 VOB/B) */}
-          <div className="category-card accent-cost">
-            <div className="category-card-header">
-              <span className="category-card-title">
-                <DollarSign size={16} color="#d97706" />
-                <span>{t('cap_cat_cost')} ({categories.cost.length})</span>
-              </span>
-            </div>
-
-            <div className="bullet-chips">
-              {categories.cost.map((bullet, idx) => (
-                <span key={idx} className="bullet-chip" style={{ backgroundColor: '#fffbeb', borderColor: '#fde68a' }}>
-                  <span>{bullet}</span>
-                  <X
-                    size={12}
-                    className="bullet-chip-remove"
-                    onClick={() => handleRemoveBullet('cost', idx)}
-                  />
+            {/* Category 4: Mängel & Qualität (§ 4 / § 13 VOB/B) */}
+            <div className="category-card accent-defect">
+              <div className="category-card-header">
+                <span className="category-card-title">
+                  <AlertTriangle size={16} color="#7c3aed" />
+                  <span>{t('cap_cat_defect')} ({categories.defect.length})</span>
                 </span>
-              ))}
+              </div>
+
+              {categories.defect.length > 0 && (
+                <div className="bullet-chips">
+                  {categories.defect.map((bullet, idx) =>
+                    renderBulletChip('defect', bullet, idx, { backgroundColor: '#faf5ff', borderColor: '#e9d5ff' })
+                  )}
+                </div>
+              )}
+
+              <div className="bullet-input-row">
+                <input
+                  type="text"
+                  className="bullet-input"
+                  placeholder="Stichpunkt..."
+                  value={newInputs.defect}
+                  onChange={(e) => {
+                    setNewInputs((prev) => ({ ...prev, defect: e.target.value }));
+                    setActionErrorMsg(null);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      handleAddBullet('defect');
+                    }
+                  }}
+                />
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  style={{ padding: '4px 8px', fontSize: '12px' }}
+                  onClick={() => handleAddBullet('defect')}
+                  title="Stichpunkt hinzufügen"
+                  aria-label="Stichpunkt zu Mängeln hinzufügen"
+                >
+                  <Plus size={14} />
+                </button>
+              </div>
             </div>
 
-            <div className="bullet-input-row">
-              <input
-                type="text"
-                className="bullet-input"
-                placeholder="Stichpunkt..."
-                value={newInputs.cost}
-                onChange={(e) => setNewInputs({ ...newInputs, cost: e.target.value })}
-                onKeyDown={(e) => e.key === 'Enter' && handleAddBullet('cost')}
-              />
-              <button
-                type="button"
-                className="btn btn-secondary"
-                style={{ padding: '4px 8px', fontSize: '12px' }}
-                onClick={() => handleAddBullet('cost')}
-              >
-                <Plus size={14} />
-              </button>
-            </div>
-          </div>
-
-          {/* Category 4: Mängel & Qualität (§ 4 / § 13 VOB/B) */}
-          <div className="category-card accent-defect">
-            <div className="category-card-header">
-              <span className="category-card-title">
-                <AlertTriangle size={16} color="#7c3aed" />
-                <span>{t('cap_cat_defect')} ({categories.defect.length})</span>
-              </span>
-            </div>
-
-            <div className="bullet-chips">
-              {categories.defect.map((bullet, idx) => (
-                <span key={idx} className="bullet-chip" style={{ backgroundColor: '#faf5ff', borderColor: '#e9d5ff' }}>
-                  <span>{bullet}</span>
-                  <X
-                    size={12}
-                    className="bullet-chip-remove"
-                    onClick={() => handleRemoveBullet('defect', idx)}
-                  />
+            {/* Category 5: Material, Lieferungen & Logistik */}
+            <div className="category-card accent-delivery">
+              <div className="category-card-header">
+                <span className="category-card-title">
+                  <Package size={16} color="#059669" />
+                  <span>{t('cap_cat_delivery')} ({categories.delivery.length})</span>
                 </span>
-              ))}
-            </div>
+              </div>
 
-            <div className="bullet-input-row">
-              <input
-                type="text"
-                className="bullet-input"
-                placeholder="Stichpunkt..."
-                value={newInputs.defect}
-                onChange={(e) => setNewInputs({ ...newInputs, defect: e.target.value })}
-                onKeyDown={(e) => e.key === 'Enter' && handleAddBullet('defect')}
-              />
-              <button
-                type="button"
-                className="btn btn-secondary"
-                style={{ padding: '4px 8px', fontSize: '12px' }}
-                onClick={() => handleAddBullet('defect')}
-              >
-                <Plus size={14} />
-              </button>
-            </div>
-          </div>
+              {categories.delivery.length > 0 && (
+                <div className="bullet-chips">
+                  {categories.delivery.map((bullet, idx) => renderBulletChip('delivery', bullet, idx))}
+                </div>
+              )}
 
-          {/* Category 5: Material, Lieferungen & Logistik */}
-          <div className="category-card accent-delivery">
-            <div className="category-card-header">
-              <span className="category-card-title">
-                <Package size={16} color="#059669" />
-                <span>{t('cap_cat_delivery')} ({categories.delivery.length})</span>
-              </span>
+              <div className="bullet-input-row">
+                <input
+                  type="text"
+                  className="bullet-input"
+                  placeholder="Stichpunkt..."
+                  value={newInputs.delivery}
+                  onChange={(e) => {
+                    setNewInputs((prev) => ({ ...prev, delivery: e.target.value }));
+                    setActionErrorMsg(null);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      handleAddBullet('delivery');
+                    }
+                  }}
+                />
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  style={{ padding: '4px 8px', fontSize: '12px' }}
+                  onClick={() => handleAddBullet('delivery')}
+                  title="Stichpunkt hinzufügen"
+                  aria-label="Stichpunkt zu Lieferungen hinzufügen"
+                >
+                  <Plus size={14} />
+                </button>
+              </div>
             </div>
-
-            <div className="bullet-chips">
-              {categories.delivery.map((bullet, idx) => (
-                <span key={idx} className="bullet-chip">
-                  <span>{bullet}</span>
-                  <X
-                    size={12}
-                    className="bullet-chip-remove"
-                    onClick={() => handleRemoveBullet('delivery', idx)}
-                  />
-                </span>
-              ))}
-            </div>
-
-            <div className="bullet-input-row">
-              <input
-                type="text"
-                className="bullet-input"
-                placeholder="Stichpunkt..."
-                value={newInputs.delivery}
-                onChange={(e) => setNewInputs({ ...newInputs, delivery: e.target.value })}
-                onKeyDown={(e) => e.key === 'Enter' && handleAddBullet('delivery')}
-              />
-              <button
-                type="button"
-                className="btn btn-secondary"
-                style={{ padding: '4px 8px', fontSize: '12px' }}
-                onClick={() => handleAddBullet('delivery')}
-              >
-                <Plus size={14} />
-              </button>
-            </div>
-          </div>
           </div>
 
           {/* 2. Allgemeines Notizfeld (unten) */}
@@ -1202,6 +1586,11 @@ Kategorisierte Stichpunkte:
           <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--color-slate-800)' }}>
             {t('cap_action_bar_title')}
           </span>
+          {actionErrorMsg && (
+            <div style={{ fontSize: '12px', color: '#b91c1c', marginTop: '4px', fontWeight: 500 }}>
+              {actionErrorMsg}
+            </div>
+          )}
         </div>
 
         <div className="action-toggle-group">

@@ -20,7 +20,9 @@ import {
   Camera,
   ChevronDown,
   Eye,
-  PenLine
+  PenLine,
+  AlertTriangle,
+  Package
 } from 'lucide-react';
 import { isNotImplemented } from '../components/ComingSoon';
 import { addDays, deToIso, isoToDe, toIsoDate as dateToIso, todayIso } from '../utils/dates';
@@ -53,6 +55,8 @@ interface CommittedReportSnapshot {
   siteManager: string;
   trades: string[];
   workCompleted: string;
+  deviationsIncidents: string;
+  deliveries: string;
   attendance: AttendanceItem[];
   isFinalized: boolean;
 }
@@ -92,6 +96,8 @@ export const DailyReports: React.FC = () => {
   const [trades, setTrades] = useState<string[]>([]);
   const [newTradeInput, setNewTradeInput] = useState('');
   const [progressText, setProgressText] = useState('');
+  const [hindranceText, setHindranceText] = useState('');
+  const [deliveriesText, setDeliveriesText] = useState('');
 
   const [savedSuccessMsg, setSavedSuccessMsg] = useState(false);
 
@@ -120,6 +126,8 @@ export const DailyReports: React.FC = () => {
     siteManager: '',
     trades: [],
     workCompleted: '',
+    deviationsIncidents: '',
+    deliveries: '',
     attendance: [],
     isFinalized: false
   });
@@ -301,6 +309,8 @@ export const DailyReports: React.FC = () => {
           const hasSaved = Boolean(
             report.id != null ||
               report.work_completed ||
+              report.deviations_incidents ||
+              report.deliveries ||
               (report.trades && report.trades.length > 0) ||
               (report.attendance && report.attendance.length > 0)
           );
@@ -308,6 +318,8 @@ export const DailyReports: React.FC = () => {
           const nextWorkforce = report.workforce_count ?? 0;
           const nextTrades = report.trades ?? [];
           const nextWorkCompleted = report.work_completed ?? '';
+          const nextIncidents = report.deviations_incidents ?? '';
+          const nextDeliveries = report.deliveries ?? '';
           const nextTemp = report.temperature_c != null ? String(report.temperature_c) : '';
           const nextManager = report.site_manager ?? '';
           const nextAttendance = report.attendance ?? [];
@@ -322,6 +334,8 @@ export const DailyReports: React.FC = () => {
           setWorkforceCount(nextWorkforce);
           setTrades(nextTrades);
           setProgressText(nextWorkCompleted);
+          setHindranceText(nextIncidents);
+          setDeliveriesText(nextDeliveries);
           setTemperatureC(nextTemp);
           setSiteManager(nextManager);
           setAttendance(nextAttendance);
@@ -338,6 +352,8 @@ export const DailyReports: React.FC = () => {
             siteManager: nextManager,
             trades: nextTrades,
             workCompleted: nextWorkCompleted,
+            deviationsIncidents: nextIncidents,
+            deliveries: nextDeliveries,
             attendance: nextAttendance,
             isFinalized: nextFinalized
           });
@@ -351,10 +367,13 @@ export const DailyReports: React.FC = () => {
           const nextWorkforce = localMatch.workforceCount ?? 0;
           const nextTrades = localMatch.trades ?? [];
           const nextWorkCompleted = localMatch.content ?? '';
+          const nextIncidents = localMatch.hindrance ?? '';
           setWeather(nextWeather);
           setWorkforceCount(nextWorkforce);
           setTrades(nextTrades);
           setProgressText(nextWorkCompleted);
+          setHindranceText(nextIncidents);
+          setDeliveriesText('');
           setTemperatureC('');
           setSiteManager(localMatch.authorOrSender ?? '');
           setAttendance([]);
@@ -369,6 +388,8 @@ export const DailyReports: React.FC = () => {
             siteManager: localMatch.authorOrSender ?? '',
             trades: nextTrades,
             workCompleted: nextWorkCompleted,
+            deviationsIncidents: nextIncidents,
+            deliveries: '',
             attendance: [],
             isFinalized: false
           });
@@ -377,6 +398,8 @@ export const DailyReports: React.FC = () => {
           setWorkforceCount(0);
           setTrades([]);
           setProgressText('');
+          setHindranceText('');
+          setDeliveriesText('');
           setTemperatureC('');
           setSiteManager('');
           setAttendance([]);
@@ -391,6 +414,8 @@ export const DailyReports: React.FC = () => {
             siteManager: '',
             trades: [],
             workCompleted: '',
+            deviationsIncidents: '',
+            deliveries: '',
             attendance: [],
             isFinalized: false
           });
@@ -542,6 +567,8 @@ export const DailyReports: React.FC = () => {
         workforce_count: workforceCount,
         trades,
         work_completed: progressText,
+        deviations_incidents: hindranceText,
+        deliveries: deliveriesText,
         summary: `Bautagesbericht Nr. ${reportNumber} vom ${reportDate}`,
         status: isFinalized ? 'finalized' : 'draft',
         temperature_c: temperatureC.trim() === '' ? null : Number(temperatureC),
@@ -571,11 +598,14 @@ export const DailyReports: React.FC = () => {
         weather,
         workforceCount,
         trades,
+        hindrance: hindranceText,
         content: [
           `Bautagesbericht Nr. ${reportNumber} — Datum: ${reportDate}`,
           `Wetter: ${weather}`,
           `Personal: ${workforceCount} (${trades.join(', ')})`,
           `Tagesleistung: ${progressText}`,
+          hindranceText ? `Vorkommnisse: ${hindranceText}` : '',
+          deliveriesText ? `Lieferungen/Abnahmen: ${deliveriesText}` : '',
           referencedDoc ? `[Bezug auf: ${referencedDoc.title} (${referencedDoc.date})]` : ''
         ].filter(Boolean).join('\n')
       });
@@ -592,6 +622,8 @@ export const DailyReports: React.FC = () => {
       siteManager: siteManager.trim() || userName,
       trades: [...trades],
       workCompleted: progressText,
+      deviationsIncidents: hindranceText,
+      deliveries: deliveriesText,
       attendance: attendance
         .filter((a) => (a.company && a.company.trim()) || (a.trade && a.trade.trim()) || a.workers > 0)
         .map((a) => ({ ...a })),
@@ -936,6 +968,40 @@ export const DailyReports: React.FC = () => {
                       {committedReport.workCompleted.trim() || 'Keine Angaben zur Tagesleistung erfasst.'}
                     </div>
                   </div>
+
+                  {committedReport.deviationsIncidents.trim() && (
+                    <div className="report-view-section" style={{ backgroundColor: '#fffbeb', borderColor: '#fde68a' }}>
+                      <div className="report-view-section-title" style={{ color: '#92400e', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', flexWrap: 'wrap' }}>
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                          <AlertTriangle size={14} color="#b45309" />
+                          <span>{t('rep_form_hindrance')}</span>
+                        </span>
+                        <button
+                          type="button"
+                          className="history-btn-small warning-tint"
+                          onClick={() =>
+                            navigate('/drafts', {
+                              state: { type: 'delay', keywords: committedReport.deviationsIncidents.trim() }
+                            })
+                          }
+                        >
+                          <Mail size={12} />
+                          <span>{t('rep_btn_create_vob_from_hindrance')}</span>
+                        </button>
+                      </div>
+                      <div className="report-view-text">{committedReport.deviationsIncidents}</div>
+                    </div>
+                  )}
+
+                  {committedReport.deliveries.trim() && (
+                    <div className="report-view-section">
+                      <div className="report-view-section-title" style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                        <Package size={14} color="#059669" />
+                        <span>{t('rep_form_deliveries')}</span>
+                      </div>
+                      <div className="report-view-text">{committedReport.deliveries}</div>
+                    </div>
+                  )}
 
                   {photos.length > 0 && (
                     <div className="report-view-section">
@@ -1294,6 +1360,47 @@ export const DailyReports: React.FC = () => {
                 />
               </div>
 
+              {/* Deviations, Hindrances, Costs & Defects */}
+              <div className="hindrance-card">
+                <div className="hindrance-card-header">
+                  <AlertTriangle size={15} color="#b45309" />
+                  <span>{t('rep_form_hindrance')}</span>
+                </div>
+                <textarea
+                  className="form-textarea"
+                  style={{ backgroundColor: 'white', borderColor: '#fde68a' }}
+                  rows={3}
+                  value={hindranceText}
+                  onChange={(e) => setHindranceText(e.target.value)}
+                  placeholder="Behinderungen, Mehrkosten, Mängel oder sonstige Vorkommnisse..."
+                />
+                {hindranceText.trim() && (
+                  <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', flexWrap: 'wrap' }}>
+                    <button
+                      type="button"
+                      className="btn btn-primary"
+                      style={{ fontSize: '12px', padding: '7px 14px', backgroundColor: '#b45309' }}
+                      onClick={() => navigate('/drafts', { state: { type: 'delay', keywords: hindranceText.trim() } })}
+                    >
+                      <Mail size={14} />
+                      <span>{t('rep_btn_create_vob_from_hindrance')}</span>
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {/* Deliveries & Inspections */}
+              <div className="form-group">
+                <label className="form-label">{t('rep_form_deliveries')}</label>
+                <textarea
+                  className="form-textarea"
+                  rows={2}
+                  value={deliveriesText}
+                  onChange={(e) => setDeliveriesText(e.target.value)}
+                  placeholder="Lieferungen, Material, Prüfungen & Begehungen..."
+                />
+              </div>
+
               {/* Save & Action Footer */}
               <div className="editor-footer">
                 <button
@@ -1301,6 +1408,8 @@ export const DailyReports: React.FC = () => {
                   className="btn btn-secondary"
                   onClick={() => {
                     setProgressText('');
+                    setHindranceText('');
+                    setDeliveriesText('');
                     setReferencedDoc(null);
                   }}
                 >
