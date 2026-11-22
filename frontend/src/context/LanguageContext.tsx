@@ -1125,7 +1125,21 @@ export const TRANSLATIONS: Record<LanguageCode, Record<string, string>> = {
     cap_to_letter: 'In Brief umwandeln',
     cap_executing: 'Wird ausgeführt...',
     cap_to_both: 'In Bautagesbericht & Brief',
-    cap_bullet_short_ph: 'Stichpunkt...'
+    cap_bullet_short_ph: 'Stichpunkt...',
+    cap_bullet_removed_report: '✓ Stichpunkt auch aus dem heutigen Bautagesbericht entfernt',
+    cap_bullet_sync_failed: 'Stichpunkt konnte im Bautagesbericht nicht aktualisiert werden – bitte Backend prüfen.',
+    cap_enter_text_first: 'Bitte zuerst Text im Notizfeld eingeben.',
+    cap_cats_detected: '✓ {n} Kategorie(n) erkannt',
+    cap_bullets_assigned: '✓ {n} Stichpunkt(e) zugeordnet',
+    cap_nothing_to_assign: 'Noch keine Stichpunkte oder Notizen zum Zuordnen vorhanden.',
+    cap_bullets_reassigned: '✓ {n} Stichpunkt(e) neu zugeordnet',
+    cap_need_voice_or_cat: 'Bitte zuerst eine Sprachnotiz aufnehmen oder mindestens eine Kategorie auswählen.',
+    cap_need_bullet_or_note: 'Bitte mindestens einen Stichpunkt oder eine Notiz eingeben.',
+    cap_bullet_remove: 'Stichpunkt entfernen',
+    cap_bullet_add: 'Stichpunkt hinzufügen',
+    cap_bullet_add_to: 'Stichpunkt hinzufügen: {cat}',
+    rep_incidents_ph: 'Behinderungen, Mehrkosten, Mängel oder sonstige Vorkommnisse...',
+    rep_deliveries_ph: 'Lieferungen, Material, Prüfungen & Begehungen...'
   },
 
   // ==========================================
@@ -2238,7 +2252,21 @@ export const TRANSLATIONS: Record<LanguageCode, Record<string, string>> = {
     cap_to_letter: 'Convert to letter',
     cap_executing: 'Running...',
     cap_to_both: 'Into daily report & letter',
-    cap_bullet_short_ph: 'Bullet...'
+    cap_bullet_short_ph: 'Bullet...',
+    cap_bullet_removed_report: '✓ Bullet also removed from today\'s daily report',
+    cap_bullet_sync_failed: 'Bullet could not be updated in the daily report – please check the backend.',
+    cap_enter_text_first: 'Please enter text in the note field first.',
+    cap_cats_detected: '✓ {n} category(ies) detected',
+    cap_bullets_assigned: '✓ {n} bullet(s) assigned',
+    cap_nothing_to_assign: 'No bullets or notes to assign yet.',
+    cap_bullets_reassigned: '✓ {n} bullet(s) reassigned',
+    cap_need_voice_or_cat: 'Please record a voice note or select at least one category first.',
+    cap_need_bullet_or_note: 'Please enter at least one bullet or note.',
+    cap_bullet_remove: 'Remove bullet',
+    cap_bullet_add: 'Add bullet',
+    cap_bullet_add_to: 'Add bullet: {cat}',
+    rep_incidents_ph: 'Delays, extra costs, defects or other incidents...',
+    rep_deliveries_ph: 'Deliveries, material, inspections & walkthroughs...'
   },
 
   // ==========================================
@@ -3325,7 +3353,21 @@ export const TRANSLATIONS: Record<LanguageCode, Record<string, string>> = {
     cap_to_letter: 'Przekształć w pismo',
     cap_executing: 'Wykonywanie...',
     cap_to_both: 'Do raportu dziennego i pisma',
-    cap_bullet_short_ph: 'Punkt...'
+    cap_bullet_short_ph: 'Punkt...',
+    cap_bullet_removed_report: '✓ Punkt usunięty także z dzisiejszego raportu dziennego',
+    cap_bullet_sync_failed: 'Nie udało się zaktualizować punktu w raporcie dziennym – sprawdź serwer.',
+    cap_enter_text_first: 'Najpierw wpisz tekst w polu notatki.',
+    cap_cats_detected: '✓ Rozpoznane kategorie: {n}',
+    cap_bullets_assigned: '✓ Przypisane punkty: {n}',
+    cap_nothing_to_assign: 'Brak punktów lub notatek do przypisania.',
+    cap_bullets_reassigned: '✓ Ponownie przypisane punkty: {n}',
+    cap_need_voice_or_cat: 'Najpierw nagraj notatkę głosową lub wybierz co najmniej jedną kategorię.',
+    cap_need_bullet_or_note: 'Wpisz co najmniej jeden punkt lub notatkę.',
+    cap_bullet_remove: 'Usuń punkt',
+    cap_bullet_add: 'Dodaj punkt',
+    cap_bullet_add_to: 'Dodaj punkt: {cat}',
+    rep_incidents_ph: 'Utrudnienia, koszty dodatkowe, wady lub inne zdarzenia...',
+    rep_deliveries_ph: 'Dostawy, materiały, kontrole i obchody...'
   }
 };
 

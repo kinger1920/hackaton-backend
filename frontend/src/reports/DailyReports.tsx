@@ -1372,7 +1372,7 @@ export const DailyReports: React.FC = () => {
                   rows={3}
                   value={hindranceText}
                   onChange={(e) => setHindranceText(e.target.value)}
-                  placeholder="Behinderungen, Mehrkosten, Mängel oder sonstige Vorkommnisse..."
+                  placeholder={t('rep_incidents_ph')}
                 />
                 {hindranceText.trim() && (
                   <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', flexWrap: 'wrap' }}>
@@ -1397,7 +1397,7 @@ export const DailyReports: React.FC = () => {
                   rows={2}
                   value={deliveriesText}
                   onChange={(e) => setDeliveriesText(e.target.value)}
-                  placeholder="Lieferungen, Material, Prüfungen & Begehungen..."
+                  placeholder={t('rep_deliveries_ph')}
                 />
               </div>
 
