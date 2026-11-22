@@ -1,0 +1,23 @@
+# Was NICHT ins Docker-Image kommt: Secrets, lokale Daten, Build-Reste.
+# Secrets
+**/.env
+**/.env.*
+!**/.env.example
+*.pem
+*.key
+
+# Lokale Datenbank und Uploads (der Server startet mit frischer DB + Demo-Seed)
+backend/data/
+
+# Python/Node-Reste
+**/.venv
+**/__pycache__
+**/*.pyc
+**/.pytest_cache
+**/node_modules
+frontend/dist
+
+# Sonstiges
+.git
+**/.DS_Store
+*.log
