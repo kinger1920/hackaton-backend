@@ -73,7 +73,7 @@ const noticeName = (link: NoticeLink | null | undefined) =>
 export const Summary: React.FC = () => {
     const navigate = useNavigate();
     const location = useLocation();
-    const {t} = useLanguage();
+    const {t, tv} = useLanguage();
     const {activeProject} = useProjects();
     const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -232,7 +232,7 @@ export const Summary: React.FC = () => {
                 isUrgent: item.priority === 'Hoch'
             });
         } catch (err) {
-            setError((err as Error)?.message || 'Termin konnte nicht gespeichert werden');
+            setError((err as Error)?.message || t('su_appt_save_failed'));
             return;
         }
         setScheduledIds((prev) => new Set(prev).add(item.id));
@@ -250,20 +250,20 @@ export const Summary: React.FC = () => {
         const contractBlock = cf
             ? [
                 '',
-                'VERTRAGSÜBERSICHT',
-                `• Vertrag: ${cf.contractTitle} (${cf.statusLabel})${cf.contractorName ? ` – ${cf.contractorName}` : ''}${cf.trade ? ` [${cf.trade}]` : ''}`,
-                `• Gestellte Personen (Sollstärke): ${cf.workforce || '–'}`,
-                `• Wo (Einsatzort): ${cf.location || '–'}`,
-                `• Wann (Zeitraum): ${cf.schedule || '–'}`,
-                `• Was (Leistungsumfang): ${cf.scope || '–'}`,
-                `• Projektverantwortliche: ${cf.projectLeads.length ? cf.projectLeads.join('; ') : '–'}`,
+                t('su_cf_overview').toUpperCase(),
+                `• ${t('su_cf_contract')}: ${cf.contractTitle} (${tv(cf.statusLabel)})${cf.contractorName ? ` – ${cf.contractorName}` : ''}${cf.trade ? ` [${cf.trade}]` : ''}`,
+                `• ${t('su_cf_workforce')}: ${cf.workforce || '–'}`,
+                `• ${t('su_cf_where')}: ${cf.location || '–'}`,
+                `• ${t('su_cf_when')}: ${cf.schedule || '–'}`,
+                `• ${t('su_cf_what')}: ${cf.scope || '–'}`,
+                `• ${t('su_cf_leads')}: ${cf.projectLeads.length ? cf.projectLeads.join('; ') : '–'}`,
                 ...(cf.contacts.length
                     ? [
-                        '• Ansprechpartner bei Fragen:',
-                        ...cf.contacts.map((c) => `  - ${c.name}${c.role ? ` (${c.role})` : ''}${c.company ? `, ${c.company}` : ''}${c.phone ? ` | Tel: ${c.phone}` : ''}${c.email ? ` | ${c.email}` : ''}${c.note ? ` – ${c.note}` : ''}`)
+                        `• ${t('su_cf_contacts')}`,
+                        ...cf.contacts.map((c) => `  - ${c.name}${c.role ? ` (${c.role})` : ''}${c.company ? `, ${c.company}` : ''}${c.phone ? ` | ${t('su_cf_tel')} ${c.phone}` : ''}${c.email ? ` | ${c.email}` : ''}${c.note ? ` – ${c.note}` : ''}`)
                     ]
-                    : ['• Ansprechpartner bei Fragen: –']),
-                ...(cf.vobNotes ? [`• VOB-Hinweise: ${cf.vobNotes}`] : [])
+                    : [`• ${t('su_cf_contacts')} –`]),
+                ...(cf.vobNotes ? [`• ${t('su_cf_vob')}: ${cf.vobNotes}`] : [])
             ]
             : [];
 
@@ -303,16 +303,16 @@ export const Summary: React.FC = () => {
         const cf = s.contractFacts;
         const li = (items: string[]) => items.length ? `<ul>${items.map((x) => `<li>${escapeHtml(x)}</li>`).join('')}</ul>` : `<p>– ${escapeHtml(t('su_none'))}</p>`;
         const contractHtml = cf
-            ? `<h2>Vertragsübersicht</h2>
+            ? `<h2>${escapeHtml(t('su_cf_overview'))}</h2>
 <table>
-<tr><th>Vertrag / Status</th><td>${escapeHtml(cf.contractTitle)} (${escapeHtml(cf.statusLabel)})${cf.contractorName ? ` – ${escapeHtml(cf.contractorName)}` : ''}${cf.trade ? ` · ${escapeHtml(cf.trade)}` : ''}</td></tr>
-<tr><th>Gestellte Personen (Sollstärke)</th><td>${escapeHtml(cf.workforce || '–')}</td></tr>
-<tr><th>Einsatzort (Wo)</th><td>${escapeHtml(cf.location || '–')}</td></tr>
-<tr><th>Zeitraum (Wann)</th><td>${escapeHtml(cf.schedule || '–')}</td></tr>
-<tr><th>Leistungsumfang (Was)</th><td>${escapeHtml(cf.scope || '–')}</td></tr>
-<tr><th>Projektverantwortliche</th><td>${cf.projectLeads.length ? cf.projectLeads.map(escapeHtml).join('<br/>') : '–'}</td></tr>
-<tr><th>Kontakt bei Fragen</th><td>${cf.contacts.length ? cf.contacts.map((c) => `<strong>${escapeHtml(c.name)}</strong>${c.role ? ` (${escapeHtml(c.role)})` : ''}${c.company ? ` · ${escapeHtml(c.company)}` : ''}${c.phone ? ` · Tel: ${escapeHtml(c.phone)}` : ''}${c.email ? ` · ${escapeHtml(c.email)}` : ''}${c.note ? `<br/><em>${escapeHtml(c.note)}</em>` : ''}`).join('<br/><br/>') : '–'}</td></tr>
-${cf.vobNotes ? `<tr><th>VOB-Hinweise</th><td>${escapeHtml(cf.vobNotes)}</td></tr>` : ''}
+<tr><th>${escapeHtml(t('su_cf_contract_status'))}</th><td>${escapeHtml(cf.contractTitle)} (${escapeHtml(tv(cf.statusLabel))})${cf.contractorName ? ` – ${escapeHtml(cf.contractorName)}` : ''}${cf.trade ? ` · ${escapeHtml(cf.trade)}` : ''}</td></tr>
+<tr><th>${escapeHtml(t('su_cf_workforce'))}</th><td>${escapeHtml(cf.workforce || '–')}</td></tr>
+<tr><th>${escapeHtml(t('su_cf_where'))}</th><td>${escapeHtml(cf.location || '–')}</td></tr>
+<tr><th>${escapeHtml(t('su_cf_when'))}</th><td>${escapeHtml(cf.schedule || '–')}</td></tr>
+<tr><th>${escapeHtml(t('su_cf_what'))}</th><td>${escapeHtml(cf.scope || '–')}</td></tr>
+<tr><th>${escapeHtml(t('su_cf_leads'))}</th><td>${cf.projectLeads.length ? cf.projectLeads.map(escapeHtml).join('<br/>') : '–'}</td></tr>
+<tr><th>${escapeHtml(t('su_cf_contact_short'))}</th><td>${cf.contacts.length ? cf.contacts.map((c) => `<strong>${escapeHtml(c.name)}</strong>${c.role ? ` (${escapeHtml(c.role)})` : ''}${c.company ? ` · ${escapeHtml(c.company)}` : ''}${c.phone ? ` · ${escapeHtml(t('su_cf_tel'))} ${escapeHtml(c.phone)}` : ''}${c.email ? ` · ${escapeHtml(c.email)}` : ''}${c.note ? `<br/><em>${escapeHtml(c.note)}</em>` : ''}`).join('<br/><br/>') : '–'}</td></tr>
+${cf.vobNotes ? `<tr><th>${escapeHtml(t('su_cf_vob'))}</th><td>${escapeHtml(cf.vobNotes)}</td></tr>` : ''}
 </table>`
             : '';
         const html = `<!DOCTYPE html>
@@ -506,7 +506,7 @@ ${s.vobRisks.length ? s.vobRisks.map((r) => `<p><strong>${escapeHtml(r.title)}</
                         {contracts.length > 0 && (
                             <div className="su-contract-picker">
                                 <label className="su-contract-picker-label" htmlFor="su-contract-select">
-                                    Vertrag aus Stammdaten zusammenfassen
+                                    {t('su_contract_picker')}
                                 </label>
                                 <div className="su-contract-picker-row">
                                     <select
@@ -563,7 +563,7 @@ ${s.vobRisks.length ? s.vobRisks.map((r) => `<p><strong>${escapeHtml(r.title)}</
                         <div className="su-message error">
                             <AlertTriangle size={15}/>
                             <span>{error}</span>
-                            <button type="button" className="su-message-close" aria-label="Schließen" onClick={() => setError(null)}>
+                            <button type="button" className="su-message-close" aria-label={t('btn_close')} onClick={() => setError(null)}>
                                 <X size={14}/>
                             </button>
                         </div>
@@ -594,46 +594,46 @@ ${s.vobRisks.length ? s.vobRisks.map((r) => `<p><strong>${escapeHtml(r.title)}</
                             {summary.contractFacts && (
                                 <section className="su-section su-contract-overview">
                                     <div className="su-contract-head">
-                                        <h3 className="su-section-title">Vertragsübersicht für die Bauleitung</h3>
+                                        <h3 className="su-section-title">{t('su_cf_overview_long')}</h3>
                                         <span className={`su-contract-badge ${summary.contractFacts.statusLabel === 'Inaktiv' ? 'inactive' : 'active'}`}>
-                                            {summary.contractFacts.statusLabel}
+                                            {tv(summary.contractFacts.statusLabel)}
                                         </span>
                                     </div>
                                     <div className="su-contract-submeta">
-                                        {summary.contractFacts.contractorName && <span><strong>Vertragspartner:</strong> {summary.contractFacts.contractorName}</span>}
-                                        {summary.contractFacts.trade && <span><strong>Gewerk:</strong> {summary.contractFacts.trade}</span>}
+                                        {summary.contractFacts.contractorName && <span><strong>{t('su_cf_partner')}</strong> {summary.contractFacts.contractorName}</span>}
+                                        {summary.contractFacts.trade && <span><strong>{t('su_cf_trade')}</strong> {summary.contractFacts.trade}</span>}
                                     </div>
 
                                     <div className="su-contract-grid">
                                         <div className="su-contract-box">
-                                            <div className="su-contract-box-title"><Users size={15}/> Gestellte Personen (Sollstärke)</div>
+                                            <div className="su-contract-box-title"><Users size={15}/> {t('su_cf_workforce')}</div>
                                             <p>{summary.contractFacts.workforce || '–'}</p>
                                         </div>
                                         <div className="su-contract-box">
-                                            <div className="su-contract-box-title"><MapPin size={15}/> Wo (Einsatzort)</div>
+                                            <div className="su-contract-box-title"><MapPin size={15}/> {t('su_cf_where')}</div>
                                             <p>{summary.contractFacts.location || '–'}</p>
                                         </div>
                                         <div className="su-contract-box">
-                                            <div className="su-contract-box-title"><CalendarRange size={15}/> Wann (Zeitraum &amp; Fristen)</div>
+                                            <div className="su-contract-box-title"><CalendarRange size={15}/> {t('su_cf_when_long')}</div>
                                             <p>{summary.contractFacts.schedule || '–'}</p>
                                         </div>
                                         <div className="su-contract-box">
-                                            <div className="su-contract-box-title"><ClipboardList size={15}/> Was (Leistungsumfang)</div>
+                                            <div className="su-contract-box-title"><ClipboardList size={15}/> {t('su_cf_what')}</div>
                                             <p>{summary.contractFacts.scope || '–'}</p>
                                         </div>
                                     </div>
 
                                     <div className="su-contract-box">
-                                        <div className="su-contract-box-title"><UserCheck size={15}/> Projektverantwortliche</div>
+                                        <div className="su-contract-box-title"><UserCheck size={15}/> {t('su_cf_leads')}</div>
                                         {summary.contractFacts.projectLeads.length > 0 ? (
                                             <ul className="su-list">
                                                 {summary.contractFacts.projectLeads.map((lead, idx) => <li key={idx}>{lead}</li>)}
                                             </ul>
-                                        ) : <p className="su-none">Keine Projektverantwortlichen hinterlegt.</p>}
+                                        ) : <p className="su-none">{t('su_cf_no_leads')}</p>}
                                     </div>
 
                                     <div className="su-contract-box">
-                                        <div className="su-contract-box-title"><Phone size={15}/> Wen bei Fragen kontaktieren (Bauleitung)</div>
+                                        <div className="su-contract-box-title"><Phone size={15}/> {t('su_cf_contact_long')}</div>
                                         {summary.contractFacts.contacts.length > 0 ? (
                                             <div className="su-contacts-list">
                                                 {summary.contractFacts.contacts.map((c, idx) => (
@@ -651,12 +651,12 @@ ${s.vobRisks.length ? s.vobRisks.map((r) => `<p><strong>${escapeHtml(r.title)}</
                                                     </div>
                                                 ))}
                                             </div>
-                                        ) : <p className="su-none">Keine Kontaktdaten hinterlegt (in Stammdaten → Firmen oder Vertrags-PDF ergänzen).</p>}
+                                        ) : <p className="su-none">{t('su_cf_no_contacts')}</p>}
                                     </div>
 
                                     {summary.contractFacts.vobNotes && (
                                         <div className="su-contract-vob">
-                                            <strong>VOB-/Vertragsbesonderheiten:</strong> {summary.contractFacts.vobNotes}
+                                            <strong>{t('su_cf_vob_long')}</strong> {summary.contractFacts.vobNotes}
                                         </div>
                                     )}
                                 </section>

@@ -1,11 +1,14 @@
 import React from 'react';
 import {Hammer} from 'lucide-react';
+import {useLanguage} from '../context/LanguageContext';
 
 /**
  * Einheitlicher Hinweis für Funktionen, deren Oberfläche schon steht, deren Backend aber noch fehlt.
  * `endpoint` nennt den geplanten API-Pfad (siehe WETTBEWERB_UND_IDEEN.md / API-Vorschläge).
  */
-export const ComingSoonBadge: React.FC<{ label?: string }> = ({label = 'Backend folgt'}) => (
+export const ComingSoonBadge: React.FC<{ label?: string }> = ({label}) => {
+    const {t} = useLanguage();
+    return (
     <span
         style={{
             display: 'inline-flex',
@@ -24,11 +27,14 @@ export const ComingSoonBadge: React.FC<{ label?: string }> = ({label = 'Backend 
         }}
     >
         <Hammer size={10}/>
-        {label}
+        {label ?? t('cs_backend_soon')}
     </span>
-);
+    );
+};
 
-export const ComingSoonNote: React.FC<{ children: React.ReactNode; endpoint?: string }> = ({children, endpoint}) => (
+export const ComingSoonNote: React.FC<{ children: React.ReactNode; endpoint?: string }> = ({children, endpoint}) => {
+    const {t} = useLanguage();
+    return (
     <div
         style={{
             display: 'flex',
@@ -48,12 +54,13 @@ export const ComingSoonNote: React.FC<{ children: React.ReactNode; endpoint?: st
             {children}
             {endpoint && (
                 <div style={{marginTop: '4px', fontFamily: 'monospace', fontSize: '11px', color: '#92400e'}}>
-                    geplanter Endpunkt: {endpoint}
+                    {t('cs_planned_endpoint')} {endpoint}
                 </div>
             )}
         </div>
     </div>
-);
+    );
+};
 
 /** true, wenn ein Fehler bedeutet „Endpunkt gibt es (noch) nicht“ (404/405/501). */
 export function isNotImplemented(err: unknown): boolean {

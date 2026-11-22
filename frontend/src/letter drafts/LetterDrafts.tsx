@@ -1550,7 +1550,7 @@ export const LetterDrafts: React.FC = () => {
                             <div className="ld-message error">
                                 <AlertTriangle size={15}/>
                                 <span>{errorMessage}</span>
-                                <button type="button" className="ld-message-close" aria-label="Schließen"
+                                <button type="button" className="ld-message-close" aria-label={t('btn_close')}
                                         onClick={() => setErrorMessage(null)}>
                                     <X size={14}/>
                                 </button>
@@ -1566,7 +1566,7 @@ export const LetterDrafts: React.FC = () => {
                                         {reviewHints.map((h, i) => <li key={i}>{h}</li>)}
                                     </ul>
                                 </div>
-                                <button type="button" className="ld-message-close" aria-label="Schließen"
+                                <button type="button" className="ld-message-close" aria-label={t('btn_close')}
                                         onClick={() => setReviewHints([])}>
                                     <X size={14}/>
                                 </button>
@@ -1808,7 +1808,7 @@ export const LetterDrafts: React.FC = () => {
                                 {sortHeader('to', t('ld_col_to'))}
                                 {sortHeader('date', t('ld_col_date'))}
                                 {sortHeader('status', t('ld_col_status'))}
-                                <th aria-label="Aktionen"/>
+                                <th aria-label={t('ld_actions')}/>
                             </tr>
                             </thead>
                             <tbody>
