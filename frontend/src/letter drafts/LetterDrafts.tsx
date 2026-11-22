@@ -233,6 +233,24 @@ const loadLocal = (): SavedLetter[] => {
 const persistLocal = (letters: SavedLetter[]) =>
     localStorage.setItem(STORAGE_KEY, JSON.stringify(letters.filter((l) => l.source === 'local')));
 
+/**
+ * "Seit wann?" (datetime-local, YYYY-MM-DDTHH:MM) aus den Server-Feldern start_date/start_time.
+ * Akzeptiert ISO (2026-11-17) und deutsches Format (17.11.2026). Ohne Datum → null,
+ * dann bleibt der Standard (jetzt); fehlt nur die Uhrzeit, wird 00:00 genommen.
+ */
+const sinceFromFields = (fields?: NoticeOut['fields']): string | null => {
+    const raw = fields?.start_date?.value?.trim() ?? '';
+    const iso = raw.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    const de = raw.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})/);
+    const date = iso
+        ? `${iso[1]}-${iso[2]}-${iso[3]}`
+        : de ? `${de[3]}-${de[2].padStart(2, '0')}-${de[1].padStart(2, '0')}` : null;
+    if (!date) return null;
+    const tm = (fields?.start_time?.value ?? '').trim().match(/^(\d{1,2}):(\d{2})/);
+    const time = tm ? `${tm[1].padStart(2, '0')}:${tm[2]}` : '00:00';
+    return `${date}T${time}`;
+};
+
 const fromNotice = (n: NoticeOut, project: Project): SavedLetter => ({
     id: `notice-${n.id}`,
     source: 'server',
@@ -687,6 +705,8 @@ export const LetterDrafts: React.FC = () => {
         setDetails(
             letter.details ?? {
                 ...emptyDetails(),
+                // Ereigniszeitpunkt aus dem Diktat übernehmen, sonst zeigt "Seit wann?" das heutige Datum
+                since: sinceFromFields(notice?.fields) ?? emptyDetails().since,
                 description: notice?.fields?.facts?.value ?? '',
                 area: notice?.fields?.location?.value ?? '',
                 deadline: notice?.fields?.deadline?.value || inDays(7)

@@ -23,6 +23,19 @@ import { saveProjectDocument } from '../context/ProjectDocuments';
 import { useLanguage } from '../context/LanguageContext';
 import { api, CategorizedBulletsPayload, NoticeDraft, NoticeType } from '../services/api';
 import { isoToDe, todayIso } from '../utils/dates';
+
+/**
+ * Datum + Uhrzeit des Geräts für /api/capture (Contract: ref_date, ref_time).
+ * Ohne diese Angaben kann die KI "vor 2 Stunden" nicht auflösen, und der Server
+ * (UTC beim Deploy) nimmt nachts sein eigenes, evtl. falsches "heute".
+ */
+const captureRefNow = () => {
+  const now = new Date();
+  return {
+    ref_date: todayIso(),
+    ref_time: `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`
+  };
+};
 import { useAudioRecorder } from '../utils/useAudioRecorder';
 import '@frontend/src/index.css';
 import './VoiceOrText.css';
@@ -848,7 +861,8 @@ Kategorisierte Stichpunkte:
           const draft = await api.captureText({
             text: payload.combinedText,
             project_id: Number(activeProject.id),
-            force_type: payload.preferredType
+            force_type: payload.preferredType,
+            ...captureRefNow()
           });
           setLastDraft(draft);
           if (draft.questions && draft.questions.length > 0) {
