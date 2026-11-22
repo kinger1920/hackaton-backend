@@ -46,7 +46,7 @@ interface WorkerPerson {
 
 export const Dashboard: React.FC = () => {
     const navigate = useNavigate();
-    const { t, tf, locale } = useLanguage();
+    const { t, tf, tv, locale } = useLanguage();
     const userName = localStorage.getItem('userName') || t('role_site_manager');
     const { projects, activeProject, setActiveProjectId } = useProjects();
 
@@ -386,7 +386,7 @@ export const Dashboard: React.FC = () => {
                         </div>
                     </div>
                     <div className="hero-stat-card">
-                        <div className="hero-stat-number">{activeProject.status}</div>
+                        <div className="hero-stat-number">{tv(activeProject.status)}</div>
                         <div className="hero-stat-label">{t('db_project_status')}</div>
                     </div>
                 </div>
@@ -590,12 +590,12 @@ export const Dashboard: React.FC = () => {
                                 <div className="dash-recent-details">
                                     <div><strong>{t('db_client_label')}</strong> {proj.client || t('db_no_info')}</div>
                                     <div><strong>{t('db_location')}</strong> {proj.location || 'Berlin'}</div>
-                                    <div><strong>{t('db_phase')}</strong> {proj.phase || 'Rohbau'}</div>
+                                    <div><strong>{t('db_phase')}</strong> {tv(proj.phase || 'Rohbau')}</div>
                                 </div>
 
                                 <div className="dash-recent-actions">
                                     <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-                                        {t('db_status')} <strong>{proj.status}</strong>
+                                        {t('db_status')} <strong>{tv(proj.status)}</strong>
                                     </span>
 
                                     {isActive ? (
