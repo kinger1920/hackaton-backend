@@ -38,7 +38,7 @@ from src.services.workforce import attendance_of, contracts_with_target, match_c
 _INCIDENT_WORDS = [w for t in ("delay", "cost", "defect") for w in offline_rules.KEYWORDS[t]]
 _DELIVERY_WORDS = ("liefer", "angeliefert", "lieferschein", "abnahme", "prüfstatiker", "betonprüfer", "begehung", "dostaw")
 _CATEGORY_PREFIX_RE = re.compile(
-    r"^(baufortschritt|fortschritt|behinderung(?:en)?|störung(?:en)?|mehrkosten|nachtrag|nachträge|mangel|mängel|lieferung(?:en)?|material)\s*:\s*(.+)$",
+    r"^(baufortschritt|fortschritt|gewerk(?:e)?|firma|firmen|behinderung(?:en)?|störung(?:en)?|mehrkosten|nachtrag|nachträge|mangel|mängel|lieferung(?:en)?|material)\s*:\s*(.+)$",
     re.IGNORECASE,
 )
 _PERCENT_RE = re.compile(r"(\d{1,3})\s*(?:%|prozent|procent)", re.IGNORECASE)
@@ -133,6 +133,7 @@ def _bullets_of(report: DailyReport | None) -> CategorizedBullets:
         return CategorizedBullets()
     return CategorizedBullets(
         progress=_clean_bullets(raw.get("progress") or []),
+        trades=_clean_bullets(raw.get("trades") or []),
         hindrance=_clean_bullets(raw.get("hindrance") or []),
         cost=_clean_bullets(raw.get("cost") or []),
         defect=_clean_bullets(raw.get("defect") or []),
@@ -143,6 +144,7 @@ def _bullets_of(report: DailyReport | None) -> CategorizedBullets:
 def _store_bullets(report: DailyReport, cats: CategorizedBullets) -> None:
     cleaned = CategorizedBullets(
         progress=_clean_bullets(cats.progress),
+        trades=_clean_bullets(cats.trades),
         hindrance=_clean_bullets(cats.hindrance),
         cost=_clean_bullets(cats.cost),
         defect=_clean_bullets(cats.defect),
@@ -154,6 +156,7 @@ def _store_bullets(report: DailyReport, cats: CategorizedBullets) -> None:
 def _merge_bullets(existing: CategorizedBullets, incoming: CategorizedBullets) -> CategorizedBullets:
     return CategorizedBullets(
         progress=_clean_bullets(existing.progress + incoming.progress),
+        trades=_clean_bullets(existing.trades + incoming.trades),
         hindrance=_clean_bullets(existing.hindrance + incoming.hindrance),
         cost=_clean_bullets(existing.cost + incoming.cost),
         defect=_clean_bullets(existing.defect + incoming.defect),
@@ -174,15 +177,34 @@ def _bullet_candidates(category: str, item: str) -> list[str]:
     return [clean]
 
 
+def _norm_match(text: str) -> str:
+    return re.sub(r"\s+", " ", (text or "").strip().lstrip("-•* ").rstrip(".")).lower()
+
+
 def _remove_lines(old: str | None, candidates: list[str]) -> str | None:
-    """Entfernt Zeilen aus einem Berichtsfeld, die einem der Kandidaten entsprechen."""
+    """Entfernt Zeilen (oder Teil-Einträge) aus einem Berichtsfeld, die einem der Kandidaten entsprechen."""
     if not old:
         return old
-    targets = {c.strip() for c in candidates if c.strip()}
-    if not targets:
+    raw_targets = [c.strip() for c in candidates if c.strip()]
+    if not raw_targets:
         return old
-    kept = [line for line in old.splitlines() if line.strip() not in targets]
-    joined = "\n".join(line for line in kept if line.strip()).strip()
+    norm_targets = {_norm_match(c) for c in raw_targets}
+    kept: list[str] = []
+    for line in old.splitlines():
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if _norm_match(stripped) in norm_targets:
+            continue
+        updated = stripped
+        for cand in sorted(raw_targets, key=len, reverse=True):
+            # Falls mehrere Sätze auf derselben Zeile standen, den passenden Abschnitt sauber entfernen.
+            pattern = re.compile(r"(?:^|\s*;\s*|\s+)" + re.escape(cand) + r"\.?(?=\s|$|;)", re.IGNORECASE)
+            updated = pattern.sub(" ", updated).strip(" ;")
+        updated = re.sub(r"\s{2,}", " ", updated).strip()
+        if updated:
+            kept.append(updated)
+    joined = "\n".join(kept).strip()
     return joined or None
 
 
@@ -201,11 +223,18 @@ def _sync_bullets_with_fields(report: DailyReport) -> None:
     kept = CategorizedBullets()
     for cat_name, field_text in field_map.items():
         items = getattr(stored, cat_name)
+        norm_field = _norm_match(field_text)
         still_there = [
             item for item in items
-            if any(cand in field_text for cand in _bullet_candidates(cat_name, item))
+            if any(
+                cand in field_text or (_norm_match(cand) and _norm_match(cand) in norm_field)
+                for cand in _bullet_candidates(cat_name, item)
+            )
         ]
         setattr(kept, cat_name, still_there)
+    current_trades = _json(report.trades) or []
+    norm_trades = {_norm_match(t) for t in current_trades if isinstance(t, str)}
+    kept.trades = [item for item in stored.trades if _norm_match(item) in norm_trades]
     _store_bullets(report, kept)
 
 
@@ -387,6 +416,7 @@ def _offline_progress(sentences: list[str], tasks: list[PlanTask]) -> list[dict]
 def _offline_fill(text: str, tasks: list[PlanTask]) -> dict:
     """Regeln ohne KI: Präfixe & Schlüsselwörter → Leistung / Vorkommnisse / Lieferungen, "Titel … NN %" → Fortschritt."""
     work: list[str] = []
+    trades: list[str] = []
     incidents: list[str] = []
     deliveries: list[str] = []
     all_sentences: list[str] = []
@@ -403,6 +433,8 @@ def _offline_fill(text: str, tasks: list[PlanTask]) -> dict:
             all_sentences.extend(parts)
             if head.startswith(("baufortschritt", "fortschritt")):
                 work.extend(parts)
+            elif head.startswith(("gewerk", "firma", "firmen")):
+                trades.extend(parts)
             elif head.startswith(("liefer", "material")):
                 deliveries.extend(parts)
             elif head.startswith(("mehrkosten", "nachtrag", "nachträge")):
@@ -431,7 +463,7 @@ def _offline_fill(text: str, tasks: list[PlanTask]) -> dict:
         "weather": "",
         "temperature_c": "",
         "workforce_count": "",
-        "trades": [],
+        "trades": _clean_bullets(trades),
         "attendance": _offline_attendance(text),
         "progress": _offline_progress(all_sentences, tasks),
     }
@@ -463,6 +495,7 @@ def _categories_to_note_lines(cats: CategorizedBullets | None) -> list[str]:
         return []
     groups = [
         ("Baufortschritt", _clean_bullets(cats.progress)),
+        ("Gewerke", _clean_bullets(cats.trades)),
         ("Behinderungen", _clean_bullets(cats.hindrance)),
         ("Mehrkosten", _clean_bullets(cats.cost)),
         ("Mängel", _clean_bullets(cats.defect)),
@@ -535,6 +568,7 @@ async def fill(session: Session, project: Project, date: dt.date, req: FillReque
     cat_has_incident = False
     if req.categories is not None:
         cat_progress = _clean_bullets(req.categories.progress)
+        cat_trades = _clean_bullets(req.categories.trades)
         cat_hindrance = _clean_bullets(req.categories.hindrance)
         cat_cost = _clean_bullets(req.categories.cost)
         cat_defect = _clean_bullets(req.categories.defect)
@@ -542,6 +576,8 @@ async def fill(session: Session, project: Project, date: dt.date, req: FillReque
 
         for item in cat_progress:
             report.work_completed = _append(report.work_completed, item)
+        if cat_trades:
+            data["trades"] = list(data["trades"]) + cat_trades
         for item in cat_hindrance:
             report.deviations_incidents = _append(report.deviations_incidents, _format_bullet("Behinderung", item))
         for item in cat_cost:
@@ -553,6 +589,7 @@ async def fill(session: Session, project: Project, date: dt.date, req: FillReque
 
         incoming_cats = CategorizedBullets(
             progress=cat_progress,
+            trades=cat_trades,
             hindrance=cat_hindrance,
             cost=cat_cost,
             defect=cat_defect,
@@ -561,7 +598,7 @@ async def fill(session: Session, project: Project, date: dt.date, req: FillReque
         _store_bullets(report, _merge_bullets(_bullets_of(report), incoming_cats))
 
         cat_has_incident = bool(cat_hindrance or cat_cost or cat_defect)
-        all_bullets = cat_progress + cat_hindrance + cat_cost + cat_defect + cat_delivery
+        all_bullets = cat_progress + cat_trades + cat_hindrance + cat_cost + cat_defect + cat_delivery
         if all_bullets:
             joined_bullets = "\n".join(all_bullets)
             bullet_attendance = _offline_attendance(joined_bullets)
@@ -616,18 +653,30 @@ def remove_bullet(session: Session, project: Project, date: dt.date, req: Bullet
         return to_out(session, project.id, date, None)
 
     clean = req.text.strip()
+    norm_clean = _norm_match(clean)
     stored = _bullets_of(report)
-    current_items = getattr(stored, req.category)
-    setattr(stored, req.category, [item for item in current_items if item.strip() != clean])
+    categories_to_clean: list[str] = [req.category]
+    for cat_name in ("progress", "trades", "hindrance", "cost", "defect", "delivery"):
+        items = getattr(stored, cat_name)
+        filtered = [item for item in items if _norm_match(item) != norm_clean]
+        if len(filtered) != len(items):
+            setattr(stored, cat_name, filtered)
+            if cat_name not in categories_to_clean:
+                categories_to_clean.append(cat_name)
     _store_bullets(report, stored)
 
-    candidates = _bullet_candidates(req.category, clean)
-    if req.category == "progress":
-        report.work_completed = _remove_lines(report.work_completed, candidates)
-    elif req.category in ("hindrance", "cost", "defect"):
-        report.deviations_incidents = _remove_lines(report.deviations_incidents, candidates)
-    elif req.category == "delivery":
-        report.deliveries = _remove_lines(report.deliveries, candidates)
+    for cat_name in categories_to_clean:
+        candidates = _bullet_candidates(cat_name, clean)
+        if cat_name == "progress":
+            report.work_completed = _remove_lines(report.work_completed, candidates)
+        elif cat_name == "trades":
+            current_trades = _json(report.trades) or []
+            kept_trades = [t for t in current_trades if isinstance(t, str) and _norm_match(t) != norm_clean]
+            report.trades = json.dumps(kept_trades, ensure_ascii=False) if kept_trades else None
+        elif cat_name in ("hindrance", "cost", "defect"):
+            report.deviations_incidents = _remove_lines(report.deviations_incidents, candidates)
+        elif cat_name == "delivery":
+            report.deliveries = _remove_lines(report.deliveries, candidates)
 
     report.updated_at = dt.datetime.now(dt.timezone.utc)
     session.add(report)

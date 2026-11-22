@@ -15,6 +15,7 @@ import {
   CheckCircle2,
   Mail,
   HardHat,
+  Users,
   Trash2,
   PenLine
 } from 'lucide-react';
@@ -42,6 +43,7 @@ import './VoiceOrText.css';
 
 interface CategoryBullets {
   progress: string[];
+  trades: string[];
   hindrance: string[];
   cost: string[];
   defect: string[];
@@ -58,6 +60,7 @@ const CUSTOM_TEMPLATES_STORAGE_KEY = 'site_assistant_custom_text_templates';
 
 const EMPTY_CATEGORIES: CategoryBullets = {
   progress: [],
+  trades: [],
   hindrance: [],
   cost: [],
   defect: [],
@@ -66,13 +69,14 @@ const EMPTY_CATEGORIES: CategoryBullets = {
 
 const EMPTY_INPUTS: Record<keyof CategoryBullets, string> = {
   progress: '',
+  trades: '',
   hindrance: '',
   cost: '',
   defect: '',
   delivery: ''
 };
 
-const CATEGORY_KEYS: (keyof CategoryBullets)[] = ['progress', 'hindrance', 'cost', 'defect', 'delivery'];
+const CATEGORY_KEYS: (keyof CategoryBullets)[] = ['progress', 'trades', 'hindrance', 'cost', 'defect', 'delivery'];
 
 const ABBREVIATION_END_RE = /\b(?:fa|nr|z\.?b|z|ca|bzw|inkl|ggf|abs|st|std|tel|dr|ing|dipl|v|u|d|min|max|ggü|lt|gem)\.$/i;
 const ORDINAL_BEFORE_LEVEL_RE = /\b\d+\.$/;
@@ -109,12 +113,13 @@ function splitTextIntoItems(text: string): string[] {
 function classifySingleItem(rawItem: string): { category: keyof CategoryBullets; text: string } {
   const trimmed = rawItem.replace(/^[-•*]\s*/, '').trim();
   const prefixMatch = trimmed.match(
-    /^(baufortschritt|fortschritt|behinderung(?:en)?|störung(?:en)?|mehrkosten|nachtrag|nachträge|mangel|mängel|lieferung(?:en)?|material)\s*:\s*(.+)$/i
+    /^(baufortschritt|fortschritt|gewerk(?:e)?|firma|firmen|behinderung(?:en)?|störung(?:en)?|mehrkosten|nachtrag|nachträge|mangel|mängel|lieferung(?:en)?|material)\s*:\s*(.+)$/i
   );
   if (prefixMatch) {
     const head = prefixMatch[1].toLowerCase();
     const body = prefixMatch[2].trim();
     if (head.startsWith('baufortschritt') || head.startsWith('fortschritt')) return { category: 'progress', text: body };
+    if (head.startsWith('gewerk') || head.startsWith('firma') || head.startsWith('firmen')) return { category: 'trades', text: body };
     if (head.startsWith('mehrkosten') || head.startsWith('nachtrag') || head.startsWith('nachträge')) return { category: 'cost', text: body };
     if (head.startsWith('mangel') || head.startsWith('mängel')) return { category: 'defect', text: body };
     if (head.startsWith('liefer') || head.startsWith('material')) return { category: 'delivery', text: body };
@@ -201,6 +206,33 @@ function classifySingleItem(rawItem: string): { category: keyof CategoryBullets;
   ) {
     return { category: 'delivery', text: trimmed };
   }
+  if (
+    hasAny([
+      'gewerk',
+      'subunternehmer',
+      'nachunternehmer',
+      'vor ort',
+      'mann',
+      'arbeiter',
+      'leute',
+      'fa.',
+      'firma',
+      'rohbau',
+      'tiefbau',
+      'elektriker',
+      'elektro',
+      'sanitär',
+      'heizung',
+      'trockenbau',
+      'dachdecker',
+      'zimmerer',
+      'maler',
+      'estrich'
+    ]) &&
+    !hasAny(['%', 'prozent', 'fertig', 'betoniert', 'geschalt', 'bewehrt', 'verlegt', 'montiert', 'abgeschlossen'])
+  ) {
+    return { category: 'trades', text: trimmed };
+  }
   return { category: 'progress', text: trimmed };
 }
 
@@ -211,6 +243,7 @@ function categorizeTextIntoBullets(text: string): {
 } {
   const buckets: CategoryBullets = {
     progress: [],
+    trades: [],
     hindrance: [],
     cost: [],
     defect: [],
@@ -232,6 +265,7 @@ function categorizeTextIntoBullets(text: string): {
 function mergeCategoryBullets(base: CategoryBullets, extra: CategoryBullets): CategoryBullets {
   const next: CategoryBullets = {
     progress: [...base.progress],
+    trades: [...base.trades],
     hindrance: [...base.hindrance],
     cost: [...base.cost],
     defect: [...base.defect],
@@ -255,6 +289,7 @@ function hasAnyCategoryBullets(cats: CategoryBullets): boolean {
 function normalizeCategories(raw?: CategorizedBulletsPayload | null): CategoryBullets {
   return {
     progress: Array.isArray(raw?.progress) ? raw.progress.map((s) => String(s).trim()).filter(Boolean) : [],
+    trades: Array.isArray(raw?.trades) ? raw.trades.map((s) => String(s).trim()).filter(Boolean) : [],
     hindrance: Array.isArray(raw?.hindrance) ? raw.hindrance.map((s) => String(s).trim()).filter(Boolean) : [],
     cost: Array.isArray(raw?.cost) ? raw.cost.map((s) => String(s).trim()).filter(Boolean) : [],
     defect: Array.isArray(raw?.defect) ? raw.defect.map((s) => String(s).trim()).filter(Boolean) : [],
@@ -294,6 +329,7 @@ const AUDIO_CATEGORY_OPTIONS: {
   renderIcon: () => React.ReactNode;
 }[] = [
   { key: 'progress', labelKey: 'cap_cat_progress', renderIcon: () => <HardHat size={15} color="#2563eb" /> },
+  { key: 'trades', labelKey: 'cap_cat_trades', renderIcon: () => <Users size={15} color="#0d9488" /> },
   { key: 'hindrance', labelKey: 'cap_cat_hindrance', renderIcon: () => <AlertTriangle size={15} color="#ef4444" /> },
   { key: 'cost', labelKey: 'cap_cat_cost', renderIcon: () => <DollarSign size={15} color="#d97706" /> },
   { key: 'defect', labelKey: 'cap_cat_defect', renderIcon: () => <AlertTriangle size={15} color="#7c3aed" /> },
@@ -345,6 +381,7 @@ export const VoiceOrText: React.FC<VoiceOrTextProps> = ({ mode = 'voice' }) => {
   const lastSavedContentRef = useRef<string | null>(null);
   // Stichpunkte, die bereits in den heutigen Bautagesbericht übernommen wurden (für synchrones Löschen).
   const syncedCategoriesRef = useRef<CategoryBullets>(EMPTY_CATEGORIES);
+  const pendingSyncRef = useRef<Promise<void>>(Promise.resolve());
 
   // Bereits heute übernommene Stichpunkte des aktiven Projekts aus dem Bautagesbericht laden
   useEffect(() => {
@@ -485,6 +522,7 @@ export const VoiceOrText: React.FC<VoiceOrTextProps> = ({ mode = 'voice' }) => {
   const getEffectiveCategories = (): CategoryBullets => {
     const next: CategoryBullets = {
       progress: [...categories.progress],
+      trades: [...categories.trades],
       hindrance: [...categories.hindrance],
       cost: [...categories.cost],
       defect: [...categories.defect],
@@ -526,9 +564,7 @@ export const VoiceOrText: React.FC<VoiceOrTextProps> = ({ mode = 'voice' }) => {
 
     const syncedKey = syncedCategoriesRef.current[catKey].includes(removedText)
       ? catKey
-      : CATEGORY_KEYS.find((k) => syncedCategoriesRef.current[k].includes(removedText));
-
-    if (!syncedKey) return;
+      : CATEGORY_KEYS.find((k) => syncedCategoriesRef.current[k].includes(removedText)) || catKey;
 
     const today = todayIso();
     const nextSynced: CategoryBullets = {
@@ -538,8 +574,9 @@ export const VoiceOrText: React.FC<VoiceOrTextProps> = ({ mode = 'voice' }) => {
     syncedCategoriesRef.current = nextSynced;
     writeLocalBullets(activeProject.id, today, nextSynced);
 
-    try {
-      const updated = await api.removeReportBullet(today, {
+    const runRemoval = async () => {
+      try {
+        const updated = await api.removeReportBullet(today, {
         category: syncedKey,
         text: removedText,
         project_id: Number(activeProject.id)
@@ -548,9 +585,13 @@ export const VoiceOrText: React.FC<VoiceOrTextProps> = ({ mode = 'voice' }) => {
       syncedCategoriesRef.current = serverCats;
       writeLocalBullets(activeProject.id, today, serverCats);
       showClassificationFeedback('✓ Stichpunkt auch aus dem heutigen Bautagesbericht entfernt');
-    } catch (err) {
-      console.warn('Stichpunkt konnte im Backend-Bericht nicht entfernt werden:', err);
-    }
+      } catch (err) {
+        console.warn('Stichpunkt konnte im Backend-Bericht nicht entfernt werden:', err);
+        setActionErrorMsg('Stichpunkt konnte im Bautagesbericht nicht aktualisiert werden – bitte Backend prüfen.');
+      }
+    };
+    pendingSyncRef.current = pendingSyncRef.current.then(runRemoval, runRemoval);
+    await pendingSyncRef.current;
   };
 
   const persistCustomTemplates = (next: CustomTextTemplate[]) => {
@@ -686,6 +727,7 @@ export const VoiceOrText: React.FC<VoiceOrTextProps> = ({ mode = 'voice' }) => {
     const combinedText = [
       reportFreeText,
       effectiveCats.progress.length ? `Baufortschritt: ${effectiveCats.progress.join('; ')}` : '',
+      effectiveCats.trades.length ? `Gewerke: ${effectiveCats.trades.join('; ')}` : '',
       effectiveCats.hindrance.length ? `Behinderungen: ${effectiveCats.hindrance.join('; ')}` : '',
       effectiveCats.cost.length ? `Mehrkosten: ${effectiveCats.cost.join('; ')}` : '',
       effectiveCats.defect.length ? `Mängel: ${effectiveCats.defect.join('; ')}` : '',
@@ -713,6 +755,7 @@ export const VoiceOrText: React.FC<VoiceOrTextProps> = ({ mode = 'voice' }) => {
     const firstSnippet =
       notesTrimmed ||
       effectiveCats.progress[0] ||
+      effectiveCats.trades[0] ||
       effectiveCats.hindrance[0] ||
       effectiveCats.cost[0] ||
       effectiveCats.defect[0] ||
@@ -754,6 +797,7 @@ Erfasser: ${userName}
 ${generalNotes.trim() ? `\nAllgemeine Notizen:\n${generalNotes.trim()}\n` : ''}
 Kategorisierte Stichpunkte:
 - Baufortschritt: ${effectiveCats.progress.join('; ') || 'Keine Angaben'}
+- Gewerke & Firmen: ${effectiveCats.trades.join('; ') || 'Keine Angaben'}
 - Behinderungen (§ 6 VOB/B): ${effectiveCats.hindrance.join('; ') || 'Keine'}
 - Mehrkosten & Nachträge (§ 2 VOB/B): ${effectiveCats.cost.join('; ') || 'Keine'}
 - Mängel / Qualität: ${effectiveCats.defect.join('; ') || 'Keine'}
@@ -791,7 +835,7 @@ Kategorisierte Stichpunkte:
         date: today,
         authorOrSender: userName,
         content: payload.combinedText || content,
-        trades: effectiveCats.progress.slice(0, 3),
+        trades: effectiveCats.trades,
         hindrance: hindranceLines || undefined
       });
     }
@@ -828,6 +872,7 @@ Kategorisierte Stichpunkte:
 
     try {
       if (targetDailyReport) {
+        await pendingSyncRef.current;
         // /fill trägt Freitext + kategorisierte Stichpunkte direkt in die passenden Berichtsfelder ein
         // und legt selbst den Tagebucheintrag an → lokale Sicherung nur bei Backend-Ausfall.
         try {
@@ -882,6 +927,7 @@ Kategorisierte Stichpunkte:
       }
 
       if (targetDailyReport) {
+        await pendingSyncRef.current;
         navigate('/reports', { state: { date: reportDate } });
       }
     } finally {
@@ -1393,7 +1439,54 @@ Kategorisierte Stichpunkte:
               </div>
             </div>
 
-            {/* Category 2: Behinderungen & Störungen (§ 6 VOB/B) */}
+            {/* Category 2: Gewerke & Firmen */}
+            <div className="category-card accent-trades">
+              <div className="category-card-header">
+                <span className="category-card-title">
+                  <Users size={16} color="#0d9488" />
+                  <span>{t('cap_cat_trades')} ({categories.trades.length})</span>
+                </span>
+              </div>
+
+              {categories.trades.length > 0 && (
+                <div className="bullet-chips">
+                  {categories.trades.map((bullet, idx) =>
+                    renderBulletChip('trades', bullet, idx, { backgroundColor: '#f0fdfa', borderColor: '#99f6e4' })
+                  )}
+                </div>
+              )}
+
+              <div className="bullet-input-row">
+                <input
+                  type="text"
+                  className="bullet-input"
+                  placeholder={t('cap_bullet_trades_ph')}
+                  value={newInputs.trades}
+                  onChange={(e) => {
+                    setNewInputs((prev) => ({ ...prev, trades: e.target.value }));
+                    setActionErrorMsg(null);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      handleAddBullet('trades');
+                    }
+                  }}
+                />
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  style={{ padding: '4px 8px', fontSize: '12px' }}
+                  onClick={() => handleAddBullet('trades')}
+                  title="Stichpunkt hinzufügen"
+                  aria-label="Stichpunkt zu Gewerken hinzufügen"
+                >
+                  <Plus size={14} />
+                </button>
+              </div>
+            </div>
+
+            {/* Category 3: Behinderungen & Störungen (§ 6 VOB/B) */}
             <div className="category-card accent-hindrance">
               <div className="category-card-header">
                 <span className="category-card-title">

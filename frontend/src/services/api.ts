@@ -855,6 +855,7 @@ export interface DailyReportOut {
 
 export interface CategorizedBulletsPayload {
   progress?: string[];
+  trades?: string[];
   hindrance?: string[];
   cost?: string[];
   defect?: string[];
@@ -869,7 +870,7 @@ export interface FillRequest {
 }
 
 export interface BulletRemoveRequest {
-  category: 'progress' | 'hindrance' | 'cost' | 'defect' | 'delivery';
+  category: 'progress' | 'trades' | 'hindrance' | 'cost' | 'defect' | 'delivery';
   text: string;
   project_id?: number | null;
 }

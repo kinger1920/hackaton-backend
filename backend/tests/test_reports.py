@@ -97,6 +97,7 @@ def test_fill_with_categorized_bullets(client, engine):
         "project_id": ids["project"],
         "categories": {
             "progress": ["Aushub Achse B zu 75 % fertig", "Decke 1. OG geschalt"],
+            "trades": ["Rohbau (Fa. BetonTech)", "Elektro"],
             "hindrance": ["Kran steht wegen Sturm"],
             "cost": ["Zusätzliche Wasserhaltung"],
             "defect": ["Riss im Treppenhaus"],
@@ -108,6 +109,8 @@ def test_fill_with_categorized_bullets(client, engine):
     data = r.json()
     assert "Aushub Achse B zu 75 % fertig" in data["work_completed"]
     assert "Decke 1. OG geschalt" in data["work_completed"]
+    assert "Rohbau (Fa. BetonTech)" not in data["work_completed"]
+    assert data["trades"] == ["Rohbau (Fa. BetonTech)", "Elektro"]
     assert "Behinderung: Kran steht wegen Sturm" in data["deviations_incidents"]
     assert "Mehrkosten: Zusätzliche Wasserhaltung" in data["deviations_incidents"]
     assert "Mangel: Riss im Treppenhaus" in data["deviations_incidents"]
@@ -143,6 +146,13 @@ def test_fill_with_categorized_bullets(client, engine):
     ).json()
     assert after_rm_delivery["categories"]["delivery"] == []
     assert after_rm_delivery["deliveries"] is None
+
+    after_rm_trade = client.post(
+        "/api/reports/2026-11-22/bullets/remove",
+        json={"category": "trades", "text": "Elektro", "project_id": ids["project"]},
+    ).json()
+    assert after_rm_trade["categories"]["trades"] == ["Rohbau (Fa. BetonTech)"]
+    assert after_rm_trade["trades"] == ["Rohbau (Fa. BetonTech)"]
 
     # Manuelles Löschen im Tagesbericht (PUT) bereinigt auch categories
     after_put = client.put(

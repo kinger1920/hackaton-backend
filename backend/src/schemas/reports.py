@@ -10,13 +10,14 @@ from typing import Literal
 from pydantic import BaseModel, Field, model_validator
 
 ProgressSource = Literal["diktat", "ki", "regel", "nutzer"]
-BulletCategory = Literal["progress", "hindrance", "cost", "defect", "delivery"]
+BulletCategory = Literal["progress", "trades", "hindrance", "cost", "defect", "delivery"]
 
 
 class CategorizedBullets(BaseModel):
     """Kategorisierte Stichpunkte aus der Schreiberfassung."""
 
     progress: list[str] = Field(default_factory=list)
+    trades: list[str] = Field(default_factory=list)
     hindrance: list[str] = Field(default_factory=list)
     cost: list[str] = Field(default_factory=list)
     defect: list[str] = Field(default_factory=list)
@@ -25,7 +26,7 @@ class CategorizedBullets(BaseModel):
     def has_any(self) -> bool:
         return any(
             item.strip()
-            for group in (self.progress, self.hindrance, self.cost, self.defect, self.delivery)
+            for group in (self.progress, self.trades, self.hindrance, self.cost, self.defect, self.delivery)
             for item in group
         )
 
