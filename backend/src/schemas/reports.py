@@ -7,9 +7,28 @@ Felder folgen Jues Formular (`frontend/src/reports/DailyReports.tsx`) und API_CO
 import datetime as dt
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 ProgressSource = Literal["diktat", "ki", "regel", "nutzer"]
+BulletCategory = Literal["progress", "trades", "hindrance", "cost", "defect", "delivery"]
+
+
+class CategorizedBullets(BaseModel):
+    """Kategorisierte Stichpunkte aus der Schreiberfassung."""
+
+    progress: list[str] = Field(default_factory=list)
+    trades: list[str] = Field(default_factory=list)
+    hindrance: list[str] = Field(default_factory=list)
+    cost: list[str] = Field(default_factory=list)
+    defect: list[str] = Field(default_factory=list)
+    delivery: list[str] = Field(default_factory=list)
+
+    def has_any(self) -> bool:
+        return any(
+            item.strip()
+            for group in (self.progress, self.trades, self.hindrance, self.cost, self.defect, self.delivery)
+            for item in group
+        )
 
 
 class ProgressIn(BaseModel):
@@ -79,13 +98,29 @@ class ReportOut(BaseModel):
     status: str
     progress: list[ProgressOut]
     attendance: list[AttendanceItem] = Field(default_factory=list)
+    categories: CategorizedBullets = Field(default_factory=CategorizedBullets)
 
 
 class FillRequest(BaseModel):
-    """Body für POST /fill: Diktat oder Text, der den Bericht des Tages ergänzt."""
+    """Body für POST /fill: Diktat, Freitext und/oder kategorisierte Stichpunkte."""
 
-    text: str = Field(min_length=1)
+    text: str = Field(default="")
     lang: str = "de"
+    project_id: int | None = None
+    categories: CategorizedBullets | None = None
+
+    @model_validator(mode="after")
+    def _require_text_or_categories(self) -> "FillRequest":
+        if not self.text.strip() and not (self.categories and self.categories.has_any()):
+            raise ValueError("Entweder 'text' oder mindestens ein Stichpunkt in 'categories' ist erforderlich.")
+        return self
+
+
+class BulletRemoveRequest(BaseModel):
+    """Body für POST /api/reports/{date}/bullets/remove: Stichpunkt aus Erfassung & Bericht löschen."""
+
+    category: BulletCategory
+    text: str = Field(min_length=1)
     project_id: int | None = None
 
 

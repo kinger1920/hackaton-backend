@@ -21,12 +21,26 @@ from pydantic import BaseModel
 from sqlmodel import Session, select
 
 from src.models import ConstructionPlan, DailyReport, PlanTask, Project, ReportProgress, SiteNote
-from src.schemas.reports import AttendanceItem, FillRequest, FillResponse, ProgressOut, ReportIn, ReportOut
+from src.schemas.reports import (
+    AttendanceItem,
+    BulletRemoveRequest,
+    CategorizedBullets,
+    FillRequest,
+    FillResponse,
+    ProgressOut,
+    ReportIn,
+    ReportOut,
+)
 from src.services import llm, offline_rules
 from src.services.workforce import attendance_of, contracts_with_target, match_contract, store_attendance, tokens
 
 # Schlüsselwörter für Vorkommnisse (Behinderung, Mehrkosten, Mangel) aus den Offline-Regeln.
 _INCIDENT_WORDS = [w for t in ("delay", "cost", "defect") for w in offline_rules.KEYWORDS[t]]
+_DELIVERY_WORDS = ("liefer", "angeliefert", "lieferschein", "abnahme", "prüfstatiker", "betonprüfer", "begehung", "dostaw")
+_CATEGORY_PREFIX_RE = re.compile(
+    r"^(baufortschritt|fortschritt|gewerk(?:e)?|firma|firmen|behinderung(?:en)?|störung(?:en)?|mehrkosten|nachtrag|nachträge|mangel|mängel|lieferung(?:en)?|material)\s*:\s*(.+)$",
+    re.IGNORECASE,
+)
 _PERCENT_RE = re.compile(r"(\d{1,3})\s*(?:%|prozent|procent)", re.IGNORECASE)
 # Anwesenheit im Diktat, DE + PL: "Fa. Krause nur 3 Mann", "3 Leute von Krause", "firma Krause tylko 3 osoby".
 _CREW_WORDS = r"(?:Mann|Leute|Leuten|Arbeiter|Arbeitern|Arbeitskräfte|Personen|Monteure|osób|osoby|ludzi|pracowników|robotników)"
@@ -110,13 +124,127 @@ def _workforce_count(report: DailyReport) -> int | None:
     return None
 
 
+def _bullets_of(report: DailyReport | None) -> CategorizedBullets:
+    """Liest die gespeicherten kategorisierten Stichpunkte aus DailyReport.bullets_json."""
+    if report is None:
+        return CategorizedBullets()
+    raw = _json(report.bullets_json)
+    if not isinstance(raw, dict):
+        return CategorizedBullets()
+    return CategorizedBullets(
+        progress=_clean_bullets(raw.get("progress") or []),
+        trades=_clean_bullets(raw.get("trades") or []),
+        hindrance=_clean_bullets(raw.get("hindrance") or []),
+        cost=_clean_bullets(raw.get("cost") or []),
+        defect=_clean_bullets(raw.get("defect") or []),
+        delivery=_clean_bullets(raw.get("delivery") or []),
+    )
+
+
+def _store_bullets(report: DailyReport, cats: CategorizedBullets) -> None:
+    cleaned = CategorizedBullets(
+        progress=_clean_bullets(cats.progress),
+        trades=_clean_bullets(cats.trades),
+        hindrance=_clean_bullets(cats.hindrance),
+        cost=_clean_bullets(cats.cost),
+        defect=_clean_bullets(cats.defect),
+        delivery=_clean_bullets(cats.delivery),
+    )
+    report.bullets_json = json.dumps(cleaned.model_dump(), ensure_ascii=False) if cleaned.has_any() else None
+
+
+def _merge_bullets(existing: CategorizedBullets, incoming: CategorizedBullets) -> CategorizedBullets:
+    return CategorizedBullets(
+        progress=_clean_bullets(existing.progress + incoming.progress),
+        trades=_clean_bullets(existing.trades + incoming.trades),
+        hindrance=_clean_bullets(existing.hindrance + incoming.hindrance),
+        cost=_clean_bullets(existing.cost + incoming.cost),
+        defect=_clean_bullets(existing.defect + incoming.defect),
+        delivery=_clean_bullets(existing.delivery + incoming.delivery),
+    )
+
+
+def _bullet_candidates(category: str, item: str) -> list[str]:
+    clean = (item or "").strip()
+    if not clean:
+        return []
+    if category == "hindrance":
+        return [_format_bullet("Behinderung", clean), clean]
+    if category == "cost":
+        return [_format_bullet("Mehrkosten", clean), clean]
+    if category == "defect":
+        return [_format_bullet("Mangel", clean), clean]
+    return [clean]
+
+
+def _norm_match(text: str) -> str:
+    return re.sub(r"\s+", " ", (text or "").strip().lstrip("-•* ").rstrip(".")).lower()
+
+
+def _remove_lines(old: str | None, candidates: list[str]) -> str | None:
+    """Entfernt Zeilen (oder Teil-Einträge) aus einem Berichtsfeld, die einem der Kandidaten entsprechen."""
+    if not old:
+        return old
+    raw_targets = [c.strip() for c in candidates if c.strip()]
+    if not raw_targets:
+        return old
+    norm_targets = {_norm_match(c) for c in raw_targets}
+    kept: list[str] = []
+    for line in old.splitlines():
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if _norm_match(stripped) in norm_targets:
+            continue
+        updated = stripped
+        for cand in sorted(raw_targets, key=len, reverse=True):
+            # Falls mehrere Sätze auf derselben Zeile standen, den passenden Abschnitt sauber entfernen.
+            pattern = re.compile(r"(?:^|\s*;\s*|\s+)" + re.escape(cand) + r"\.?(?=\s|$|;)", re.IGNORECASE)
+            updated = pattern.sub(" ", updated).strip(" ;")
+        updated = re.sub(r"\s{2,}", " ", updated).strip()
+        if updated:
+            kept.append(updated)
+    joined = "\n".join(kept).strip()
+    return joined or None
+
+
+def _sync_bullets_with_fields(report: DailyReport) -> None:
+    """Hält bullets_json synchron, falls Stichpunkte direkt im Tagesbericht bearbeitet/gelöscht wurden."""
+    stored = _bullets_of(report)
+    if not stored.has_any():
+        return
+    field_map = {
+        "progress": report.work_completed or "",
+        "hindrance": report.deviations_incidents or "",
+        "cost": report.deviations_incidents or "",
+        "defect": report.deviations_incidents or "",
+        "delivery": report.deliveries or "",
+    }
+    kept = CategorizedBullets()
+    for cat_name, field_text in field_map.items():
+        items = getattr(stored, cat_name)
+        norm_field = _norm_match(field_text)
+        still_there = [
+            item for item in items
+            if any(
+                cand in field_text or (_norm_match(cand) and _norm_match(cand) in norm_field)
+                for cand in _bullet_candidates(cat_name, item)
+            )
+        ]
+        setattr(kept, cat_name, still_there)
+    current_trades = _json(report.trades) or []
+    norm_trades = {_norm_match(t) for t in current_trades if isinstance(t, str)}
+    kept.trades = [item for item in stored.trades if _norm_match(item) in norm_trades]
+    _store_bullets(report, kept)
+
+
 def to_out(session: Session, project_id: int, date: dt.date, report: DailyReport | None) -> ReportOut:
     """DB-Bericht (oder None = noch nicht gespeichert) → API-Form."""
     if report is None:
         return ReportOut(id=None, project_id=project_id, report_date=date, report_number=None, weather=None,
                          temperature_c=None, site_manager=None,
                          workforce_count=None, trades=[], work_completed=None, deviations_incidents=None,
-                         deliveries=None, summary=None, status="draft", progress=[])
+                         deliveries=None, summary=None, status="draft", progress=[], categories=CategorizedBullets())
     trades = _json(report.trades)
     rows = session.exec(
         select(ReportProgress, PlanTask).join(PlanTask, ReportProgress.task_id == PlanTask.id)
@@ -132,6 +260,7 @@ def to_out(session: Session, project_id: int, date: dt.date, report: DailyReport
         deliveries=report.deliveries, summary=report.summary, status=report.status,
         progress=[ProgressOut(task_id=t.id, task_code=t.task_code, title=t.title, percent=p.percent,
                               source=p.source, note=p.note) for p, t in rows],
+        categories=_bullets_of(report),
     )
 
 
@@ -181,6 +310,7 @@ def upsert(session: Session, project: Project, date: dt.date, data: ReportIn) ->
     report.deliveries = data.deliveries
     report.summary = data.summary
     report.status = data.status
+    _sync_bullets_with_fields(report)
     report.updated_at = dt.datetime.now(dt.timezone.utc)
     session.add(report)
 
@@ -270,11 +400,7 @@ def _offline_attendance(text: str) -> list[dict]:
     return list(found.values())
 
 
-def _offline_fill(text: str, tasks: list[PlanTask]) -> dict:
-    """Regeln ohne KI: Sätze mit Störungs-Wörtern → Vorkommnisse, Rest → Leistung, "Titel … NN %" → Fortschritt."""
-    sentences = [s.strip() for s in re.split(r"(?<=[.!?;])\s+|\n+", text) if s.strip()]
-    incidents = [s for s in sentences if any(w in s.lower() for w in _INCIDENT_WORDS)]
-    work = [s for s in sentences if s not in incidents]
+def _offline_progress(sentences: list[str], tasks: list[PlanTask]) -> list[dict]:
     progress = []
     for s in sentences:
         m = _PERCENT_RE.search(s)
@@ -284,9 +410,98 @@ def _offline_fill(text: str, tasks: list[PlanTask]) -> dict:
         for t in tasks:
             if t.title.lower() in lower or (t.task_code and t.task_code.lower() in lower):
                 progress.append({"task_code": _code(t), "percent": int(m.group(1))})
-    return {"work_completed": " ".join(work), "deviations_incidents": " ".join(incidents), "deliveries": "",
-            "weather": "", "temperature_c": "", "workforce_count": "", "trades": [],
-            "attendance": _offline_attendance(text), "progress": progress}
+    return progress
+
+
+def _offline_fill(text: str, tasks: list[PlanTask]) -> dict:
+    """Regeln ohne KI: Präfixe & Schlüsselwörter → Leistung / Vorkommnisse / Lieferungen, "Titel … NN %" → Fortschritt."""
+    work: list[str] = []
+    trades: list[str] = []
+    incidents: list[str] = []
+    deliveries: list[str] = []
+    all_sentences: list[str] = []
+
+    for raw_line in text.splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        pref = _CATEGORY_PREFIX_RE.match(line)
+        if pref:
+            head = pref.group(1).lower()
+            body = pref.group(2).strip()
+            parts = [p.strip() for p in re.split(r";\s*", body) if p.strip()]
+            all_sentences.extend(parts)
+            if head.startswith(("baufortschritt", "fortschritt")):
+                work.extend(parts)
+            elif head.startswith(("gewerk", "firma", "firmen")):
+                trades.extend(parts)
+            elif head.startswith(("liefer", "material")):
+                deliveries.extend(parts)
+            elif head.startswith(("mehrkosten", "nachtrag", "nachträge")):
+                incidents.extend(_format_bullet("Mehrkosten", p) for p in parts)
+            elif head.startswith(("mangel", "mängel")):
+                incidents.extend(_format_bullet("Mangel", p) for p in parts)
+            else:
+                incidents.extend(_format_bullet("Behinderung", p) for p in parts)
+            continue
+
+        line_sentences = [s.strip() for s in re.split(r"(?<=[.!?;])\s+", line) if s.strip()]
+        all_sentences.extend(line_sentences)
+        for s in line_sentences:
+            lower = s.lower()
+            if any(w in lower for w in _INCIDENT_WORDS):
+                incidents.append(s)
+            elif any(w in lower for w in _DELIVERY_WORDS):
+                deliveries.append(s)
+            else:
+                work.append(s)
+
+    return {
+        "work_completed": " ".join(work),
+        "deviations_incidents": " ".join(incidents),
+        "deliveries": " ".join(deliveries),
+        "weather": "",
+        "temperature_c": "",
+        "workforce_count": "",
+        "trades": _clean_bullets(trades),
+        "attendance": _offline_attendance(text),
+        "progress": _offline_progress(all_sentences, tasks),
+    }
+
+
+def _clean_bullets(items: list[str]) -> list[str]:
+    seen: set[str] = set()
+    cleaned: list[str] = []
+    for raw in items:
+        val = (raw or "").strip()
+        if val and val not in seen:
+            seen.add(val)
+            cleaned.append(val)
+    return cleaned
+
+
+def _format_bullet(label: str, item: str) -> str:
+    if re.match(rf"^{re.escape(label)}\b", item, re.IGNORECASE):
+        return item
+    if label == "Mehrkosten" and re.match(r"^nachtrag\b", item, re.IGNORECASE):
+        return item
+    if label == "Mangel" and re.match(r"^mängel\b", item, re.IGNORECASE):
+        return item
+    return f"{label}: {item}"
+
+
+def _categories_to_note_lines(cats: CategorizedBullets | None) -> list[str]:
+    if cats is None:
+        return []
+    groups = [
+        ("Baufortschritt", _clean_bullets(cats.progress)),
+        ("Gewerke", _clean_bullets(cats.trades)),
+        ("Behinderungen", _clean_bullets(cats.hindrance)),
+        ("Mehrkosten", _clean_bullets(cats.cost)),
+        ("Mängel", _clean_bullets(cats.defect)),
+        ("Lieferungen", _clean_bullets(cats.delivery)),
+    ]
+    return [f"{label}: {'; '.join(items)}" for label, items in groups if items]
 
 
 def _merge_attendance(report: DailyReport, new: list[dict], contracts) -> None:
@@ -315,25 +530,83 @@ def _merge_attendance(report: DailyReport, new: list[dict], contracts) -> None:
 
 
 async def fill(session: Session, project: Project, date: dt.date, req: FillRequest) -> FillResponse:
-    """Diktat → Bericht des Tages ergänzen (+ Tagebucheintrag). Status bleibt 'draft' (Freigabe durch Nutzer)."""
+    """Diktat/Stichpunkte → Bericht des Tages ergänzen (+ Tagebucheintrag). Status bleibt 'draft'."""
     tasks = project_tasks(session, project.id)
     by_code = {_code(t).lower(): t for t in tasks}
 
     contracts = contracts_with_target(session, project.id)
-    firms = "\n".join(f"- {c.contractor_name or '?'} ({c.trade or '?'})" for c in contracts) or "(keine)"
-    user = (f"Vorgangsliste des Projektplans:\n{_task_list(tasks)}\n\nFirmenliste:\n{firms}\n\n"
-            f"Diktat ({req.lang}):\n{req.text.strip()}")
-    result = await llm.complete_json(FILL_PROMPT, user, _LLMFill, max_tokens=1200)
-    mode: Literal["ai", "offline"] = "ai"
-    if result is None:
-        data, mode, source = _offline_fill(req.text, tasks), "offline", "regel"
+    clean_text = req.text.strip()
+    mode: Literal["ai", "offline"] = "offline"
+    source = "regel"
+    if clean_text:
+        firms = "\n".join(f"- {c.contractor_name or '?'} ({c.trade or '?'})" for c in contracts) or "(keine)"
+        user = (f"Vorgangsliste des Projektplans:\n{_task_list(tasks)}\n\nFirmenliste:\n{firms}\n\n"
+                f"Diktat ({req.lang}):\n{clean_text}")
+        result = await llm.complete_json(FILL_PROMPT, user, _LLMFill, max_tokens=1200)
+        if result is None:
+            data, mode, source = _offline_fill(clean_text, tasks), "offline", "regel"
+        else:
+            data, mode, source = result.model_dump(), "ai", "ki"
     else:
-        data, source = result.model_dump(), "ki"
+        data = {
+            "work_completed": "",
+            "deviations_incidents": "",
+            "deliveries": "",
+            "weather": "",
+            "temperature_c": "",
+            "workforce_count": "",
+            "trades": [],
+            "attendance": [],
+            "progress": [],
+        }
 
     report = _get_or_create(session, project.id, date)
     report.work_completed = _append(report.work_completed, data["work_completed"])
     report.deviations_incidents = _append(report.deviations_incidents, data["deviations_incidents"])
     report.deliveries = _append(report.deliveries, data["deliveries"])
+
+    cat_has_incident = False
+    if req.categories is not None:
+        cat_progress = _clean_bullets(req.categories.progress)
+        cat_trades = _clean_bullets(req.categories.trades)
+        cat_hindrance = _clean_bullets(req.categories.hindrance)
+        cat_cost = _clean_bullets(req.categories.cost)
+        cat_defect = _clean_bullets(req.categories.defect)
+        cat_delivery = _clean_bullets(req.categories.delivery)
+
+        for item in cat_progress:
+            report.work_completed = _append(report.work_completed, item)
+        if cat_trades:
+            data["trades"] = list(data["trades"]) + cat_trades
+        for item in cat_hindrance:
+            report.deviations_incidents = _append(report.deviations_incidents, _format_bullet("Behinderung", item))
+        for item in cat_cost:
+            report.deviations_incidents = _append(report.deviations_incidents, _format_bullet("Mehrkosten", item))
+        for item in cat_defect:
+            report.deviations_incidents = _append(report.deviations_incidents, _format_bullet("Mangel", item))
+        for item in cat_delivery:
+            report.deliveries = _append(report.deliveries, item)
+
+        incoming_cats = CategorizedBullets(
+            progress=cat_progress,
+            trades=cat_trades,
+            hindrance=cat_hindrance,
+            cost=cat_cost,
+            defect=cat_defect,
+            delivery=cat_delivery,
+        )
+        _store_bullets(report, _merge_bullets(_bullets_of(report), incoming_cats))
+
+        cat_has_incident = bool(cat_hindrance or cat_cost or cat_defect)
+        all_bullets = cat_progress + cat_trades + cat_hindrance + cat_cost + cat_defect + cat_delivery
+        if all_bullets:
+            joined_bullets = "\n".join(all_bullets)
+            bullet_attendance = _offline_attendance(joined_bullets)
+            if bullet_attendance:
+                data["attendance"] = list(data["attendance"]) + bullet_attendance
+            bullet_progress = _offline_progress(all_bullets, tasks)
+            if bullet_progress:
+                data["progress"] = list(data["progress"]) + bullet_progress
     condition, temp = weather_parts(report.weather)
     temp_digits = re.sub(r"[^\d.,-]", "", data["temperature_c"]).replace(",", ".")
     new_temp = float(temp_digits) if re.fullmatch(r"-?\d{1,2}(\.\d)?", temp_digits) else None
@@ -358,9 +631,12 @@ async def fill(session: Session, project: Project, date: dt.date, req: FillReque
         if task is not None and 0 <= int(p["percent"]) <= 100:
             _set_progress(session, report, task.id, int(p["percent"]), source)
 
-    # Contract: /fill liefert auch neue Tagebuch-Events → Diktat als SiteNote ablegen.
-    category = "delay" if data["deviations_incidents"].strip() else "progress"
-    note = SiteNote(project_id=project.id, content=req.text.strip(), category=category, status="incorporated")
+    # Contract: /fill liefert auch neue Tagebuch-Events → Diktat/Stichpunkte als SiteNote ablegen.
+    note_parts = [clean_text] if clean_text else []
+    note_parts.extend(_categories_to_note_lines(req.categories))
+    note_content = "\n".join(note_parts)
+    category = "delay" if (data["deviations_incidents"].strip() or cat_has_incident) else "progress"
+    note = SiteNote(project_id=project.id, content=note_content, category=category, status="incorporated")
     session.add(note)
     session.commit()
     session.refresh(report)
@@ -368,3 +644,42 @@ async def fill(session: Session, project: Project, date: dt.date, req: FillReque
 
     out = to_out(session, project.id, date, report)
     return FillResponse(**out.model_dump(), mode=mode, site_note_id=note.id)
+
+
+def remove_bullet(session: Session, project: Project, date: dt.date, req: BulletRemoveRequest) -> ReportOut:
+    """Entfernt einen kategorisierten Stichpunkt aus bullets_json UND dem passenden Berichtsfeld."""
+    report = find_report(session, project.id, date)
+    if report is None:
+        return to_out(session, project.id, date, None)
+
+    clean = req.text.strip()
+    norm_clean = _norm_match(clean)
+    stored = _bullets_of(report)
+    categories_to_clean: list[str] = [req.category]
+    for cat_name in ("progress", "trades", "hindrance", "cost", "defect", "delivery"):
+        items = getattr(stored, cat_name)
+        filtered = [item for item in items if _norm_match(item) != norm_clean]
+        if len(filtered) != len(items):
+            setattr(stored, cat_name, filtered)
+            if cat_name not in categories_to_clean:
+                categories_to_clean.append(cat_name)
+    _store_bullets(report, stored)
+
+    for cat_name in categories_to_clean:
+        candidates = _bullet_candidates(cat_name, clean)
+        if cat_name == "progress":
+            report.work_completed = _remove_lines(report.work_completed, candidates)
+        elif cat_name == "trades":
+            current_trades = _json(report.trades) or []
+            kept_trades = [t for t in current_trades if isinstance(t, str) and _norm_match(t) != norm_clean]
+            report.trades = json.dumps(kept_trades, ensure_ascii=False) if kept_trades else None
+        elif cat_name in ("hindrance", "cost", "defect"):
+            report.deviations_incidents = _remove_lines(report.deviations_incidents, candidates)
+        elif cat_name == "delivery":
+            report.deliveries = _remove_lines(report.deliveries, candidates)
+
+    report.updated_at = dt.datetime.now(dt.timezone.utc)
+    session.add(report)
+    session.commit()
+    session.refresh(report)
+    return to_out(session, project.id, date, report)

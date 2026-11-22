@@ -57,12 +57,6 @@
 .flag-uk-blue { fill: #012169; }
 .flag-uk-red-stroke { stroke: #c8102e; }
 .flag-pl-red { fill: #dc143c; }
-.flag-tr-red { fill: #e30a17; }
-.flag-ro-blue { fill: #002b7f; }
-.flag-ro-yellow { fill: #fcd116; }
-.flag-ro-red { fill: #ce1126; }
-.flag-ua-blue { fill: #005bbb; }
-.flag-ua-yellow { fill: #ffd500; }
 
 .lang-code {
   text-transform: uppercase;

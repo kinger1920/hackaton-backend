@@ -120,14 +120,14 @@ const formatEur = (value?: number | null) =>
 const formatNumber = (value?: number | null) =>
     value == null ? null : new Intl.NumberFormat('de-DE', {maximumFractionDigits: 0}).format(value);
 
-const formatDate = (iso?: string) => {
+const formatDate = (iso?: string, locale = 'de-DE') => {
     if (!iso) return null;
     const d = new Date(iso);
-    return Number.isNaN(d.getTime()) ? iso : d.toLocaleDateString('de-DE');
+    return Number.isNaN(d.getTime()) ? iso : d.toLocaleDateString(locale);
 };
 
 export const Projects: React.FC = () => {
-    const {t} = useLanguage();
+    const {t, tf, tv, locale} = useLanguage();
     const {projects, activeProjectId, setActiveProjectId, addProject, updateProject, deleteProject} = useProjects();
 
     const [showCreateForm, setShowCreateForm] = useState(false);
@@ -249,7 +249,7 @@ export const Projects: React.FC = () => {
         } catch (err: any) {
             console.error(err);
             alert(err?.message?.includes('HTTP') || !err?.message
-                ? 'Projekt konnte nicht gespeichert werden. Läuft das Backend?'
+                ? t('proj_save_failed_backend')
                 : err.message);
         }
     };
@@ -358,7 +358,7 @@ export const Projects: React.FC = () => {
                                     value={formData.phase}
                                     onChange={(e) => set('phase', e.target.value)}
                                 >
-                                    {PHASES.map((p) => <option key={p} value={p}>{p}</option>)}
+                                    {PHASES.map((p) => <option key={p} value={p}>{tv(p)}</option>)}
                                 </select>
                             </div>
 
@@ -370,9 +370,9 @@ export const Projects: React.FC = () => {
                                     value={formData.status}
                                     onChange={(e) => set('status', e.target.value as Project['status'])}
                                 >
-                                    <option value="Aktiv">Aktiv</option>
-                                    <option value="In Planung">In Planung</option>
-                                    <option value="Abgeschlossen">Abgeschlossen</option>
+                                    <option value="Aktiv">{tv('Aktiv')}</option>
+                                    <option value="In Planung">{tv('In Planung')}</option>
+                                    <option value="Abgeschlossen">{tv('Abgeschlossen')}</option>
                                 </select>
                             </div>
 
@@ -458,7 +458,7 @@ export const Projects: React.FC = () => {
                                     onChange={(e) => set('construction_type', e.target.value)}
                                 >
                                     <option value="">{t('proj_form_type_none')}</option>
-                                    {CONSTRUCTION_TYPES.map((c) => <option key={c} value={c}>{c}</option>)}
+                                    {CONSTRUCTION_TYPES.map((c) => <option key={c} value={c}>{tv(c)}</option>)}
                                 </select>
                             </div>
                         </div>
@@ -511,7 +511,7 @@ export const Projects: React.FC = () => {
                                     value={formData.contract_type}
                                     onChange={(e) => set('contract_type', e.target.value)}
                                 >
-                                    {CONTRACT_TYPES.map((c) => <option key={c} value={c}>{c}</option>)}
+                                    {CONTRACT_TYPES.map((c) => <option key={c} value={c}>{tv(c)}</option>)}
                                 </select>
                             </div>
 
@@ -573,7 +573,7 @@ export const Projects: React.FC = () => {
                                             className="form-input"
                                             type="text"
                                             aria-label={t('proj_c_name')}
-                                            placeholder="Firma XY GmbH"
+                                            placeholder={t('proj_c_name_ph')}
                                             value={c.name}
                                             onChange={(e) => updateContractor(i, 'name', e.target.value)}
                                         />
@@ -581,7 +581,7 @@ export const Projects: React.FC = () => {
                                             className="form-input"
                                             type="text"
                                             aria-label={t('proj_c_trade')}
-                                            placeholder="z. B. Maler"
+                                            placeholder={t('proj_c_trade_ph')}
                                             value={c.trade}
                                             onChange={(e) => updateContractor(i, 'trade', e.target.value)}
                                         />
@@ -652,7 +652,7 @@ export const Projects: React.FC = () => {
                                 <div>
                                     <div className="project-top-row">
                                         <div className="project-badges">
-                                            <span className="badge badge-info">{proj.status}</span>
+                                            <span className="badge badge-info">{tv(proj.status)}</span>
                                         </div>
                                         {isActive && (
                                             <span className="project-badge-active">
@@ -679,12 +679,12 @@ export const Projects: React.FC = () => {
                                         </div>
                                         <div className="project-meta-item">
                                             <Activity size={15} color="var(--color-slate-400)"/>
-                                            <span>Phase: {proj.phase}</span>
+                                            <span>{t('proj_phase_label')} {tv(proj.phase)}</span>
                                         </div>
                                     </div>
 
                                     <div className="project-detail-hint">
-                                        <span>Details anzeigen</span>
+                                        <span>{t('proj_details')}</span>
                                         <ChevronRight size={14}/>
                                     </div>
                                 </div>
@@ -717,15 +717,15 @@ export const Projects: React.FC = () => {
                                             type="button"
                                             className="btn btn-danger"
                                             style={{padding: '6px 10px', fontSize: '12px'}}
-                                            title="Projekt löschen"
+                                            title={t('proj_delete')}
                                             onClick={async () => {
-                                                if (window.confirm(`Möchten Sie das Projekt "${proj.name}" wirklich löschen?`)) {
+                                                if (window.confirm(tf('proj_confirm_delete', {name: proj.name}))) {
                                                     try {
                                                         if (selectedProjectId === proj.id) setSelectedProjectId(null);
                                                         await deleteProject(proj.id);
                                                     } catch (err) {
                                                         console.error(err);
-                                                        alert('Projekt konnte nicht gelöscht werden. Läuft das Backend?');
+                                                        alert(t('proj_delete_failed_backend'));
                                                     }
                                                 }
                                             }}
@@ -749,8 +749,8 @@ export const Projects: React.FC = () => {
                 const budget = formatEur(selectedProject.budget_eur);
                 const area = formatNumber(selectedProject.gross_floor_area_m2);
                 const cubic = formatNumber(selectedProject.gross_volume_m3);
-                const start = formatDate(selectedProject.start_date);
-                const end = formatDate(selectedProject.end_date);
+                const start = formatDate(selectedProject.start_date, locale);
+                const end = formatDate(selectedProject.end_date, locale);
 
                 return (
                     <div className="proj-modal-overlay" onClick={() => setSelectedProjectId(null)}>
@@ -764,9 +764,9 @@ export const Projects: React.FC = () => {
                             <div className="proj-modal-header">
                                 <div style={{minWidth: 0}}>
                                     <div className="project-badges" style={{marginBottom: '8px'}}>
-                                        <span className="badge badge-info">{selectedProject.status}</span>
+                                        <span className="badge badge-info">{tv(selectedProject.status)}</span>
                                         {selectedProject.construction_type && (
-                                            <span className="badge project-badge-neutral">{selectedProject.construction_type}</span>
+                                            <span className="badge project-badge-neutral">{tv(selectedProject.construction_type)}</span>
                                         )}
                                         {isActive && (
                                             <span className="project-badge-active">
@@ -801,7 +801,7 @@ export const Projects: React.FC = () => {
                                 )}
 
                                 <div className="proj-detail-section">
-                                    <div className="proj-detail-section-title">Stammdaten, Bauzeit &amp; Vertrag</div>
+                                    <div className="proj-detail-section-title">{t('proj_detail_master')}</div>
                                     <div className="project-meta-list" style={{margin: 0}}>
                                         <div className="project-meta-item">
                                             <Hash size={15} color="var(--color-slate-400)"/>
@@ -817,7 +817,7 @@ export const Projects: React.FC = () => {
                                         </div>
                                         <div className="project-meta-item">
                                             <Activity size={15} color="var(--color-slate-400)"/>
-                                            <span>Phase: {selectedProject.phase}</span>
+                                            <span>{t('proj_phase_label')} {tv(selectedProject.phase)}</span>
                                         </div>
                                         {(start || end) && (
                                             <div className="project-meta-item">
@@ -831,7 +831,7 @@ export const Projects: React.FC = () => {
                                                     ? <ShieldOff size={15} color="var(--color-slate-400)"/>
                                                     : <ShieldCheck size={15} color="var(--color-success-dark)"/>}
                                                 <span>
-                                                    {selectedProject.contract_type}
+                                                    {tv(selectedProject.contract_type)}
                                                     {selectedProject.vob_b_agreed === false ? ` · ${t('proj_card_no_vob')}` : ' · VOB/B'}
                                                 </span>
                                             </div>

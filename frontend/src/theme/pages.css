@@ -200,6 +200,14 @@
     border-left: 3px solid var(--color-success);
 }
 
+:root .category-card.accent-trades {
+    border-left: 3px solid #0d9488;
+}
+
+[data-theme="dark"] .category-card.accent-trades {
+    background-color: var(--color-slate-50);
+}
+
 :root .category-card.accent-defect {
     border-left: 3px solid var(--color-primary-fill);
 }

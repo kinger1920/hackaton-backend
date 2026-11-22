@@ -76,6 +76,8 @@ Regeln:
   Fülle ein Feld nur, wenn die Information ausdrücklich im Diktat steht.
 - Keine juristischen Formulierungen, keine Paragraphen – nur Fakten.
 - Relative Angaben ("heute", "seit 10 Uhr", "gestern") beziehen sich auf Datum {ref_date}{f", Uhrzeit {ref_time}" if ref_time else ""}.
+- In Textfeldern (v. a. facts) KEINE relativen Zeitangaben übernehmen: "gestern", "heute", "seit Montag",
+  "vor 2 Stunden" immer als konkretes Datum (TT.MM.JJJJ) bzw. Uhrzeit schreiben – der Brief wird später gelesen.
 - type: delay = Behinderung/Stillstand/Verzug, cost = Mehrkosten/Zusatzleistung,
   defect = Mangel an fremder Leistung, concern = Bedenken gegen Vorgaben/Vorleistungen.
 

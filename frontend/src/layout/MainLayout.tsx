@@ -230,7 +230,7 @@ export const MainLayout: React.FC = () => {
                     </div>
                     <div className="app-brand-text">
                         <div className="app-brand-title">Bau<span>Manager</span></div>
-                        <div className="app-brand-sub">Bautagesbericht &amp; Planung</div>
+                        <div className="app-brand-sub">{t('hdr_brand_sub')}</div>
                     </div>
                     <button
                         type="button"
