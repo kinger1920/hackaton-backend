@@ -342,7 +342,7 @@ export interface VoiceOrTextProps {
 
 export const VoiceOrText: React.FC<VoiceOrTextProps> = ({ mode = 'voice' }) => {
   const navigate = useNavigate();
-  const { t } = useLanguage();
+  const { t, tf } = useLanguage();
   const { activeProject } = useProjects();
   const userName = localStorage.getItem('userName') || t('role_site_manager');
   const isVoiceMode = mode === 'voice';
@@ -584,10 +584,10 @@ export const VoiceOrText: React.FC<VoiceOrTextProps> = ({ mode = 'voice' }) => {
       const serverCats = normalizeCategories(updated.categories);
       syncedCategoriesRef.current = serverCats;
       writeLocalBullets(activeProject.id, today, serverCats);
-      showClassificationFeedback('✓ Stichpunkt auch aus dem heutigen Bautagesbericht entfernt');
+      showClassificationFeedback(t('cap_bullet_removed_report'));
       } catch (err) {
         console.warn('Stichpunkt konnte im Backend-Bericht nicht entfernt werden:', err);
-        setActionErrorMsg('Stichpunkt konnte im Bautagesbericht nicht aktualisiert werden – bitte Backend prüfen.');
+        setActionErrorMsg(t('cap_bullet_sync_failed'));
       }
     };
     pendingSyncRef.current = pendingSyncRef.current.then(runRemoval, runRemoval);
@@ -632,7 +632,7 @@ export const VoiceOrText: React.FC<VoiceOrTextProps> = ({ mode = 'voice' }) => {
   const handleAutoCategorize = (textToParse = generalNotes) => {
     const clean = textToParse.trim();
     if (!clean) {
-      showClassificationFeedback('Bitte zuerst Text im Notizfeld eingeben.');
+      showClassificationFeedback(t('cap_enter_text_first'));
       return;
     }
 
@@ -641,7 +641,7 @@ export const VoiceOrText: React.FC<VoiceOrTextProps> = ({ mode = 'voice' }) => {
       if (detectedKeys.length > 0) {
         setSelectedAudioCategories((prev) => Array.from(new Set([...prev, ...detectedKeys])));
       }
-      showClassificationFeedback(`✓ ${detectedKeys.length} Kategorie(n) erkannt`);
+      showClassificationFeedback(tf('cap_cats_detected', { n: detectedKeys.length }));
       return;
     }
 
@@ -653,7 +653,7 @@ export const VoiceOrText: React.FC<VoiceOrTextProps> = ({ mode = 'voice' }) => {
     }
     setActionErrorMsg(null);
     setLastDraft(null);
-    showClassificationFeedback(`✓ ${count} Stichpunkt${count === 1 ? '' : 'e'} zugeordnet`);
+    showClassificationFeedback(tf('cap_bullets_assigned', { n: count }));
   };
 
   // Alle vorhandenen Stichpunkte (+ offene Eingaben + ggf. neues Notizfeld) neu sortieren.
@@ -665,7 +665,7 @@ export const VoiceOrText: React.FC<VoiceOrTextProps> = ({ mode = 'voice' }) => {
     const combinedInput = [...existingAll, ...(includeNotes ? [notesTrimmed] : [])].join('\n');
 
     if (!combinedInput.trim()) {
-      showClassificationFeedback('Noch keine Stichpunkte oder Notizen zum Zuordnen vorhanden.');
+      showClassificationFeedback(t('cap_nothing_to_assign'));
       return;
     }
 
@@ -677,7 +677,7 @@ export const VoiceOrText: React.FC<VoiceOrTextProps> = ({ mode = 'voice' }) => {
     }
     setActionErrorMsg(null);
     setLastDraft(null);
-    showClassificationFeedback(`✓ ${count} Stichpunkt${count === 1 ? '' : 'e'} neu zugeordnet`);
+    showClassificationFeedback(tf('cap_bullets_reassigned', { n: count }));
   };
 
   const buildCapturePayload = (effectiveCats: CategoryBullets) => {
@@ -861,8 +861,8 @@ Kategorisierte Stichpunkte:
     if (!payload.hasContent) {
       setActionErrorMsg(
         isVoiceMode
-          ? 'Bitte zuerst eine Sprachnotiz aufnehmen oder mindestens eine Kategorie auswählen.'
-          : 'Bitte mindestens einen Stichpunkt oder eine Notiz eingeben.'
+          ? t('cap_need_voice_or_cat')
+          : t('cap_need_bullet_or_note')
       );
       return;
     }
@@ -1164,8 +1164,8 @@ Kategorisierte Stichpunkte:
         type="button"
         className="bullet-chip-remove"
         onClick={() => handleRemoveBullet(catKey, idx)}
-        aria-label="Stichpunkt entfernen"
-        title="Stichpunkt entfernen"
+        aria-label={t('cap_bullet_remove')}
+        title={t('cap_bullet_remove')}
       >
         <X size={12} />
       </button>
@@ -1431,8 +1431,8 @@ Kategorisierte Stichpunkte:
                   className="btn btn-secondary"
                   style={{ padding: '4px 8px', fontSize: '12px' }}
                   onClick={() => handleAddBullet('progress')}
-                  title="Stichpunkt hinzufügen"
-                  aria-label="Stichpunkt zu Baufortschritt hinzufügen"
+                  title={t('cap_bullet_add')}
+                  aria-label={tf('cap_bullet_add_to', { cat: t('cap_cat_progress') })}
                 >
                   <Plus size={14} />
                 </button>
@@ -1478,8 +1478,8 @@ Kategorisierte Stichpunkte:
                   className="btn btn-secondary"
                   style={{ padding: '4px 8px', fontSize: '12px' }}
                   onClick={() => handleAddBullet('trades')}
-                  title="Stichpunkt hinzufügen"
-                  aria-label="Stichpunkt zu Gewerken hinzufügen"
+                  title={t('cap_bullet_add')}
+                  aria-label={tf('cap_bullet_add_to', { cat: t('cap_cat_trades') })}
                 >
                   <Plus size={14} />
                 </button>
@@ -1534,8 +1534,8 @@ Kategorisierte Stichpunkte:
                   className="btn btn-secondary"
                   style={{ padding: '4px 8px', fontSize: '12px' }}
                   onClick={() => handleAddBullet('hindrance')}
-                  title="Stichpunkt hinzufügen"
-                  aria-label="Stichpunkt zu Behinderungen hinzufügen"
+                  title={t('cap_bullet_add')}
+                  aria-label={tf('cap_bullet_add_to', { cat: t('cap_cat_hindrance') })}
                 >
                   <Plus size={14} />
                 </button>
@@ -1581,8 +1581,8 @@ Kategorisierte Stichpunkte:
                   className="btn btn-secondary"
                   style={{ padding: '4px 8px', fontSize: '12px' }}
                   onClick={() => handleAddBullet('cost')}
-                  title="Stichpunkt hinzufügen"
-                  aria-label="Stichpunkt zu Mehrkosten hinzufügen"
+                  title={t('cap_bullet_add')}
+                  aria-label={tf('cap_bullet_add_to', { cat: t('cap_cat_cost') })}
                 >
                   <Plus size={14} />
                 </button>
@@ -1628,8 +1628,8 @@ Kategorisierte Stichpunkte:
                   className="btn btn-secondary"
                   style={{ padding: '4px 8px', fontSize: '12px' }}
                   onClick={() => handleAddBullet('defect')}
-                  title="Stichpunkt hinzufügen"
-                  aria-label="Stichpunkt zu Mängeln hinzufügen"
+                  title={t('cap_bullet_add')}
+                  aria-label={tf('cap_bullet_add_to', { cat: t('cap_cat_defect') })}
                 >
                   <Plus size={14} />
                 </button>
@@ -1673,8 +1673,8 @@ Kategorisierte Stichpunkte:
                   className="btn btn-secondary"
                   style={{ padding: '4px 8px', fontSize: '12px' }}
                   onClick={() => handleAddBullet('delivery')}
-                  title="Stichpunkt hinzufügen"
-                  aria-label="Stichpunkt zu Lieferungen hinzufügen"
+                  title={t('cap_bullet_add')}
+                  aria-label={tf('cap_bullet_add_to', { cat: t('cap_cat_delivery') })}
                 >
                   <Plus size={14} />
                 </button>
