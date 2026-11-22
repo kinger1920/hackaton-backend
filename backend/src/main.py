@@ -12,7 +12,10 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlmodel import Session
 
-from src.config import settings
+from src.config import settings, setup_logging
+
+# Vor allem anderen: Warnungen aus src.* sollen im Server-Log (Render) sichtbar sein.
+setup_logging()
 from src.database import engine, init_db
 from src.frontend_static import mount_frontend
 from src.services import demo
