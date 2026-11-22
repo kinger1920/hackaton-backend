@@ -532,7 +532,7 @@ export const Termin: React.FC = () => {
     /** Termine des sichtbaren Zeitraums als .ics (Outlook, Google, Apple) */
     const exportIcs = () => {
         const esc = (s: string) => s.replace(/\\/g, '\\\\').replace(/[,;]/g, (m) => `\\${m}`).replace(/\n/g, '\\n');
-        const lines = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//BauManager//Terminplaner//DE'];
+        const lines = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//EasyBuild//Terminplaner//DE'];
         allAppts
             .filter((a) => a.date >= iso(rangeFrom) && a.date <= iso(rangeTo))
             .forEach((a) => {
