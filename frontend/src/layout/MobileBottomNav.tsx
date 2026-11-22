@@ -14,10 +14,7 @@ interface MobileTabItem {
 const SHORT_LABELS: Record<LanguageCode, {dashboard: string; text: string; voice: string; drafts: string; reports: string}> = {
     de: {dashboard: 'Dashboard', text: 'Schreiben', voice: 'Sprache', drafts: 'Entwürfe', reports: 'Bericht'},
     en: {dashboard: 'Dashboard', text: 'Write', voice: 'Voice', drafts: 'Drafts', reports: 'Report'},
-    pl: {dashboard: 'Pulpit', text: 'Notatka', voice: 'Głos', drafts: 'Pisma', reports: 'Raport'},
-    tr: {dashboard: 'Panel', text: 'Yazı', voice: 'Ses', drafts: 'Taslak', reports: 'Rapor'},
-    ro: {dashboard: 'Panou', text: 'Scriere', voice: 'Voce', drafts: 'Schițe', reports: 'Raport'},
-    ua: {dashboard: 'Панель', text: 'Текст', voice: 'Голос', drafts: 'Листи', reports: 'Звіт'}
+    pl: {dashboard: 'Pulpit', text: 'Notatka', voice: 'Głos', drafts: 'Pisma', reports: 'Raport'}
 };
 
 const SVG_W = 148;
