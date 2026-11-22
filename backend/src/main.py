@@ -10,7 +10,12 @@ import logging
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from src.database import init_db
+from sqlmodel import Session
+
+from src.config import settings
+from src.database import engine, init_db
+from src.frontend_static import mount_frontend
+from src.services import demo
 from src.services.documents import PDF_UNAVAILABLE_HINT, pdf_available
 
 from src.routers.notes import router as notes_router
@@ -41,6 +46,11 @@ async def lifespan(app: FastAPI):
     if not pdf_available():
         # Früh und deutlich warnen – sonst merkt man es erst beim Klick auf "PDF" (503).
         logging.getLogger(__name__).warning(PDF_UNAVAILABLE_HINT)
+    if settings.demo_seed_on_start:
+        # Server mit frischer (leerer) SQLite-Datei: Demo-Stand laden, sonst ist die App leer.
+        with Session(engine) as session:
+            if demo.seed_if_empty(session):
+                logging.getLogger(__name__).info("Leere Datenbank – Demo-Daten geladen.")
     yield
 
 
@@ -58,6 +68,8 @@ app.add_middleware(
         "http://127.0.0.1:3000",
         "http://localhost:5173",
         "http://127.0.0.1:5173",
+        # Deploy: weitere Origins per CORS_ORIGINS (nur bei Frontend auf eigener Domain nötig).
+        *settings.cors_origin_list,
     ],
     allow_credentials=True,
     allow_methods=["*"],
@@ -84,6 +96,10 @@ app.include_router(assistant_router)
 app.include_router(weather_router)
 app.include_router(progress_router)
 app.include_router(defects_router)
+
+# Deploy: gebautes Frontend unter derselben Adresse ausliefern (nur wenn FRONTEND_DIST gesetzt).
+if settings.frontend_dist and not mount_frontend(app, settings.frontend_dist):
+    logging.getLogger(__name__).warning("FRONTEND_DIST gesetzt, aber index.html fehlt – nur API aktiv.")
 
 @app.get("/")
 async def root():
