@@ -1,0 +1,16 @@
+# Render-Blueprint: eine Web-App aus dem Dockerfile (Frontend + API unter einer HTTPS-Adresse).
+# Einrichten: Render → New → Blueprint → dieses Repo wählen → GROQ_API_KEY eintragen.
+services:
+  - type: web
+    name: bauassist
+    runtime: docker
+    plan: free
+    region: frankfurt
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /health
+    envVars:
+      # Secret: nur im Render-Dashboard eintragen, nie ins Repo. Ohne Key läuft alles offline.
+      - key: GROQ_API_KEY
+        sync: false
+      - key: DEMO_RESET_ENABLED
+        value: "true"

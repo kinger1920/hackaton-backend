@@ -40,6 +40,26 @@ class Settings(BaseSettings):
     # Lokal/für die Jury an; auf einem Server mit echten Daten auf false setzen.
     demo_reset_enabled: bool = True
 
+    # --- Deploy (Docker/Render) ---
+    # Zusätzliche erlaubte Browser-Origins für CORS, kommagetrennt
+    # (z. B. "https://bauassist.onrender.com"). Nötig nur, wenn das Frontend auf einer
+    # ANDEREN Domain läuft als das Backend. Die lokalen Vite-Ports sind immer erlaubt.
+    cors_origins: str = ""
+
+    # Ordner mit dem gebauten Frontend (`npm run build` → `frontend/dist`). Gesetzt
+    # (im Docker-Image), liefert das Backend die Web-App unter derselben Adresse aus:
+    # eine URL fürs Handy, kein CORS. Leer (lokal): Backend liefert nur die API.
+    frontend_dist: str | None = None
+
+    # Beim Start Demo-Daten laden, wenn die Datenbank noch leer ist. Für den Server,
+    # dessen SQLite-Datei bei jedem Neustart frisch ist (Render Free hat keine Festplatte).
+    demo_seed_on_start: bool = False
+
+    @property
+    def cors_origin_list(self) -> list[str]:
+        """`cors_origins` als Liste, ohne Leerzeichen und abschließenden Slash."""
+        return [o.strip().rstrip("/") for o in self.cors_origins.split(",") if o.strip()]
+
 
 settings = Settings()
 

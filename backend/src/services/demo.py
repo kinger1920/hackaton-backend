@@ -480,3 +480,15 @@ def reset(session: Session, ref: dt.date) -> dict:
         "notes": count(SiteNote, SiteNote.project_id), "last_report_date": shift(SEED_LAST_DAY).isoformat(),
         "shifted_workdays": offset,
     }
+
+
+def seed_if_empty(session: Session, today: dt.date | None = None) -> dict | None:
+    """Lädt den Demo-Stand nur, wenn noch kein Projekt existiert (für DEMO_SEED_ON_START).
+
+    Warum: Auf dem Server (Render Free) ist die SQLite-Datei nach jedem Neustart leer.
+    Ohne Seed sähe die Jury eine leere App. Vorhandene Daten werden NIE angefasst.
+    Output: Kennzahlen wie bei `reset`, oder None, wenn schon Daten da waren.
+    """
+    if session.exec(select(Project)).first() is not None:
+        return None
+    return reset(session, today or dt.date.today())
